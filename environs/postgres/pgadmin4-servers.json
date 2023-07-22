@@ -1,0 +1,22 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "jkong",
+      "Group": "Servers",
+      "Port": 5432,
+      "Username": "jkong",
+      "Host": "postgreshost",
+      "SSLMode": "prefer",
+      "MaintenanceDB": "jkong"
+    },
+    "2": {
+      "Name": "transcendence",
+      "Group": "Servers",
+      "Port": 5432,
+      "Username": "transcendence",
+      "Host": "postgreshost",
+      "SSLMode": "prefer",
+      "MaintenanceDB": "transcendence"
+    }
+  }
+}
