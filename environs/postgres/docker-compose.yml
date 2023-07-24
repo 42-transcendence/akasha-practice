@@ -9,7 +9,6 @@ services:
       POSTGRES_MEMBER_USER: ${POSTGRES_MEMBER_USER}
       POSTGRES_MEMBER_PASSWORD_FILE: "/run/secrets/postgres_member_password"
       POSTGRES_MEMBER_DB: "${POSTGRES_MEMBER_DB}"
-      POSTGRES_MEMBER_DB_RSRC: "${POSTGRES_MEMBER_DB_RSRC}"
     restart: always
     volumes:
       - ./initdb.d:/docker-entrypoint-initdb.d

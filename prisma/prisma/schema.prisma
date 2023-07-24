@@ -59,10 +59,7 @@ model Account {
   activeStatus          ActiveStatus      @default(OFFLINE)
   activeTimestamp       DateTime          @default(now())
   statusMessage         String            @default("")
-  // Session
-  sessions              Session[]         @relation("SessionList")
-  currentSession        Session?          @relation("CurrentSession", fields: [currentSessionId], references: [id])
-  currentSessionId      String?           @unique
+  sessions              Session[]
   // Social
   friends               Friend[]          @relation("FriendList")
   friendReferences      Friend[]          @relation("FriendReference")
@@ -76,6 +73,8 @@ model Account {
   chatBans              ChatBan[]         @relation("ChatBanList")
   managedChatBanTargets ChatBan[]         @relation("ManagedChatBanTarget")
   // Game
+  currentGameDevice     Device?           @relation(fields: [currentGameDeviceId], references: [id])
+  currentGameDeviceId   Int?              @unique
   gameQueue             GameQueue?
   gameMember            GameMember?
   gameHistory           GameHistory[]
@@ -87,17 +86,30 @@ model Account {
 }
 
 model Session {
-  id                 String   @id @default(nanoid())
-  account            Account  @relation("SessionList", fields: [accountId], references: [id])
-  accountId          Int
-  refreshToken       String   @default(nanoid())
-  createdTimestamp   DateTime @default(now())
-  updatedTimestamp   DateTime @updatedAt
-  refreshedTimestamp DateTime @default(now())
-  currentAccount     Account? @relation("CurrentSession")
+  id               String   @id @default(nanoid())
+  account          Account  @relation(fields: [accountId], references: [id])
+  accountId        Int
+  token            String   @unique @default(nanoid())
+  createdTimestamp DateTime @default(now())
+  successor        Session? @relation("SessionHistory")
+  predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
+  predecessorId    String?  @unique
+  is_valid         Boolean  @default(true)
 
-  @@index([refreshToken])
   @@map("sessions")
+  @@schema("services")
+}
+
+model Device {
+  id               Int      @id @default(autoincrement())
+  fingerprint      String   @unique @default(nanoid())
+  createdTimestamp DateTime @default(now())
+  ip_address       String
+  user_agent       String
+  // Game
+  gameAccount      Account?
+
+  @@map("devices")
   @@schema("services")
 }
 
