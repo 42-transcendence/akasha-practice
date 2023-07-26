@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: "${POSTGRES_USER}"
       POSTGRES_PASSWORD_FILE: "/run/secrets/postgres_password"
       POSTGRES_DB: "${POSTGRES_DB}"
-      POSTGRES_MEMBER_USER: ${POSTGRES_MEMBER_USER}
+      POSTGRES_MEMBER_USER: "${POSTGRES_MEMBER_USER}"
       POSTGRES_MEMBER_PASSWORD_FILE: "/run/secrets/postgres_member_password"
       POSTGRES_MEMBER_DB: "${POSTGRES_MEMBER_DB}"
     restart: always
@@ -58,8 +58,8 @@ volumes:
 
 secrets:
   postgres_password:
-    file: .secret.d/postgres_password.txt
+    file: ./.secret.d/postgres_password.txt
   postgres_member_password:
-    file: .secret.d/postgres_member_password.txt
+    file: ./.secret.d/postgres_member_password.txt
   pgadmin_password:
-    file: .secret.d/pgadmin_password.txt
+    file: ./.secret.d/pgadmin_password.txt

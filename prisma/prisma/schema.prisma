@@ -60,6 +60,7 @@ model Account {
   activeTimestamp       DateTime          @default(now())
   statusMessage         String            @default("")
   sessions              Session[]
+  devices               Device[]          @relation("AccountsDevices")
   // Social
   friends               Friend[]          @relation("FriendList")
   friendReferences      Friend[]          @relation("FriendReference")
@@ -73,11 +74,11 @@ model Account {
   chatBans              ChatBan[]         @relation("ChatBanList")
   managedChatBanTargets ChatBan[]         @relation("ManagedChatBanTarget")
   // Game
-  currentGameDevice     Device?           @relation(fields: [currentGameDeviceId], references: [id])
-  currentGameDeviceId   Int?              @unique
   gameQueue             GameQueue?
   gameMember            GameMember?
   gameHistory           GameHistory[]
+  currentGameDevice     Device?           @relation("CurrentGameDevice", fields: [currentGameDeviceId], references: [id])
+  currentGameDeviceId   Int?              @unique
 
   @@unique(fields: [idIssuer, idSubject])
   @@index(fields: [nickName, nickTag])
@@ -94,20 +95,21 @@ model Session {
   successor        Session? @relation("SessionHistory")
   predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
   predecessorId    String?  @unique
-  is_valid         Boolean  @default(true)
+  isValid          Boolean  @default(true)
 
   @@map("sessions")
   @@schema("services")
 }
 
 model Device {
-  id               Int      @id @default(autoincrement())
-  fingerprint      String   @unique @default(nanoid())
-  createdTimestamp DateTime @default(now())
-  ip_address       String
-  user_agent       String
+  id               Int       @id @default(autoincrement())
+  fingerprint      String    @unique @default(nanoid())
+  createdTimestamp DateTime  @default(now())
+  ipAddress        String
+  userAgent        String
+  accounts         Account[] @relation("AccountsDevices")
   // Game
-  gameAccount      Account?
+  gameAccount      Account?  @relation("CurrentGameDevice")
 
   @@map("devices")
   @@schema("services")
