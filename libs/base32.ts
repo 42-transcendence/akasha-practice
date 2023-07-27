@@ -48,14 +48,15 @@ export function base32_decode(str: string): Uint8Array {
 
     if (shift > 5) {
       carry |= value << (shift - 5);
+      shift -= 5;
     } else if (shift < 5) {
       result.push(carry | (value >> (5 - shift)));
+      carry = (value << (shift + 3)) & 0xff;
       shift += 3;
-      carry = (value << shift) & 0xff;
     } else {
       result.push(carry | value);
-      shift = 8;
       carry = 0;
+      shift = 8;
     }
   }
 
