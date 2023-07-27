@@ -1,9 +1,9 @@
 // Reference: https://github.com/google/google-authenticator/wiki/Key-Uri-Format
 
 import { HashAlgorithm, hmacGenerateKey } from "./hash";
-import { base32_encode } from "./base32";
+import { encodeBase32 } from "./base32";
 
-async function createNewOTP(
+export async function createNewOTPKey(
   algorithm: HashAlgorithm,
   issuer: string,
   subject: string,
@@ -12,10 +12,10 @@ async function createNewOTP(
   counter: number | undefined
 ) {
   const key: Uint8Array = await hmacGenerateKey(algorithm);
-  const uri: URL = new URL("otpauth://");
+  const uri = new URL("otpauth://");
   uri.hostname = !counter ? "totp" : "hotp";
   uri.pathname = `${issuer}:${subject}`;
-  uri.searchParams.set("secret", base32_encode(key));
+  uri.searchParams.set("secret", encodeBase32(key));
   uri.searchParams.set("issuer", issuer);
   uri.searchParams.set("algorithm", algorithm);
   uri.searchParams.set("digits", digits.toString());

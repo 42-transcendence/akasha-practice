@@ -14,7 +14,7 @@ export async function generateOTP(
   algorithm: HashAlgorithm
 ): Promise<string> {
   // put movingFactor value into text byte array
-  const text: Uint8Array = new Uint8Array(8);
+  const text = new Uint8Array(8);
   for (let i = text.length - 1; i >= 0; i--) {
     text[i] = movingFactor & 0xff;
     movingFactor >>= 8;

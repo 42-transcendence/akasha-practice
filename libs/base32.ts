@@ -1,15 +1,18 @@
+// Reference: https://datatracker.ietf.org/doc/html/rfc4648
+
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const padding = "=";
+const regex = /^[A-Z2-7]*=*$/;
 
-export function base32_encode(arr: Uint8Array): string {
+type Base32String = string & { _: never };
+
+export function encodeBase32(arr: Uint8Array): Base32String {
   const result = new Array<string>();
 
   let shift = 3;
   let carry = 0;
 
-  for (let i = 0; i < arr.length; i++) {
-    const data = arr[i];
-
+  for (const data of arr) {
     {
       const value = carry | (data >> shift);
       result.push(alphabet[value & 0x1f]);
@@ -30,10 +33,14 @@ export function base32_encode(arr: Uint8Array): string {
     result.push(alphabet[carry & 0x1f]);
   }
 
-  return result.join("");
+  return result.join("") as Base32String;
 }
 
-export function base32_decode(str: string): Uint8Array {
+export function isBase32(str: string): str is Base32String {
+  return regex.test(str);
+}
+
+export function decodeBase32(str: Base32String): Uint8Array {
   const result = new Array<number>();
 
   let shift = 8;
@@ -44,7 +51,7 @@ export function base32_decode(str: string): Uint8Array {
       continue;
     }
 
-    const value = alphabet.indexOf(data);
+    const value: number = alphabet.indexOf(data);
 
     if (shift > 5) {
       carry |= value << (shift - 5);

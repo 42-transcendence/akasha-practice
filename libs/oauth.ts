@@ -131,8 +131,7 @@ function newAuthorizationError(
   }
 }
 
-interface TokenRequestBase {
-  [key: string]: string | undefined;
+interface TokenRequestBase extends Record<string, string | undefined> {
   grant_type: string;
 }
 
