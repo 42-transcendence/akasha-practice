@@ -340,8 +340,10 @@ export class OAuth {
     const headers = new URLSearchParams();
     const body = new URLSearchParams();
 
-    headers.set("content-type", "application/x-www-form-urlencoded");
-    headers.append("content-type", "charset=UTF-8");
+    headers.set(
+      "content-type",
+      "application/x-www-form-urlencoded;charset=UTF-8"
+    );
     headers.set("accept", "application/json");
 
     for (const key in param) {
