@@ -1,7 +1,7 @@
 // Reference: https://datatracker.ietf.org/doc/html/rfc4226
 // Reference: https://datatracker.ietf.org/doc/html/rfc6238
 
-import { HashAlgorithm, hmacSignature } from "./hash";
+import { HashAlgorithm, signatureHMAC } from "./hash";
 
 const DIGITS_POWER =
   //0   1    2     3      4       5        6         7          8
@@ -21,7 +21,7 @@ export async function generateOTP(
   }
 
   // compute hmac hash
-  const hash: Uint8Array = await hmacSignature(algorithm, secret, text);
+  const hash: Uint8Array = await signatureHMAC(algorithm, secret, text);
 
   // put selected bytes into result int
   const offset: number = hash[hash.length - 1] & 0xf;
@@ -37,15 +37,17 @@ export async function generateOTP(
   return otp.toString().padStart(codeDigits, "0");
 }
 
-export function totpMovingFactor(period: number): number {
-  const secondsElapsed: number = Date.now() / 1000;
-  return Math.floor(secondsElapsed / period);
-}
+export class TOTP {
+  static getMovingFactor(period: number): number {
+    const secondsElapsed: number = Date.now() / 1000;
+    return Math.floor(secondsElapsed / period);
+  }
 
-export function totpCreatedAt(period: number, movingFactor: number): number {
-  return new Date((movingFactor + 0) * period * 1000).getTime();
-}
+  static createdAt(period: number, movingFactor: number): number {
+    return new Date((movingFactor + 0) * period * 1000).getTime();
+  }
 
-export function totpExpiredAt(period: number, movingFactor: number): number {
-  return new Date((movingFactor + 1) * period * 1000).getTime();
+  static expiredAt(period: number, movingFactor: number): number {
+    return new Date((movingFactor + 1) * period * 1000).getTime();
+  }
 }

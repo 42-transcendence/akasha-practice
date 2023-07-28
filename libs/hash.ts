@@ -10,7 +10,7 @@ export async function digestMessage(
   return new Uint8Array(hash);
 }
 
-export async function hmacGenerateKey(
+export async function generateHMACKey(
   algorithm: HashAlgorithm,
   length?: number
 ): Promise<Uint8Array> {
@@ -30,7 +30,7 @@ export async function hmacGenerateKey(
   return new Uint8Array(extractedKey);
 }
 
-export async function hmacSignature(
+export async function signatureHMAC(
   algorithm: HashAlgorithm,
   key: Uint8Array,
   data: Uint8Array
