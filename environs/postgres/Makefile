@@ -1,4 +1,7 @@
 start:
+	docker compose up -d
+
+fore:
 	docker compose up
 
 stop:
