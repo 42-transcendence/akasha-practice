@@ -4,7 +4,7 @@ const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
 const padding = "=";
 const regex = /^[A-Z2-7]*=*$/;
 
-type Base32String = string & { _: never };
+type Base32String = string & { __base32__: never };
 
 export function encodeBase32(arr: Uint8Array): Base32String {
   const result = new Array<string>();

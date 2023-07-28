@@ -1,4 +1,4 @@
-type HexString = string & { _: never };
+type HexString = string & { __hex__: never };
 
 export function toHexString(arr: Uint8Array): HexString {
   const str = Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
