@@ -54,7 +54,7 @@ model Account {
   nickTag               Int               @default(0)
   avatarKey             String?           @db.VarChar(512)
   role                  Role              @default(USER)
-  record                Record            @relation(fields: [id], references: [accountId])
+  record                Record?
   // Status
   activeStatus          ActiveStatus      @default(OFFLINE)
   activeTimestamp       DateTime          @default(now())
@@ -80,17 +80,26 @@ model Account {
   currentGameDevice     Device?           @relation("CurrentGameDevice", fields: [currentGameDeviceId], references: [id])
   currentGameDeviceId   Int?              @unique
 
-  @@unique(fields: [idIssuer, idSubject])
-  @@index(fields: [nickName, nickTag])
+  @@unique([idIssuer, idSubject])
+  @@index([nickName, nickTag])
   @@map("accounts")
   @@schema("services")
 }
 
-model Session {
+model Authorization {
   id               String   @id @default(nanoid())
+  redirectURI      String
+  createdTimestamp DateTime @default(now())
+
+  @@map("authorizations")
+  @@schema("services")
+}
+
+model Session {
+  id               String   @id @default(cuid())
   account          Account  @relation(fields: [accountId], references: [id])
   accountId        Int
-  token            String   @unique @default(nanoid())
+  token            String   @unique @default(uuid())
   createdTimestamp DateTime @default(now())
   successor        Session? @relation("SessionHistory")
   predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
@@ -105,18 +114,20 @@ model Device {
   id               Int       @id @default(autoincrement())
   fingerprint      String    @unique @default(nanoid())
   createdTimestamp DateTime  @default(now())
+  updatedTimestamp DateTime  @updatedAt
   ipAddress        String
   userAgent        String
   accounts         Account[] @relation("AccountsDevices")
   // Game
   gameAccount      Account?  @relation("CurrentGameDevice")
 
+  @@index([updatedTimestamp])
   @@map("devices")
   @@schema("services")
 }
 
 model Record {
-  account        Account?
+  account        Account       @relation(fields: [accountId], references: [id])
   accountId      Int           @id
   achievements   Achievement[]
   skillRating    Int           @default(0)

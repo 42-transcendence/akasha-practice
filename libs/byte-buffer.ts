@@ -8,7 +8,7 @@ export class ByteBuffer {
   offset: number;
   endian: boolean;
 
-  constructor(buffer: ArrayBufferLike, endian?: boolean | undefined) {
+  constructor(buffer: ArrayBuffer, endian?: boolean | undefined) {
     this.accessor = new DataView(buffer);
     this.offset = 0;
     this.endian = endian ?? true;
