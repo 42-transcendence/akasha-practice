@@ -9,7 +9,7 @@ export async function createNewOTPKey(
   subject: string,
   digits: number = 6,
   period: number = 30,
-  counter: number | undefined
+  counter?: number | undefined
 ) {
   const key: Uint8Array = await generateHMACKey(algorithm);
   const uri = new URL("otpauth://");

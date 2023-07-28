@@ -54,6 +54,7 @@ export class TemporarilyUnavailableError extends OAuthDefinedError {}
 interface AuthorizationResponse {
   state: string;
   code: string;
+  redirectURI: string;
 }
 
 type AuthorizationError =
@@ -247,7 +248,7 @@ export class OAuth {
     private readonly clientSecret: string
   ) {}
 
-  makeAuthorizationCodeRequestURL(
+  beginAuthorizationCodeURL(
     redirectURI: string,
     scopes: string[],
     state?: string
@@ -263,9 +264,9 @@ export class OAuth {
     return authorizationUrl;
   }
 
-  parseAuthorizationCodeResponseURL(
+  endAuthorizationCodeURL(
     url: URL,
-    _isValidState: (state: string) => boolean
+    _getRedirectURI: (state: string) => string | undefined
   ): AuthorizationResponse {
     function _getSearchParamOnly(url: URL, key: string): string | undefined {
       const values: string[] = url.searchParams.getAll(key);
@@ -286,7 +287,8 @@ export class OAuth {
       throw new UndefinedResponseError();
     }
 
-    if (!_isValidState(state)) {
+    const redirectURI = _getRedirectURI(state);
+    if (!redirectURI) {
       throw new InvalidStateError();
     }
 
@@ -308,19 +310,19 @@ export class OAuth {
     }
 
     return {
-      state: state,
-      code: code,
+      state,
+      code,
+      redirectURI,
     };
   }
 
   makeAuthorizationCodeRequest(
-    authorizationCode: AuthorizationResponse,
-    redirectURI: string
+    authorizationCode: AuthorizationResponse
   ): AuthorizationCodeRequest {
     return {
       grant_type: "authorization_code",
       code: authorizationCode.code,
-      redirect_uri: redirectURI,
+      redirect_uri: authorizationCode.redirectURI,
       client_id: this.clientId,
       client_secret: this.clientSecret,
     };
