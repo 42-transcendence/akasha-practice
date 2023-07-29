@@ -1,20 +1,84 @@
 // Reference: https://datatracker.ietf.org/doc/html/rfc6749
 
-export class OAuthError extends Error {}
+export class OAuthError extends Error {
+  override get name() {
+    return "OAuthError";
+  }
 
-export class UnknownOAuthError extends OAuthError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class InvalidStateError extends UnknownOAuthError {}
+export class UnknownOAuthError extends OAuthError {
+  override get name() {
+    return "UnknownOAuthError";
+  }
 
-export class MultipleParameterError extends UnknownOAuthError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class UndefinedResponseError extends UnknownOAuthError {}
+export class InvalidStateError extends UnknownOAuthError {
+  override get name() {
+    return "InvalidStateError";
+  }
 
-export class UndefinedSuccessfulResponseError extends UnknownOAuthError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class UndefinedErrorResponseError extends UnknownOAuthError {}
+export class MultipleParameterError extends UnknownOAuthError {
+  override get name() {
+    return "MultipleParameterError";
+  }
 
-export class UndefinedHTTPStatusError extends UnknownOAuthError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UndefinedResponseError extends UnknownOAuthError {
+  override get name() {
+    return "UndefinedResponseError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UndefinedSuccessfulResponseError extends UnknownOAuthError {
+  override get name() {
+    return "UndefinedSuccessfulResponseError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UndefinedErrorResponseError extends UnknownOAuthError {
+  override get name() {
+    return "UndefinedErrorResponseError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UndefinedHTTPStatusError extends UnknownOAuthError {
+  override get name() {
+    return "UndefinedHTTPStatusError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
 interface OAuthErrorProps {
   error: string;
@@ -29,27 +93,115 @@ export class OAuthDefinedError extends OAuthError {
   ) {
     super(error_description);
   }
+
+  override get name() {
+    return "OAuthDefinedError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
 }
 
-export class InvalidRequestError extends OAuthDefinedError {}
+export class InvalidRequestError extends OAuthDefinedError {
+  override get name() {
+    return "InvalidRequestError";
+  }
 
-export class InvalidClientError extends OAuthDefinedError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class InvalidGrantError extends OAuthDefinedError {}
+export class InvalidClientError extends OAuthDefinedError {
+  override get name() {
+    return "InvalidClientError";
+  }
 
-export class InvalidScopeError extends OAuthDefinedError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class AccessDeniedError extends OAuthDefinedError {}
+export class InvalidGrantError extends OAuthDefinedError {
+  override get name() {
+    return "InvalidGrantError";
+  }
 
-export class UnauthorizedClientError extends OAuthDefinedError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class UnsupportedGrantTypeError extends OAuthDefinedError {}
+export class InvalidScopeError extends OAuthDefinedError {
+  override get name() {
+    return "InvalidScopeError";
+  }
 
-export class UnsupportedResponseTypeError extends OAuthDefinedError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
-export class ServerErrorError extends OAuthDefinedError {}
+export class AccessDeniedError extends OAuthDefinedError {
+  override get name() {
+    return "AccessDeniedError";
+  }
 
-export class TemporarilyUnavailableError extends OAuthDefinedError {}
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UnauthorizedClientError extends OAuthDefinedError {
+  override get name() {
+    return "UnauthorizedClientError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UnsupportedGrantTypeError extends OAuthDefinedError {
+  override get name() {
+    return "UnsupportedGrantTypeError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class UnsupportedResponseTypeError extends OAuthDefinedError {
+  override get name() {
+    return "UnsupportedResponseTypeError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class ServerErrorError extends OAuthDefinedError {
+  override get name() {
+    return "ServerErrorError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
+
+export class TemporarilyUnavailableError extends OAuthDefinedError {
+  override get name() {
+    return "TemporarilyUnavailableError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
 interface AuthorizationResponse {
   state: string;
@@ -264,10 +416,10 @@ export class OAuth {
     return authorizationUrl;
   }
 
-  endAuthorizationCodeURL(
+  async endAuthorizationCodeURL(
     url: URL,
-    _getRedirectURI: (state: string) => string | undefined
-  ): AuthorizationResponse {
+    _getRedirectURI: (state: string) => Promise<string | undefined>
+  ): Promise<AuthorizationResponse> {
     function _getSearchParamOnly(url: URL, key: string): string | undefined {
       const values: string[] = url.searchParams.getAll(key);
 
@@ -287,7 +439,7 @@ export class OAuth {
       throw new UndefinedResponseError();
     }
 
-    const redirectURI = _getRedirectURI(state);
+    const redirectURI = await _getRedirectURI(state);
     if (!redirectURI) {
       throw new InvalidStateError();
     }
