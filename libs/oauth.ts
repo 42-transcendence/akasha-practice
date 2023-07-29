@@ -204,7 +204,7 @@ export class TemporarilyUnavailableError extends OAuthDefinedError {
 }
 
 interface AuthorizationResponse {
-  state: string;
+  state: string | undefined;
   code: string;
   redirectURI: string;
 }
@@ -418,7 +418,7 @@ export class OAuth {
 
   async endAuthorizationCodeURL(
     url: URL,
-    _getRedirectURI: (state: string) => Promise<string | undefined>
+    _getRedirectURI: (state: string | undefined) => Promise<string | undefined>
   ): Promise<AuthorizationResponse> {
     function _getSearchParamOnly(url: URL, key: string): string | undefined {
       const values: string[] = url.searchParams.getAll(key);
@@ -435,10 +435,6 @@ export class OAuth {
     }
 
     const state = _getSearchParamOnly(url, "state");
-    if (!state) {
-      throw new UndefinedResponseError();
-    }
-
     const redirectURI = await _getRedirectURI(state);
     if (!redirectURI) {
       throw new InvalidStateError();
