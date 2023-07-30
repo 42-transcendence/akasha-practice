@@ -82,14 +82,14 @@ export class UndefinedHTTPStatusError extends UnknownOAuthError {
 
 export type OAuthErrorProps = {
   error: string;
-  error_description?: string;
-  error_uri?: string;
+  error_description?: string | undefined;
+  error_uri?: string | undefined;
 };
 
 export class OAuthDefinedError extends OAuthError {
   constructor(
-    readonly error_description?: string,
-    readonly error_uri?: string
+    readonly error_description?: string | undefined,
+    readonly error_uri?: string | undefined
   ) {
     super(error_description);
   }
@@ -299,7 +299,7 @@ export type AuthorizationCodeRequest = TokenRequestBase & {
 export type RefreshTokenRequest = TokenRequestBase & {
   grant_type: "refresh_token";
   refresh_token: string;
-  scope?: string;
+  scope?: string | undefined;
 };
 
 export type TokenRequest = AuthorizationCodeRequest | RefreshTokenRequest;
@@ -307,9 +307,9 @@ export type TokenRequest = AuthorizationCodeRequest | RefreshTokenRequest;
 export type TokenSuccessfulResponse = {
   access_token: string;
   token_type: string;
-  expires_in?: string;
-  refresh_token?: string;
-  scope?: string;
+  expires_in?: string | undefined;
+  refresh_token?: string | undefined;
+  scope?: string | undefined;
 };
 
 export function isTokenSuccessfulResponse(
@@ -403,7 +403,7 @@ export class OAuth {
   beginAuthorizationCodeURL(
     redirectURI: string,
     scopes: string[],
-    state?: string
+    state?: string | undefined
   ): URL {
     const authorizationUrl = new URL(this.authorizationEndpoint);
     authorizationUrl.searchParams.set("response_type", "code");
