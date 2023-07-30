@@ -37,17 +37,17 @@ export async function generateOTP(
   return otp.toString().padStart(codeDigits, "0");
 }
 
-export class TOTP {
-  static getMovingFactor(period: number): number {
+export namespace TOTP {
+  export function getMovingFactor(period: number): number {
     const secondsElapsed: number = Date.now() / 1000;
     return Math.floor(secondsElapsed / period);
   }
 
-  static createdAt(period: number, movingFactor: number): number {
+  export function createdAt(period: number, movingFactor: number): number {
     return new Date((movingFactor + 0) * period * 1000).getTime();
   }
 
-  static expiredAt(period: number, movingFactor: number): number {
+  export function expiredAt(period: number, movingFactor: number): number {
     return new Date((movingFactor + 1) * period * 1000).getTime();
   }
 }
