@@ -1,4 +1,12 @@
-export class ByteBufferUnderflowError extends Error {}
+export class ByteBufferUnderflowError extends Error {
+  override get name() {
+    return "ByteBufferUnderflowError";
+  }
+
+  get [Symbol.toStringTag]() {
+    return this.name;
+  }
+}
 
 export class ByteBuffer {
   private static textEncoder: TextEncoder = new TextEncoder();

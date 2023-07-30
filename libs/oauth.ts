@@ -80,11 +80,11 @@ export class UndefinedHTTPStatusError extends UnknownOAuthError {
   }
 }
 
-interface OAuthErrorProps {
+export type OAuthErrorProps = {
   error: string;
   error_description?: string;
   error_uri?: string;
-}
+};
 
 export class OAuthDefinedError extends OAuthError {
   constructor(
@@ -203,11 +203,11 @@ export class TemporarilyUnavailableError extends OAuthDefinedError {
   }
 }
 
-interface AuthorizationResponse {
+export type AuthorizationResponse = {
   state: string | undefined;
   code: string;
   redirectURI: string;
-}
+};
 
 type AuthorizationError =
   | "invalid_request" // The request is missing a required parameter, includes an invalid parameter value, includes a parameter more than once, or is otherwise malformed.
@@ -218,7 +218,7 @@ type AuthorizationError =
   | "server_error" // The authorization server encountered an unexpected condition that prevented it from fulfilling the request. (This error code is needed because a 500 Internal Server Error HTTP status code cannot be returned to the client via an HTTP redirect.)
   | "temporarily_unavailable"; // The authorization server is currently unable to handle the request due to a temporary overloading or maintenance of the server.  (This error code is needed because a 503 Service Unavailable HTTP status code cannot be returned to the client via an HTTP redirect.)
 
-function isAuthorizationErrorResponseError(
+export function isAuthorizationErrorResponseError(
   value: string
 ): value is AuthorizationError {
   return (
@@ -232,9 +232,9 @@ function isAuthorizationErrorResponseError(
   );
 }
 
-interface AuthorizationErrorProps extends OAuthErrorProps {
+export type AuthorizationErrorProps = OAuthErrorProps & {
   error: AuthorizationError;
-}
+};
 
 function newAuthorizationError(
   errorResponse: AuthorizationErrorProps
@@ -284,35 +284,35 @@ function newAuthorizationError(
   }
 }
 
-interface TokenRequestBase extends Record<string, string | undefined> {
+export type TokenRequestBase = Record<string, string | undefined> & {
   grant_type: string;
-}
+};
 
-interface AuthorizationCodeRequest extends TokenRequestBase {
+export type AuthorizationCodeRequest = TokenRequestBase & {
   grant_type: "authorization_code";
   code: string;
   redirect_uri: string;
   client_id: string;
   client_secret: string;
-}
+};
 
-interface RefreshTokenRequest extends TokenRequestBase {
+export type RefreshTokenRequest = TokenRequestBase & {
   grant_type: "refresh_token";
   refresh_token: string;
   scope?: string;
-}
+};
 
-type TokenRequest = AuthorizationCodeRequest | RefreshTokenRequest;
+export type TokenRequest = AuthorizationCodeRequest | RefreshTokenRequest;
 
-interface TokenSuccessfulResponse {
+export type TokenSuccessfulResponse = {
   access_token: string;
   token_type: string;
   expires_in?: string;
   refresh_token?: string;
   scope?: string;
-}
+};
 
-function isTokenSuccessfulResponse(
+export function isTokenSuccessfulResponse(
   value: any
 ): value is TokenSuccessfulResponse {
   return (
@@ -333,11 +333,11 @@ type TokenError =
   | "unsupported_grant_type" // The authorization grant type is not supported by the authorization server.
   | "invalid_scope"; // The requested scope is invalid, unknown, malformed, or exceeds the scope granted by the resource owner.
 
-interface TokenErrorProps extends OAuthErrorProps {
+export type TokenErrorProps = OAuthErrorProps & {
   error: TokenError;
-}
+};
 
-function isTokenErrorResponse(value: any): value is TokenErrorProps {
+export function isTokenErrorResponse(value: any): value is TokenErrorProps {
   return (
     value &&
     typeof value === "object" &&
