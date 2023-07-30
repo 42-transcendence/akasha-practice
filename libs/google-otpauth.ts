@@ -3,15 +3,28 @@
 import { HashAlgorithm, generateHMACKey } from "./hash";
 import { encodeBase32 } from "./base32";
 
+type OTPAuthAlgorithm = "SHA1" | "SHA256" | "SHA512";
+
+function toHashAlgorithm(algorithm: OTPAuthAlgorithm): HashAlgorithm {
+  switch (algorithm) {
+    case "SHA1":
+      return "SHA-1";
+    case "SHA256":
+      return "SHA-256";
+    case "SHA512":
+      return "SHA-512";
+  }
+}
+
 export async function createNewOTPKey(
-  algorithm: HashAlgorithm,
+  algorithm: OTPAuthAlgorithm,
   issuer: string,
   subject: string,
   digits: number = 6,
   period: number = 30,
   counter?: number | undefined
 ) {
-  const key: Uint8Array = await generateHMACKey(algorithm);
+  const key: Uint8Array = await generateHMACKey(toHashAlgorithm(algorithm));
   const uri = new URL("otpauth://");
   uri.hostname = !counter ? "totp" : "hotp";
   uri.pathname = `${issuer}:${subject}`;
