@@ -13,6 +13,9 @@ function toHashAlgorithm(algorithm: OTPAuthAlgorithm): HashAlgorithm {
       return "SHA-256";
     case "SHA512":
       return "SHA-512";
+    default:
+      const _exhaustiveCheck: never = algorithm;
+      return _exhaustiveCheck;
   }
 }
 

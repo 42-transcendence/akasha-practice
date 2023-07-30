@@ -236,48 +236,48 @@ export type AuthorizationErrorProps = OAuthErrorProps & {
   error: AuthorizationError;
 };
 
-function newAuthorizationError(
+function throwAuthorizationError(
   errorResponse: AuthorizationErrorProps
-): OAuthDefinedError {
+): never {
   switch (errorResponse.error) {
     case "invalid_request":
-      return new InvalidRequestError(
+      throw new InvalidRequestError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "unauthorized_client":
-      return new UnauthorizedClientError(
+      throw new UnauthorizedClientError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "access_denied":
-      return new AccessDeniedError(
+      throw new AccessDeniedError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "unsupported_response_type":
-      return new UnsupportedResponseTypeError(
+      throw new UnsupportedResponseTypeError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "invalid_scope":
-      return new InvalidScopeError(
+      throw new InvalidScopeError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "server_error":
-      return new ServerErrorError(
+      throw new ServerErrorError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "temporarily_unavailable":
-      return new TemporarilyUnavailableError(
+      throw new TemporarilyUnavailableError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
@@ -352,40 +352,40 @@ export function isTokenErrorResponse(value: any): value is TokenErrorProps {
   );
 }
 
-function newTokenError(errorResponse: TokenErrorProps): OAuthDefinedError {
+function throwTokenError(errorResponse: TokenErrorProps): never {
   switch (errorResponse.error) {
     case "invalid_request":
-      return new InvalidRequestError(
+      throw new InvalidRequestError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "invalid_client":
-      return new InvalidClientError(
+      throw new InvalidClientError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "invalid_grant":
-      return new InvalidGrantError(
+      throw new InvalidGrantError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "unauthorized_client":
-      return new UnauthorizedClientError(
+      throw new UnauthorizedClientError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "unsupported_grant_type":
-      return new UnsupportedGrantTypeError(
+      throw new UnsupportedGrantTypeError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
 
     case "invalid_scope":
-      return new InvalidScopeError(
+      throw new InvalidScopeError(
         errorResponse.error_description,
         errorResponse.error_uri
       );
@@ -449,7 +449,7 @@ export class OAuth {
       const error_description = _getSearchParamOnly(url, "error_description");
       const error_uri = _getSearchParamOnly(url, "error_uri");
 
-      throw newAuthorizationError({ error, error_description, error_uri });
+      throwAuthorizationError({ error, error_description, error_uri });
     }
 
     const code = _getSearchParamOnly(url, "code");
@@ -522,7 +522,7 @@ export class OAuth {
         throw new UndefinedErrorResponseError();
       }
 
-      throw newTokenError(errorResponse);
+      throwTokenError(errorResponse);
     } else if (response.status === 401) {
       throw new InvalidClientError();
     } else {

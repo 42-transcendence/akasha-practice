@@ -8,9 +8,16 @@ export class ByteBufferUnderflowError extends Error {
   }
 }
 
+export type ReadonlyUint8Array = Omit<
+  Uint8Array,
+  "copyWithin" | "fill" | "reverse" | "set" | "sort"
+> & {
+  readonly [index: number]: number;
+};
+
 export class ByteBuffer {
-  private static textEncoder: TextEncoder = new TextEncoder();
-  private static textDecoder: TextDecoder = new TextDecoder();
+  private static readonly textEncoder: TextEncoder = new TextEncoder();
+  private static readonly textDecoder: TextDecoder = new TextDecoder();
 
   accessor: DataView;
   offset: number;
@@ -29,13 +36,13 @@ export class ByteBuffer {
     return new ByteBuffer(new SharedArrayBuffer(length), endian);
   }
 
-  seek(offset: number) {
+  seek(offset: number): void {
     this.assertUnderflow(offset);
     this.offset = offset;
   }
 
   // BEGIN Read
-  read(length: number): Uint8Array {
+  read(length: number): ReadonlyUint8Array {
     this.assertUnderflow(this.offset + length);
     const value = new Uint8Array(
       this.accessor.buffer,
@@ -118,87 +125,99 @@ export class ByteBuffer {
 
   readString(): string {
     const length: number = this.read2Unsigned();
-    const data: Uint8Array = this.read(length);
+    const data: ReadonlyUint8Array = this.read(length);
     const value = ByteBuffer.textDecoder.decode(data);
     return value;
   }
   // END Read
 
   // BEGIN Write
-  write(value: Uint8Array, length: number) {
+  write(value: Uint8Array, length: number): this {
     ByteBuffer.copy(
       this.accessor.buffer,
       value,
       this.accessor.byteOffset + this.offset
     );
     this.offset += length;
+    return this;
   }
 
-  write1(value: number) {
+  write1(value: number): this {
     this.reserve(this.offset + 1);
     this.accessor.setUint8(this.offset, value);
     this.offset += 1;
+    return this;
   }
 
-  write1Signed(value: number) {
+  write1Signed(value: number): this {
     this.reserve(this.offset + 1);
     this.accessor.setInt8(this.offset, value);
     this.offset += 1;
+    return this;
   }
 
-  write2(value: number) {
+  write2(value: number): this {
     this.reserve(this.offset + 2);
     this.accessor.setInt16(this.offset, value, this.endian);
     this.offset += 2;
+    return this;
   }
 
-  write2Unsigned(value: number) {
+  write2Unsigned(value: number): this {
     this.reserve(this.offset + 2);
     this.accessor.setUint16(this.offset, value, this.endian);
     this.offset += 2;
+    return this;
   }
 
-  write4(value: number) {
+  write4(value: number): this {
     this.reserve(this.offset + 4);
     this.accessor.setInt32(this.offset, value, this.endian);
     this.offset += 4;
+    return this;
   }
 
-  write4Unsigned(value: number) {
+  write4Unsigned(value: number): this {
     this.reserve(this.offset + 4);
     this.accessor.setUint32(this.offset, value, this.endian);
     this.offset += 4;
+    return this;
   }
 
-  write8(value: bigint) {
+  write8(value: bigint): this {
     this.reserve(this.offset + 8);
     this.accessor.setBigInt64(this.offset, value, this.endian);
     this.offset += 8;
+    return this;
   }
 
-  write8Unsigned(value: bigint) {
+  write8Unsigned(value: bigint): this {
     this.reserve(this.offset + 8);
     this.accessor.setBigUint64(this.offset, value, this.endian);
     this.offset += 8;
+    return this;
   }
 
-  write4Float(value: number) {
+  write4Float(value: number): this {
     this.reserve(this.offset + 4);
     this.accessor.setFloat32(this.offset, value, this.endian);
     this.offset += 4;
+    return this;
   }
 
-  write8Float(value: number) {
+  write8Float(value: number): this {
     this.reserve(this.offset + 8);
     this.accessor.setFloat64(this.offset, value, this.endian);
     this.offset += 8;
+    return this;
   }
 
-  writeString(value: string) {
+  writeString(value: string): this {
     const data: Uint8Array = ByteBuffer.textEncoder.encode(value);
     const length: number = data.length;
     this.write2Unsigned(length);
     this.write(data, length);
+    return this;
   }
   // END Write
 
@@ -206,7 +225,7 @@ export class ByteBuffer {
     dst: ArrayBuffer,
     src: ArrayLike<number>,
     offset?: number | undefined
-  ) {
+  ): void {
     new Uint8Array(dst).set(src, offset);
   }
 
@@ -218,7 +237,7 @@ export class ByteBuffer {
     );
   }
 
-  shirink() {
+  shirink(): void {
     this.accessor = new DataView(
       this.accessor.buffer,
       this.accessor.byteOffset,
@@ -226,13 +245,13 @@ export class ByteBuffer {
     );
   }
 
-  private assertUnderflow(length: number) {
+  private assertUnderflow(length: number): void {
     if (this.accessor.byteLength < length) {
       throw new ByteBufferUnderflowError();
     }
   }
 
-  private reserve(length: number) {
+  private reserve(length: number): void {
     if (this.accessor.buffer.byteLength < length) {
       const newByteLength: number = Math.max(
         this.accessor.buffer.byteLength << 1,
