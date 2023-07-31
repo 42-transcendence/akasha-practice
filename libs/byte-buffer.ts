@@ -38,11 +38,11 @@ export class ByteBuffer {
     return new ByteBuffer(accessor, endian);
   }
 
+  static from(buffer: ArrayBuffer, endian?: boolean | undefined): ByteBuffer;
   static from(
     buffer: SharedArrayBuffer,
     endian?: boolean | undefined
   ): ByteBuffer;
-  static from(buffer: ArrayBuffer, endian?: boolean | undefined): ByteBuffer;
   static from(array: Uint8Array, endian?: boolean | undefined): ByteBuffer;
 
   static from(
