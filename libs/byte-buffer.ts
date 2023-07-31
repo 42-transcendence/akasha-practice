@@ -23,8 +23,8 @@ export class ByteBuffer {
   offset: number;
   endian: boolean;
 
-  constructor(buffer: ArrayBuffer, endian?: boolean | undefined) {
-    this.accessor = new DataView(buffer);
+  private constructor(accessor: DataView, endian?: boolean | undefined) {
+    this.accessor = accessor;
     this.offset = 0;
     this.endian = endian ?? true;
   }
@@ -33,7 +33,31 @@ export class ByteBuffer {
     length: number = 128,
     endian?: boolean | undefined
   ): ByteBuffer {
-    return new ByteBuffer(new SharedArrayBuffer(length), endian);
+    const buffer: ArrayBuffer = new SharedArrayBuffer(length);
+    const accessor = new DataView(buffer);
+    return new ByteBuffer(accessor, endian);
+  }
+
+  static from(
+    buffer: SharedArrayBuffer,
+    endian?: boolean | undefined
+  ): ByteBuffer;
+  static from(buffer: ArrayBuffer, endian?: boolean | undefined): ByteBuffer;
+  static from(array: Uint8Array, endian?: boolean | undefined): ByteBuffer;
+
+  static from(
+    arrayOrBuffer: ArrayBuffer | SharedArrayBuffer | Uint8Array,
+    endian?: boolean | undefined
+  ): ByteBuffer {
+    const accessor =
+      "buffer" in arrayOrBuffer
+        ? new DataView(
+            arrayOrBuffer.buffer,
+            arrayOrBuffer.byteOffset,
+            arrayOrBuffer.byteLength
+          )
+        : new DataView(arrayOrBuffer);
+    return new ByteBuffer(accessor, endian);
   }
 
   seek(offset: number): void {
@@ -257,7 +281,10 @@ export class ByteBuffer {
         this.accessor.buffer.byteLength << 1,
         length
       );
-      const newBuffer = new SharedArrayBuffer(newByteLength);
+      const newBuffer =
+        this.accessor.buffer instanceof SharedArrayBuffer
+          ? new SharedArrayBuffer(newByteLength)
+          : new ArrayBuffer(newByteLength);
       const newAccessor = new DataView(newBuffer);
       ByteBuffer.copy(newBuffer, this.toArray());
       this.accessor = newAccessor;
