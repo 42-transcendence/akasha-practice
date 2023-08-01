@@ -9,11 +9,9 @@ export class ByteBufferUnderflowError extends Error {
 }
 
 export type ReadonlyUint8Array = Omit<
-  Uint8Array,
+  Readonly<Uint8Array>,
   "copyWithin" | "fill" | "reverse" | "set" | "sort"
-> & {
-  readonly [index: number]: number;
-};
+>;
 
 export class ByteBuffer {
   private static readonly textEncoder: TextEncoder = new TextEncoder();
