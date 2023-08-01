@@ -2,7 +2,7 @@ import * as jose from "jose";
 
 export type HashAlgorithm = "HS256" | "HS384" | "HS512";
 
-type JWTOptions = {
+export type JWTOptions = {
   issuer?: string | undefined;
   subject?: string | undefined;
   audience?: string | undefined;
@@ -12,12 +12,7 @@ type JWTPayload = Record<string, unknown>;
 
 type JWTSuccessful = { success: true; payload: JWTPayload };
 
-enum JWTError {
-  INVALID,
-  EXPIRED,
-}
-
-type JWTFailed = { success: false; error: JWTError };
+type JWTFailed = { success: false; expired: boolean };
 
 type JWTResult = JWTSuccessful | JWTFailed;
 
@@ -65,9 +60,6 @@ export async function jwtVerifyHMAC(
     });
     return { success: true, payload };
   } catch (e) {
-    if (e instanceof jose.errors.JWTExpired) {
-      return { success: false, error: JWTError.EXPIRED };
-    }
-    return { success: false, error: JWTError.INVALID };
+    return { success: false, expired: e instanceof jose.errors.JWTExpired };
   }
 }
