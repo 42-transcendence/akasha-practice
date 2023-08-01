@@ -404,55 +404,62 @@ export class OAuth {
     redirectURI: string,
     scopes: string[],
     state?: string | undefined
-  ): URL {
-    const authorizationUrl = new URL(this.authorizationEndpoint);
-    authorizationUrl.searchParams.set("response_type", "code");
-    authorizationUrl.searchParams.set("client_id", this.clientId);
-    authorizationUrl.searchParams.set("redirect_uri", redirectURI);
-    authorizationUrl.searchParams.set("scope", scopes.join(" "));
+  ): string {
+    const authorizationURL = new URL(this.authorizationEndpoint);
+    authorizationURL.searchParams.set("response_type", "code");
+    authorizationURL.searchParams.set("client_id", this.clientId);
+    authorizationURL.searchParams.set("redirect_uri", redirectURI);
+    authorizationURL.searchParams.set("scope", scopes.join(" "));
     if (state) {
-      authorizationUrl.searchParams.set("state", state);
+      authorizationURL.searchParams.set("state", state);
     }
-    return authorizationUrl;
+    return authorizationURL.toString();
   }
 
   async endAuthorizationCodeURL(
-    url: URL,
+    query: Record<keyof any, unknown>,
     _getRedirectURI: (state: string | undefined) => Promise<string | undefined>
   ): Promise<AuthorizationResponse> {
-    function _getSearchParamOnly(url: URL, key: string): string | undefined {
-      const values: string[] = url.searchParams.getAll(key);
-
-      if (values.length === 0) {
-        return undefined;
+    function _getQueryParamOnly(
+      query: Record<keyof any, unknown>,
+      key: keyof any
+    ): string | undefined {
+      const value: unknown = query[key];
+      switch (typeof value) {
+        case "boolean":
+        case "number":
+        case "bigint":
+        case "string":
+        case "symbol":
+          return value.toString();
+        case "object":
+        case "function":
+          throw new MultipleParameterError();
+        case "undefined":
+        default:
+          return undefined;
       }
-
-      if (values.length > 1) {
-        throw new MultipleParameterError();
-      }
-
-      return values[0];
     }
 
-    const state = _getSearchParamOnly(url, "state");
+    const state = _getQueryParamOnly(query, "state");
     const redirectURI = await _getRedirectURI(state);
     if (!redirectURI) {
       throw new InvalidStateError();
     }
 
-    const error = _getSearchParamOnly(url, "error");
+    const error = _getQueryParamOnly(query, "error");
     if (error) {
       if (!isAuthorizationErrorResponseError(error)) {
         throw new UndefinedErrorResponseError();
       }
 
-      const error_description = _getSearchParamOnly(url, "error_description");
-      const error_uri = _getSearchParamOnly(url, "error_uri");
+      const error_description = _getQueryParamOnly(query, "error_description");
+      const error_uri = _getQueryParamOnly(query, "error_uri");
 
       throwAuthorizationError({ error, error_description, error_uri });
     }
 
-    const code = _getSearchParamOnly(url, "code");
+    const code = _getQueryParamOnly(query, "code");
     if (!code) {
       throw new UndefinedSuccessfulResponseError();
     }
