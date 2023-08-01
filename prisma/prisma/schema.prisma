@@ -9,9 +9,23 @@ generator client {
   previewFeatures = ["postgresqlExtensions", "multiSchema"]
 }
 
+generator nestjsDto {
+  provider                        = "prisma-generator-nestjs-dto"
+  output                          = "../src/generated/model"
+  outputToNestJsResourceStructure = "false"
+  exportRelationModifierClasses   = "true"
+  reExport                        = "true"
+  createDtoPrefix                 = "Create"
+  updateDtoPrefix                 = "Update"
+  dtoSuffix                       = "Model"
+  entityPrefix                    = ""
+  entitySuffix                    = "Entity"
+  fileNamingStyle                 = "kebab"
+}
+
 enum Role {
   USER
-  OPERATOR
+  ADMINISTRATOR
 
   @@map("role")
   @@schema("services")
