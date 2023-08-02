@@ -445,7 +445,7 @@ export class OAuth {
     return authorizationURL.toString();
   }
 
-  endAuthorizationCodeURL(
+  static endAuthorizationCodeURL(
     query: string[][] | Record<string, string> | string | URLSearchParams
   ): AuthorizationResponse {
     const params = new URLSearchParams(query);
