@@ -203,11 +203,33 @@ export class TemporarilyUnavailableError extends OAuthDefinedError {
   }
 }
 
-export type AuthorizationResponse = {
-  state: string | undefined;
-  code: string;
-  redirectURI: string;
+type AuthorizationResponseBase = {
+  state?: string | undefined;
 };
+
+function isAuthorizationResponseBase(
+  value: unknown
+): value is AuthorizationResponseBase {
+  return (
+    value !== null &&
+    typeof value === "object" &&
+    (!("state" in value) || typeof value.state === "string")
+  );
+}
+
+export type AuthorizationSuccessfulResponse = AuthorizationResponseBase & {
+  code: string;
+};
+
+export function isAuthorizationSuccessfulResponse(
+  value: unknown
+): value is AuthorizationSuccessfulResponse {
+  return (
+    isAuthorizationResponseBase(value) &&
+    "code" in value &&
+    typeof value.code === "string"
+  );
+}
 
 type AuthorizationError =
   | "invalid_request" // The request is missing a required parameter, includes an invalid parameter value, includes a parameter more than once, or is otherwise malformed.
@@ -235,6 +257,13 @@ export function isAuthorizationErrorResponseError(
 export type AuthorizationErrorProps = OAuthErrorProps & {
   error: AuthorizationError;
 };
+
+export type AuthorizationErrorResponse = AuthorizationResponseBase &
+  AuthorizationErrorProps;
+
+export type AuthorizationResponse =
+  | AuthorizationSuccessfulResponse
+  | AuthorizationErrorResponse;
 
 function throwAuthorizationError(
   errorResponse: AuthorizationErrorProps
@@ -313,10 +342,10 @@ export type TokenSuccessfulResponse = {
 };
 
 export function isTokenSuccessfulResponse(
-  value: any
+  value: unknown
 ): value is TokenSuccessfulResponse {
   return (
-    value &&
+    value !== null &&
     typeof value === "object" &&
     "access_token" in value &&
     typeof value.access_token === "string" &&
@@ -337,9 +366,9 @@ export type TokenErrorProps = OAuthErrorProps & {
   error: TokenError;
 };
 
-export function isTokenErrorResponse(value: any): value is TokenErrorProps {
+export function isTokenErrorResponse(value: unknown): value is TokenErrorProps {
   return (
-    value &&
+    value !== null &&
     typeof value === "object" &&
     "error" in value &&
     typeof value.error === "string" &&
@@ -416,68 +445,55 @@ export class OAuth {
     return authorizationURL.toString();
   }
 
-  async endAuthorizationCodeURL(
-    query: Record<keyof any, unknown>,
-    _getRedirectURI: (state: string | undefined) => Promise<string | undefined>
-  ): Promise<AuthorizationResponse> {
-    function _getQueryParamOnly(
-      query: Record<keyof any, unknown>,
-      key: keyof any
-    ): string | undefined {
-      const value: unknown = query[key];
-      switch (typeof value) {
-        case "boolean":
-        case "number":
-        case "bigint":
-        case "string":
-        case "symbol":
-          return value.toString();
-        case "object":
-        case "function":
-          throw new MultipleParameterError();
-        case "undefined":
-        default:
-          return undefined;
+  endAuthorizationCodeURL(
+    query: string[][] | Record<string, string> | string | URLSearchParams
+  ): AuthorizationResponse {
+    const params = new URLSearchParams(query);
+    function _getParamOnly(key: string): string | undefined {
+      const values = params.getAll(key);
+      if (values.length === 0) {
+        return undefined;
       }
+      if (values.length > 1) {
+        throw new MultipleParameterError();
+      }
+      return values[0];
     }
 
-    const state = _getQueryParamOnly(query, "state");
-    const redirectURI = await _getRedirectURI(state);
-    if (!redirectURI) {
-      throw new InvalidStateError();
-    }
+    const state = _getParamOnly("state");
 
-    const error = _getQueryParamOnly(query, "error");
+    const error = _getParamOnly("error");
     if (error) {
       if (!isAuthorizationErrorResponseError(error)) {
         throw new UndefinedErrorResponseError();
       }
 
-      const error_description = _getQueryParamOnly(query, "error_description");
-      const error_uri = _getQueryParamOnly(query, "error_uri");
+      const error_description = _getParamOnly("error_description");
+      const error_uri = _getParamOnly("error_uri");
 
-      throwAuthorizationError({ error, error_description, error_uri });
+      return { state, error, error_description, error_uri };
     }
 
-    const code = _getQueryParamOnly(query, "code");
+    const code = _getParamOnly("code");
     if (!code) {
       throw new UndefinedSuccessfulResponseError();
     }
 
-    return {
-      state,
-      code,
-      redirectURI,
-    };
+    return { state, code };
   }
 
   makeAuthorizationCodeRequest(
-    authorizationCode: AuthorizationResponse
+    authorizationCode: AuthorizationResponse,
+    redirectURI: string
   ): AuthorizationCodeRequest {
+    if (!isAuthorizationSuccessfulResponse(authorizationCode)) {
+      throwAuthorizationError(authorizationCode);
+    }
+
     return {
       grant_type: "authorization_code",
       code: authorizationCode.code,
-      redirect_uri: authorizationCode.redirectURI,
+      redirect_uri: redirectURI,
       client_id: this.clientId,
       client_secret: this.clientSecret,
     };
