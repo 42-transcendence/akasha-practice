@@ -55,9 +55,10 @@ enum ActiveStatus {
 
 model Account {
   id                    Int               @id @default(autoincrement())
+  uuid                  String            @unique @default(uuid()) @db.Uuid
   // Authentication
-  idIssuer              Int
-  idSubject             String            @db.VarChar(256)
+  authIssuer            Int
+  authSubject           String            @db.VarChar(256)
   otpSecret             String?           @db.VarChar(512)
   // Register
   createdTimestamp      DateTime          @default(now())
@@ -94,7 +95,7 @@ model Account {
   currentGameDevice     Device?           @relation("CurrentGameDevice", fields: [currentGameDeviceId], references: [id])
   currentGameDeviceId   Int?              @unique
 
-  @@unique([idIssuer, idSubject])
+  @@unique([authIssuer, authSubject])
   @@index([nickName, nickTag])
   @@map("accounts")
   @@schema("services")
@@ -102,6 +103,7 @@ model Account {
 
 model Authorization {
   id               String   @id @default(nanoid())
+  endpointKey      String
   redirectURI      String
   createdTimestamp DateTime @default(now())
 
@@ -110,14 +112,14 @@ model Authorization {
 }
 
 model Session {
-  id               String   @id @default(cuid())
+  id               Int      @id @default(autoincrement())
   account          Account  @relation(fields: [accountId], references: [id])
   accountId        Int
-  token            String   @unique @default(uuid())
+  token            String   @unique @default(nanoid(128))
   createdTimestamp DateTime @default(now())
   successor        Session? @relation("SessionHistory")
   predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
-  predecessorId    String?  @unique
+  predecessorId    Int?     @unique
   isValid          Boolean  @default(true)
 
   @@map("sessions")
@@ -157,11 +159,12 @@ model Record {
 }
 
 model Achievement {
-  record             Record?  @relation(fields: [accountId], references: [accountId])
-  accountId          Int      @unique
+  record             Record   @relation(fields: [accountId], references: [accountId])
+  accountId          Int
   achievementId      Int
   completedTimestamp DateTime @default(now())
 
+  @@id([accountId, achievementId])
   @@map("achievements")
   @@schema("services")
 }
@@ -208,6 +211,7 @@ model Ban {
 
 model Chat {
   id        Int           @id @default(autoincrement())
+  uuid      String        @unique @default(uuid()) @db.Uuid
   title     String
   modeFlags Int
   password  String
@@ -263,6 +267,8 @@ model ChatBan {
 
 model Game {
   id          BigInt       @id @default(autoincrement())
+  uuid        String       @unique @default(uuid()) @db.Uuid
+  code        String       @unique @default(nanoid(2))
   title       String
   modeFlags   Int
   password    String
@@ -301,7 +307,8 @@ model GameQueue {
 }
 
 model GameHistory {
-  id               BigInt    @id @default(autoincrement())
+  id               BigInt    @id
+  uuid             String    @unique @db.Uuid
   modeFlags        Int
   battlefield      Int
   timestamp        DateTime
