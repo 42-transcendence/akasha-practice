@@ -13,6 +13,9 @@ export type ReadonlyUint8Array = Omit<
   "copyWithin" | "fill" | "reverse" | "set" | "sort"
 >;
 
+const isDefined_SharedArrayBuffer_: boolean =
+  typeof SharedArrayBuffer === "function";
+
 export class ByteBuffer {
   private static readonly textEncoder: TextEncoder = new TextEncoder();
   private static readonly textDecoder: TextDecoder = new TextDecoder();
@@ -31,9 +34,21 @@ export class ByteBuffer {
     length: number = 128,
     endian?: boolean | undefined
   ): ByteBuffer {
-    const buffer: ArrayBuffer = new SharedArrayBuffer(length);
+    const buffer: ArrayBuffer = isDefined_SharedArrayBuffer_
+      ? new SharedArrayBuffer(length)
+      : new ArrayBuffer(length);
     const accessor = new DataView(buffer);
     return new ByteBuffer(accessor, endian);
+  }
+
+  static createWithOpcode(
+    opcode: number,
+    length?: number | undefined,
+    endian?: boolean | undefined
+  ): ByteBuffer {
+    const result = ByteBuffer.create(length, endian);
+    result.writeOpcode(opcode);
+    return result;
   }
 
   static from(buffer: ArrayBuffer, endian?: boolean | undefined): ByteBuffer;
@@ -145,8 +160,16 @@ export class ByteBuffer {
     return value;
   }
 
+  readOpcode(): number {
+    return this.read2Unsigned();
+  }
+
+  readLength(): number {
+    return this.read2Unsigned();
+  }
+
   readString(): string {
-    const length: number = this.read2Unsigned();
+    const length: number = this.readLength();
     const data: ReadonlyUint8Array = this.read(length);
     const value = ByteBuffer.textDecoder.decode(data);
     return value;
@@ -155,6 +178,7 @@ export class ByteBuffer {
 
   // BEGIN Write
   write(value: Uint8Array, length: number): this {
+    this.reserve(this.offset + length);
     ByteBuffer.copy(
       this.accessor.buffer,
       value,
@@ -234,10 +258,18 @@ export class ByteBuffer {
     return this;
   }
 
+  writeOpcode(value: number): this {
+    return this.write2Unsigned(value);
+  }
+
+  writeLength(value: number): this {
+    return this.write2Unsigned(value);
+  }
+
   writeString(value: string): this {
     const data: Uint8Array = ByteBuffer.textEncoder.encode(value);
     const length: number = data.length;
-    this.write2Unsigned(length);
+    this.writeLength(length);
     this.write(data, length);
     return this;
   }
@@ -280,6 +312,7 @@ export class ByteBuffer {
         length
       );
       const newBuffer =
+        isDefined_SharedArrayBuffer_ &&
         this.accessor.buffer instanceof SharedArrayBuffer
           ? new SharedArrayBuffer(newByteLength)
           : new ArrayBuffer(newByteLength);
