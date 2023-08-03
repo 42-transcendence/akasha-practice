@@ -429,14 +429,15 @@ export class OAuth {
     private readonly clientSecret: string
   ) {}
 
-  beginAuthorizationCodeURL(
+  static beginAuthorizationCodeURL(
+    self: OAuth,
     redirectURI: string,
     scopes: string[],
     state?: string | undefined
   ): string {
-    const authorizationURL = new URL(this.authorizationEndpoint);
+    const authorizationURL = new URL(self.authorizationEndpoint);
     authorizationURL.searchParams.set("response_type", "code");
-    authorizationURL.searchParams.set("client_id", this.clientId);
+    authorizationURL.searchParams.set("client_id", self.clientId);
     authorizationURL.searchParams.set("redirect_uri", redirectURI);
     authorizationURL.searchParams.set("scope", scopes.join(" "));
     if (state) {
@@ -482,7 +483,8 @@ export class OAuth {
     return { state, code };
   }
 
-  makeAuthorizationCodeRequest(
+  static makeAuthorizationCodeRequest(
+    self: OAuth,
     authorizationCode: AuthorizationResponse,
     redirectURI: string
   ): AuthorizationCodeRequest {
@@ -494,19 +496,22 @@ export class OAuth {
       grant_type: "authorization_code",
       code: authorizationCode.code,
       redirect_uri: redirectURI,
-      client_id: this.clientId,
-      client_secret: this.clientSecret,
+      client_id: self.clientId,
+      client_secret: self.clientSecret,
     };
   }
 
-  makeRefreshTokenRequest(refreshToken: string): RefreshTokenRequest {
+  static makeRefreshTokenRequest(refreshToken: string): RefreshTokenRequest {
     return {
       grant_type: "refresh_token",
       refresh_token: refreshToken,
     };
   }
 
-  async fetchToken(param: TokenRequest): Promise<TokenSuccessfulResponse> {
+  static async fetchToken(
+    self: OAuth,
+    param: TokenRequest
+  ): Promise<TokenSuccessfulResponse> {
     const method = "POST";
     const headers = new URLSearchParams();
     const body = new URLSearchParams();
@@ -524,7 +529,7 @@ export class OAuth {
       }
     }
 
-    const response: Response = await fetch(new URL(this.tokenEndpoint), {
+    const response: Response = await fetch(new URL(self.tokenEndpoint), {
       method,
       headers,
       body,
