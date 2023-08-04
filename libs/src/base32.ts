@@ -6,7 +6,7 @@ const regex = /^[A-Z2-7]*=*$/;
 
 type Base32String = string & { __base32__: never };
 
-export function encodeBase32(arr: Uint8Array): Base32String {
+export function encodeBase32(arr: Readonly<Uint8Array>): Base32String {
   const result = new Array<string>();
 
   let shift = 3;

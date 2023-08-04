@@ -1,3 +1,11 @@
+import { toHexString } from "./hex";
+import {
+  InvalidUUIDError,
+  parseUUID,
+  stringifyUUID,
+  validateUUID,
+} from "./uuid";
+
 export class ByteBufferUnderflowError extends Error {
   override get name() {
     return "ByteBufferUnderflowError";
@@ -180,6 +188,12 @@ export class ByteBuffer {
     const value: Date = new Date(Number(time));
     return value;
   }
+
+  readUUID(): string {
+    const data: ReadonlyUint8Array = this.read(16);
+    const value = stringifyUUID(data as Readonly<Uint8Array>);
+    return value;
+  }
   // END Read
 
   // BEGIN Write
@@ -285,6 +299,15 @@ export class ByteBuffer {
     this.write8(time);
     return this;
   }
+
+  writeUUID(value: string): this {
+    if (!validateUUID(value)) {
+      throw new InvalidUUIDError();
+    }
+    const data: Uint8Array = parseUUID(value);
+    this.write(data, 16);
+    return this;
+  }
   // END Write
 
   static copy(
@@ -309,6 +332,24 @@ export class ByteBuffer {
       this.accessor.byteOffset,
       this.offset
     );
+  }
+
+  toString(): string {
+    return toHexString(
+      new Uint8Array(
+        this.accessor.buffer,
+        this.accessor.byteOffset,
+        this.offset
+      ),
+      "-"
+    ).toUpperCase();
+  }
+
+  toDumpString(): string {
+    return toHexString(
+      new Uint8Array(this.accessor.buffer, this.accessor.byteOffset),
+      "-"
+    ).toUpperCase();
   }
 
   private assertUnderflow(length: number): void {

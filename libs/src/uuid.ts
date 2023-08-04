@@ -10,7 +10,7 @@ export class InvalidUUIDError extends Error {
 
 type UUIDString = string & { __uuid__: never };
 
-export function stringifyUUID(arr: Uint8Array): UUIDString {
+export function stringifyUUID(arr: Readonly<Uint8Array>): UUIDString {
   if (arr.length !== 16) {
     throw new InvalidUUIDError();
   }
