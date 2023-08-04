@@ -6,7 +6,7 @@ export function toHexString(arr: Uint8Array): HexString {
 }
 
 export function isHexString(str: string): str is HexString {
-  return /^[0-9A-Fa-f]*$/.test(str);
+  return /^[0-9a-f]*$/i.test(str);
 }
 
 export function fromHexString(str: HexString): Uint8Array {
