@@ -174,6 +174,12 @@ export class ByteBuffer {
     const value = ByteBuffer.textDecoder.decode(data);
     return value;
   }
+
+  readDate(): Date {
+    const time: bigint = this.read8();
+    const value: Date = new Date(Number(time));
+    return value;
+  }
   // END Read
 
   // BEGIN Write
@@ -271,6 +277,12 @@ export class ByteBuffer {
     const length: number = data.length;
     this.writeLength(length);
     this.write(data, length);
+    return this;
+  }
+
+  writeDate(value: Date): this {
+    const time: bigint = BigInt(value.getTime());
+    this.write8(time);
     return this;
   }
   // END Write
