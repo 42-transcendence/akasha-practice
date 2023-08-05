@@ -14,6 +14,6 @@ async function bootstrap() {
 
   app.useWebSocketAdapter(new WsAdapter());
 
-  await app.listen(3000);
+  await app.listen(6262);
 }
 bootstrap();
