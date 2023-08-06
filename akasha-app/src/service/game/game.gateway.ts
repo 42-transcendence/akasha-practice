@@ -4,7 +4,7 @@ import {
   SubscribeMessage,
   WebSocketGateway,
 } from "@nestjs/websockets";
-import { ByteBuffer } from "libs/byte-buffer";
+import { ByteBuffer } from "@libs/byte-buffer";
 import { WebSocket } from "ws";
 
 @WebSocketGateway({ path: "/game" })

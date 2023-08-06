@@ -3,7 +3,7 @@ import * as yaml from "js-yaml";
 import { join } from "path";
 
 export const envFilePath = [".env"];
-export const load = [loadFilename("../.config.d/config.yaml")];
+export const load = [loadFilename(".config.d/config.yaml")];
 
 function loadFilename(filename: string) {
   return (): Record<string, any> =>

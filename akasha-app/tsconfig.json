@@ -13,6 +13,11 @@
     "incremental": true,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": false,
+    "paths": {
+      "@libs/*": [
+        "./src/libs/*"
+      ]
+    },
 	
     /* Type Checking */
     "strict": true,                                      /* Enable all strict type-checking options. */
