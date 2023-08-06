@@ -1,0 +1,30 @@
+auth:
+  redirect_uri:
+    - http://localhost*
+    - https://localhost*
+
+  source:
+    intra42:
+      key: 42
+      auth_url: https://api.intra.42.fr/oauth/authorize
+      token_url: https://api.intra.42.fr/oauth/token
+      client_id: u-s4t2ud-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      client_secret: s-s4t2ud-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      scope:
+        - public
+      openid: false
+      subject_url: https://api.intra.42.fr/v2/me
+      subject_key: id
+
+    google:
+      key: 100
+      auth_url: https://accounts.google.com/o/oauth2/v2/auth
+      token_url: https://oauth2.googleapis.com/token
+      jwks_url: https://www.googleapis.com/oauth2/v3/certs
+      client_id: 000000000000-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com
+      client_secret: GOCSPX-xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+      scope:
+        - https://www.googleapis.com/auth/userinfo.email
+        - https://www.googleapis.com/auth/userinfo.profile
+        - openid
+      openid: true
