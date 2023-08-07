@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
 import { Authorization, Prisma, Session } from "@prisma/client";
-import { PrismaService } from "src/prisma/prisma.service";
+import { PrismaService } from "../../prisma/prisma.service";
 
 export class InvalidSessionError extends Error {
   override get name() {
