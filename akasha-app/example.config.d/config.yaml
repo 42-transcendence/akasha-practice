@@ -1,3 +1,7 @@
+cors:
+  origin: "*"
+  method: "GET,HEAD,PUT,PATCH,POST,DELETE"
+
 auth:
   redirect_uri:
     - http://localhost*
@@ -28,3 +32,11 @@ auth:
         - https://www.googleapis.com/auth/userinfo.profile
         - openid
       openid: true
+
+  # openssl rand -base64 33
+  jwt_secret: your-256-bit-secret
+
+  jwt_expire_secs: 7200
+
+  jwt_options:
+    issuer: Akasha

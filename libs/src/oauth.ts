@@ -98,6 +98,10 @@ export class OAuthDefinedError extends OAuthError {
     return "OAuthDefinedError";
   }
 
+  override get message() {
+    return `${this.error_description ?? ""} ${` [${this.error_uri}]` ?? ""}`;
+  }
+
   get [Symbol.toStringTag]() {
     return this.name;
   }

@@ -10,6 +10,8 @@ export class InvalidUUIDError extends Error {
 
 type UUIDString = string & { __uuid__: never };
 
+export const NULL_UUID = "00000000-0000-0000-0000-000000000000" as UUIDString;
+
 export function stringifyUUID(arr: Readonly<Uint8Array>): UUIDString {
   if (arr.length !== 16) {
     throw new InvalidUUIDError();

@@ -2,25 +2,23 @@ import { Injectable } from "@nestjs/common";
 import { Account, Prisma } from "@prisma/client";
 import { PrismaService } from "src/prisma/prisma.service";
 
-const accountPersonalData = Prisma.validator<Prisma.AccountDefaultArgs>()({
+const accountWithRecord = Prisma.validator<Prisma.AccountDefaultArgs>()({
   include: { record: true },
 });
-type AccountWithRecord = Prisma.AccountGetPayload<typeof accountPersonalData>;
+type AccountWithRecord = Prisma.AccountGetPayload<typeof accountWithRecord>;
 
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getOrCreateAccountForAuth(
-    authIssuer: number,
-    authSubject: string,
+    authIssuer_authSubject: Prisma.AccountAuthIssuerAuthSubjectCompoundUniqueInput,
   ): Promise<Account> {
     return await this.prisma.account.upsert({
-      where: { authIssuer_authSubject: { authIssuer, authSubject } },
+      where: { authIssuer_authSubject },
       update: {},
       create: {
-        authIssuer,
-        authSubject,
+        ...authIssuer_authSubject,
         registrationState: "REGISTERED",
         changedTimestamp: new Date(),
         record: { create: {} },

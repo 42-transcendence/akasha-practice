@@ -8,9 +8,7 @@ export type JWTOptions = {
   audience?: string | undefined;
 };
 
-type JWTPayload = Record<string, unknown>;
-
-type JWTSuccessful = { success: true; payload: JWTPayload };
+type JWTSuccessful = { success: true; payload: Record<string, unknown> };
 
 type JWTFailed = { success: false; expired: boolean };
 
@@ -19,7 +17,7 @@ type JWTResult = JWTSuccessful | JWTFailed;
 export async function jwtSignatureHMAC(
   algorithm: HashAlgorithm,
   secret: Uint8Array,
-  payload: JWTPayload,
+  payload: Record<string, unknown>,
   expireSecs?: number | undefined,
   option?: JWTOptions | undefined
 ): Promise<string> {
