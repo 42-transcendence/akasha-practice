@@ -27,16 +27,16 @@ export async function jwtSignatureHMAC(
 
   const signature = new jose.SignJWT(payload);
   signature.setProtectedHeader({ alg: algorithm, typ: "JWT" });
-  if (option?.issuer) {
+  if (option?.issuer !== undefined) {
     signature.setIssuer(option?.issuer);
   }
-  if (option?.subject) {
+  if (option?.subject !== undefined) {
     signature.setSubject(option?.subject);
   }
-  if (option?.audience) {
+  if (option?.audience !== undefined) {
     signature.setAudience(option?.audience);
   }
-  if (expireSecs) {
+  if (expireSecs !== undefined) {
     const expiredAt: number = now + Math.floor(expireSecs);
     signature.setExpirationTime(expiredAt);
   }

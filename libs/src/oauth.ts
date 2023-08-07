@@ -440,7 +440,7 @@ export class OAuth {
     authorizationURL.searchParams.set("client_id", self.clientId);
     authorizationURL.searchParams.set("redirect_uri", redirectURI);
     authorizationURL.searchParams.set("scope", scopes.join(" "));
-    if (state) {
+    if (state !== undefined) {
       authorizationURL.searchParams.set("state", state);
     }
     return authorizationURL.toString();
@@ -464,7 +464,7 @@ export class OAuth {
     const state = _getParamOnly("state");
 
     const error = _getParamOnly("error");
-    if (error) {
+    if (error !== undefined) {
       if (!isAuthorizationErrorResponseError(error)) {
         throw new UndefinedErrorResponseError();
       }
@@ -476,7 +476,7 @@ export class OAuth {
     }
 
     const code = _getParamOnly("code");
-    if (!code) {
+    if (code === undefined) {
       throw new UndefinedSuccessfulResponseError();
     }
 
@@ -524,7 +524,7 @@ export class OAuth {
 
     for (const key in param) {
       const value: string | undefined = param[key];
-      if (value) {
+      if (value !== undefined) {
         body.set(key, value);
       }
     }

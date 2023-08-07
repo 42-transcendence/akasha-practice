@@ -176,6 +176,12 @@ export class ByteBuffer {
     return this.read2Unsigned();
   }
 
+  readBoolean(): boolean {
+    const data: number = this.read1();
+    const value: boolean = data !== 0;
+    return value;
+  }
+
   readString(): string {
     const length: number = this.readLength();
     const data: ReadonlyUint8Array = this.read(length);
@@ -284,6 +290,12 @@ export class ByteBuffer {
 
   writeLength(value: number): this {
     return this.write2Unsigned(value);
+  }
+
+  writeBoolean(value: boolean): this {
+    const data: number = value ? 1 : 0;
+    this.write1(data);
+    return this;
   }
 
   writeString(value: string): this {

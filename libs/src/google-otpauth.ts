@@ -29,14 +29,14 @@ export async function createNewOTPKey(
 ) {
   const key: Uint8Array = await generateHMACKey(toHashAlgorithm(algorithm));
   const uri = new URL("otpauth://");
-  uri.hostname = !counter ? "totp" : "hotp";
+  uri.hostname = counter === undefined ? "totp" : "hotp";
   uri.pathname = `${issuer}:${subject}`;
   uri.searchParams.set("secret", encodeBase32(key));
   uri.searchParams.set("issuer", issuer);
   uri.searchParams.set("algorithm", algorithm);
   uri.searchParams.set("digits", digits.toString());
   uri.searchParams.set("period", period.toString());
-  if (counter) {
+  if (counter !== undefined) {
     uri.searchParams.set("counter", counter.toString());
   }
   return { key, uri };
