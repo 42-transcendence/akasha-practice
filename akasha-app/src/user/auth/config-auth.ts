@@ -1,16 +1,21 @@
 import { JWTOptions } from "@libs/jwt";
 import { OAuth } from "@libs/oauth";
-import { Type } from "class-transformer";
+import { Transform, Type } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
+  IsDefined,
   IsNumber,
   IsObject,
   IsOptional,
   IsString,
   IsUrl,
   ValidateNested,
+  isArray,
+  isString,
 } from "class-validator";
+import { patternToRegExp } from "@libs/regex";
+import { encodeUTF8 } from "@libs/utf8";
 
 export class AuthSource {
   @IsNumber() key: number;
@@ -34,21 +39,29 @@ export class AuthJWTOptions implements JWTOptions {
 }
 
 export class AuthConfiguration {
-  @IsArray() @IsString({ each: true }) redirect_uri: string[];
+  @Transform(({ value }) =>
+    isArray(value)
+      ? value.map((e) => (isString(e) ? patternToRegExp(e, "i") : undefined))
+      : undefined,
+  )
+  @IsArray()
+  @IsDefined({ each: true })
+  redirect_uri: RegExp[];
 
   @Type(() => AuthSource)
   @IsObject()
   @ValidateNested()
   source: Map<string, AuthSource>;
 
-  @IsString() jwt_secret: string;
+  @Transform(({ value }) => (isString(value) ? encodeUTF8(value) : undefined))
+  @IsDefined()
+  jwt_secret: Uint8Array;
 
-  @IsNumber() jwt_expire_secs: number;
+  @IsNumber()
+  jwt_expire_secs: number;
 
   @Type(() => AuthJWTOptions)
   @IsObject()
   @ValidateNested()
   jwt_options: AuthJWTOptions;
-
-  _jwt_secret: Uint8Array;
 }

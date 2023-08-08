@@ -34,7 +34,6 @@ import {
 import { Account, Authorization, Role, Session } from "@prisma/client";
 import * as jose from "jose";
 import { jwtSignatureHMAC, jwtVerifyHMAC } from "@libs/jwt";
-import { encodeUTF8 } from "@libs/utf8";
 
 export const jwtAlgorithm = "HS256";
 
@@ -85,7 +84,11 @@ export class AuthService {
       );
       this.logger.log(`[${sourceKey}] auth source loaded`);
     }
-    config._jwt_secret = encodeUTF8(config.jwt_secret);
+    if (config.jwt_secret.length < 32) {
+      this.logger.warn(
+        "Security threat: Authentication is vulnerable because JWT Secret is configured too short.",
+      );
+    }
 
     this.config = config;
   }
@@ -95,14 +98,7 @@ export class AuthService {
   }
 
   isValidRedirectURI(redirectURI: string): boolean {
-    return this.config.redirect_uri.some((e) => {
-      const escaped = e.replace(/[.+^${}()|[\]\\]/g, "\\$&");
-      const regex = new RegExp(
-        `^${escaped.replace(/\*/g, ".*").replace(/\?/g, ".")}$`,
-        "i",
-      );
-      return regex.test(redirectURI);
-    });
+    return this.config.redirect_uri.some((e) => e.test(redirectURI));
   }
 
   async beginAuthURL(sourceKey: string, redirectURI: string): Promise<string> {
@@ -212,7 +208,7 @@ export class AuthService {
 
     const accessToken: string = await jwtSignatureHMAC(
       jwtAlgorithm,
-      this.config._jwt_secret,
+      this.config.jwt_secret,
       payloadRaw,
       this.config.jwt_expire_secs,
       this.config.jwt_options,
@@ -297,7 +293,7 @@ export class AuthService {
     const verify = await jwtVerifyHMAC(
       token,
       jwtAlgorithm,
-      this.config._jwt_secret,
+      this.config.jwt_secret,
       this.config.jwt_options,
     );
 

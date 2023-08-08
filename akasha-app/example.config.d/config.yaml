@@ -1,6 +1,11 @@
 cors:
-  origin: "*"
-  method: "GET,HEAD,PUT,PATCH,POST,DELETE"
+  origin:
+    - http://localhost*
+    - https://localhost*
+  method:
+    - GET
+    - HEAD
+    - POST
 
 auth:
   redirect_uri:

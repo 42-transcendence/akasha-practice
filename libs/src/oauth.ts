@@ -215,8 +215,8 @@ function isAuthorizationResponseBase(
   value: unknown
 ): value is AuthorizationResponseBase {
   return (
-    value !== null &&
     typeof value === "object" &&
+    value !== null &&
     (!("state" in value) || typeof value.state === "string")
   );
 }
@@ -349,8 +349,8 @@ export function isTokenSuccessfulResponse(
   value: unknown
 ): value is TokenSuccessfulResponse {
   return (
-    value !== null &&
     typeof value === "object" &&
+    value !== null &&
     "access_token" in value &&
     typeof value.access_token === "string" &&
     "token_type" in value &&
@@ -372,8 +372,8 @@ export type TokenErrorProps = OAuthErrorProps & {
 
 export function isTokenErrorResponse(value: unknown): value is TokenErrorProps {
   return (
-    value !== null &&
     typeof value === "object" &&
+    value !== null &&
     "error" in value &&
     typeof value.error === "string" &&
     (value.error === "invalid_request" ||
