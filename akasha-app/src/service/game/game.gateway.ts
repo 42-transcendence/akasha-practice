@@ -6,11 +6,12 @@ import {
 } from "@nestjs/websockets";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { WebSocket } from "ws";
+import { IncomingMessage } from "http";
 
 @WebSocketGateway({ path: "/game" })
 export class GameGateway implements OnGatewayConnection, OnGatewayDisconnect {
-  handleConnection(client: WebSocket, ...args: any[]) {
-    void client, args;
+  handleConnection(client: WebSocket, arg: IncomingMessage) {
+    void client, arg;
   }
 
   handleDisconnect(client: WebSocket) {

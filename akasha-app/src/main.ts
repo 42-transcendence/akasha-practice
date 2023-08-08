@@ -66,7 +66,7 @@ async function bootstrap() {
   app.useGlobalFilters(new PrismaClientExceptionFilter(httpAdapter));
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
-  app.useWebSocketAdapter(new WsAdapter());
+  app.useWebSocketAdapter(new WsAdapter(app));
 
   await app.listen(6262);
 }
