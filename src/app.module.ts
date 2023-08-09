@@ -4,6 +4,7 @@ import { envFilePath, load } from "./config-factory";
 import { PrismaModule } from "./prisma/prisma.module";
 import { UserModule } from "./user/user.module";
 import { ServiceModule } from "./service/service.module";
+import { ChatModule } from './chat/chat.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { ServiceModule } from "./service/service.module";
     PrismaModule,
     UserModule,
     ServiceModule,
+    ChatModule,
   ],
 })
 export class AppModule {}

@@ -10,5 +10,6 @@ import { SessionsModule } from "../sessions/sessions.module";
   imports: [ConfigModule, PrismaModule, AccountsModule, SessionsModule],
   controllers: [AuthController],
   providers: [AuthService],
+  exports: [AuthService]
 })
-export class AuthModule {}
+export class AuthModule { }
