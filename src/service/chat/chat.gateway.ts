@@ -99,4 +99,5 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.commandService.chat(data, client, this.clients);
     return data;
   }
+
 }
