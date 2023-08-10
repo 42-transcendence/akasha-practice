@@ -2,7 +2,7 @@ import { ByteBuffer } from "@libs/byte-buffer";
 import { $Enums, Prisma } from "@prisma/client";
 import { ChatMemberEntity } from "src/generated/model";
 import { NULL_UUID } from "@libs/uuid";
-import { ChatWebSocket } from "../chatSocket";
+import { ChatWebSocket } from "../chat-socket";
 
 export enum ChatOpCode {
 	Connect,

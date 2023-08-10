@@ -1,15 +1,15 @@
 import { PrismaService } from "src/prisma/prisma.service";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { Injectable } from "@nestjs/common";
-import { ChatWebSocket } from "../chatSocket";
-import { CustomException } from "../utils/exception";
-import { AccountWithUuid, ChatMemberModeFlags, ChatRoomMode, ChatWithoutIdUuid, CreatCode, CreateChatMemberArray, RoomInfo, readChatAndMemebers, readMembersAndChatUUID, readRoomJoinInfo, writeChatMemberAccount, writeRoominfo, writeChat, wrtieChats, writeAccountWithUuids, PartCode, addRoomsInClientSocket, KickCode, writeMembersAndChatUUID, readCreateChatMessaage, ChatMessageWithChatUuid, writeChatMessage, CreateChatMessaage } from "../utils/utils";
-import { ChatOpCode, ChatWithoutId, JoinCode } from "../utils/utils";
+import { ChatWebSocket } from "./chat-socket";
+import { CustomException } from "./utils/exception";
+import { AccountWithUuid, ChatMemberModeFlags, ChatRoomMode, ChatWithoutIdUuid, CreatCode, CreateChatMemberArray, RoomInfo, readChatAndMemebers, readMembersAndChatUUID, readRoomJoinInfo, writeChatMemberAccount, writeRoominfo, writeChat, wrtieChats, writeAccountWithUuids, PartCode, addRoomsInClientSocket, KickCode, writeMembersAndChatUUID, readCreateChatMessaage, ChatMessageWithChatUuid, writeChatMessage, CreateChatMessaage } from "./utils/utils";
+import { ChatOpCode, ChatWithoutId, JoinCode } from "./utils/utils";
 import { ChatEntity } from "src/generated/model";
 import { AuthPayload, AuthService } from "src/user/auth/auth.service";
 
 @Injectable()
-export class CommandService {
+export class ChatService {
 	constructor(private prismaService: PrismaService, private authService: AuthService) { }
 
 	async chatServerConnect(buf: ByteBuffer, client: ChatWebSocket) {
@@ -181,9 +181,9 @@ export class CommandService {
 		if (roomInfo) {
 			for (let i = 0; i < clients.length; ++i) {
 				if (createInfo.members.includes(clients[i].userUUID)) {
-					for (let i = 0; i < roomInfo.members.length; ++i) {
-						if (roomInfo.members[i].account.uuid == clients[i].userUUID)
-							this.addRoomInClientSocket(clients[i], roomInfo?.uuid, roomInfo.members[i].modeFlags);
+					for (let j = 0; j < roomInfo.members.length; ++j) {
+						if (roomInfo.members[j].account.uuid == clients[i].userUUID)
+							this.addRoomInClientSocket(clients[i], roomInfo?.uuid, roomInfo.members[j].modeFlags);
 					}
 				}
 			}
@@ -277,16 +277,14 @@ export class CommandService {
 			}
 		});
 		//client 내부에 roomUUID, modeFlags를 추가
-		if (roomInfo) {
-			this.addRoomInClientSocket(client, client.userUUID, ChatMemberModeFlags.Normal);
+		if (!roomInfo) {
+			throw new CustomException('채팅방이 존재하지 않습니다.');
 		}
+		this.addRoomInClientSocket(client, client.userUUID, ChatMemberModeFlags.Normal);
 		//Accept
 		const sendAcceptBuf = ByteBuffer.createWithOpcode(ChatOpCode.Join);
 		sendAcceptBuf.write1(JoinCode.Accept);
-		if (roomInfo)
-			writeRoominfo(sendAcceptBuf, roomInfo);
-		else
-			throw new CustomException('채팅방이 존재하지 않습니다.');
+		writeRoominfo(sendAcceptBuf, roomInfo);
 		client.send(sendAcceptBuf.toArray());
 		//NewJoin
 		const sendNewJoinBuf = ByteBuffer.createWithOpcode(ChatOpCode.Join);
@@ -454,9 +452,9 @@ export class CommandService {
 		if (roomInfo) {
 			for (let i = 0; i < clients.length; ++i) {
 				if (invitation.members.includes(clients[i].userUUID)) {
-					for (let i = 0; i < roomInfo.members.length; ++i) {
-						if (roomInfo.members[i].account.uuid == clients[i].userUUID)
-							this.addRoomInClientSocket(clients[i], roomInfo?.uuid, roomInfo.members[i].modeFlags);
+					for (let j = 0; j < roomInfo.members.length; ++j) {
+						if (roomInfo.members[j].account.uuid == clients[i].userUUID)
+							this.addRoomInClientSocket(clients[i], roomInfo?.uuid, roomInfo.members[j].modeFlags);
 					}
 				}
 			}
