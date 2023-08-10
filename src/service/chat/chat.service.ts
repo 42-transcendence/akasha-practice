@@ -1,181 +1,115 @@
-import { PrismaService } from "src/prisma/prisma.service";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { Injectable } from "@nestjs/common";
 import { ChatWebSocket } from "./chat-socket";
 import { CustomException } from "./utils/exception";
-import { AccountWithUuid, ChatMemberModeFlags, ChatRoomMode, ChatWithoutIdUuid, CreatCode, CreateChatMemberArray, RoomInfo, readChatAndMemebers, readMembersAndChatUUID, readRoomJoinInfo, writeChatMemberAccount, writeRoominfo, writeChat, wrtieChats, writeAccountWithUuids, PartCode, addRoomsInClientSocket, KickCode, writeMembersAndChatUUID, readCreateChatMessaage, ChatMessageWithChatUuid, writeChatMessage, CreateChatMessaage } from "./utils/utils";
+import { ChatMemberModeFlags, ChatRoomMode, CreatCode, CreateChatMemberArray, RoomInfo, readMembersAndChatUUID, readRoomJoinInfo, writeChatMemberAccount, writeRoominfo, writeChat, wrtieChats, PartCode, KickCode, writeMembersAndChatUUID, readCreateChatMessaage, ChatMessageWithChatUuid, writeChatMessage, CreateChatMessaage, ChatRoom, ChatMessages, ChatMembers, Account, MemberWithModeFlags, Message, writeChatRooms, writeChatMembersList, writeChatMessages, writeChatMessagesList, writeAccounts, CreateChat, readCreateChat } from "./utils/utils";
 import { ChatOpCode, ChatWithoutId, JoinCode } from "./utils/utils";
 import { ChatEntity } from "src/generated/model";
 import { AuthPayload, AuthService } from "src/user/auth/auth.service";
+import { ChatPrismaService } from "./chat-prisma/chat-prisma.service";
 
 @Injectable()
 export class ChatService {
-	constructor(private prismaService: PrismaService, private authService: AuthService) { }
+	constructor(private chatPrismaService: ChatPrismaService, private authService: AuthService) { }
 
 	async chatServerConnect(buf: ByteBuffer, client: ChatWebSocket) {
-		const jwt = buf.readString();
-		const payload: AuthPayload = await this.authService.extractJWTPayload(jwt);
-		const sendBuf = ByteBuffer.createWithOpcode(ChatOpCode.Connect);
-		const userId = await this.prismaService.account.findUnique({
-			where: {
-				uuid: payload.user_id
-			},
-			select: {
-				id: true,
-			}
-		})
-		if (!userId)
-			throw new CustomException('올바르지 않은 유저 id입니다.')
-		client.userId = userId?.id
-		client.userUUID = payload.user_id;
-		client.send(sendBuf.toArray());
+		const sendBuf = ByteBuffer.createWithOpcode(ChatOpCode.CONNECT);
+		try {
+			const jwt = buf.readString();
+			const payload: AuthPayload = await this.authService.extractJWTPayload(jwt);
+			const userId = await this.chatPrismaService.getAccountId(payload.user_id);
+			if (!userId)
+				throw new CustomException('올바르지 않은 유저 id입니다.')
+			sendBuf.writeBoolean(true);
+			client.userId = userId?.id
+			client.userUUID = payload.user_id;
+			client.send(sendBuf.toArray());
+		} catch (e) {
+			sendBuf.writeBoolean(false);
+			client.send(sendBuf.toArray());
+		}
 	}
 
-	async sendRooms(client: ChatWebSocket) {
-		const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Rooms);
-		const chatList: ChatWithoutId[] = [];
-		const roomList: { chat: ChatWithoutId }[] = await this.prismaService.chatMember.findMany({
-			where: {
-				accountId: client.userId,
-			},
-			select: {
-				chat: {
-					select: {
-						uuid: true,
-						title: true,
-						modeFlags: true,
-						password: true,
-						limit: true,
-						members: {
-							select: {
-								account: {
-									select: {
-										uuid: true,
-										avatarKey: true
-									}
-								},
-								modeFlags: true
-							},
-							orderBy: {
-								accountId: 'asc'
-							},
-						},
-						messages: {
-							select: {
-								id: true,
-								content: true,
-								timestamp: true,
-								modeFlags: true,
-								account: {
-									select: {
-										uuid: true,
-									}
-								}
-							},
-							orderBy: {
-								id: 'desc'
-							},
-							take: 1
-						}
-					}
-				}
-			}
+	private divideChatMembersMessages(chatRooms: ChatRoom[], chatMembers: ChatMembers[], chatMessages: ChatMessages[], room: ChatWithoutId) {
+		chatRooms.push({
+			uuid: room.uuid,
+			title: room.title,
+			modeFlags: room.modeFlags,
+			password: room.password,
+			limit: room.limit
 		});
-		for (let room of roomList)
-			chatList.push(room.chat);
-		wrtieChats(buf, chatList);
+		const members: MemberWithModeFlags[] = [];
+		for (const member of room.members) {
+			members.push({
+				account: member.account,
+				modeFalgs: member.modeFlags
+			})
+		}
+		chatMembers.push({
+			chatUUID: room.uuid,
+			members: members,
+		})
+		const messages: Message[] = [];
+		for (const message of room.messages) {
+			messages.push({
+				id: message.id,
+				accountUUID: message.account.uuid,
+				content: message.content,
+				modeFlags: message.modeFlags,
+				timestamp: message.timestamp,
+			});
+		}
+		chatMessages.push({
+			chatUUID: room.uuid,
+			messages: messages
+		})
+	}
+
+	async sendInfo(client: ChatWebSocket) {
+		const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INFO);
+		const chatRooms: ChatRoom[] = [];
+		const chatMessages: ChatMessages[] = [];
+		const chatMembers: ChatMembers[] = [];
+		const roomList: { chat: ChatWithoutId }[] = await this.chatPrismaService.getChatRoomInfo(client.userId);
+
+		for (const room of roomList) {
+			this.divideChatMembersMessages(chatRooms, chatMembers, chatMessages, room.chat);
+		}
+		writeChatRooms(buf, chatRooms);
+		writeChatMembersList(buf, chatMembers);
+		writeChatMessagesList(buf, chatMessages);
 		//client 내부에 roomUUID, modeFlags를 추가
-		addRoomsInClientSocket(client, chatList);
-		//
-		client.send(buf.toArray());
+		client.addRoomsInClientSocket(roomList);
+		// client.send(buf.toArray());
+		return buf;
 	}
 
 	async sendFriends(client: ChatWebSocket) {
-		const buf = ByteBuffer.createWithOpcode(ChatOpCode.Friends);
-		const friendList: { friendAccount: AccountWithUuid }[] = await this.prismaService.friend.findMany({
-			where: {
-				accountId: client.userId
-			},
-			select: {
-				friendAccount: {
-					select: {
-						uuid: true,
-						nickName: true,
-						nickTag: true,
-						avatarKey: true,
-						activeStatus: true,
-						activeTimestamp: true,
-						statusMessage: true
-					}
-				}
-			}
-		});
-		const friends: AccountWithUuid[] = [];
+		const buf = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS);
+		const friendList: { friendAccount: Account }[] = await this.chatPrismaService.getFriends(client.userId);
+		const friends: Account[] = [];
 		for (let friend of friendList)
 			friends.push(friend.friendAccount);
-		writeAccountWithUuids(buf, friends);
-		client.send(buf.toArray());
+		writeAccounts(buf, friends);
+		// client.send(buf.toArray());
+		return buf;
 	}
 
-	async create(buf: ByteBuffer, client: ChatWebSocket, clients: ChatWebSocket[]) {
-		const createInfo: { chat: ChatWithoutIdUuid, members: string[] } = readChatAndMemebers(buf)
-		const newRoom: ChatEntity = await this.prismaService.chat.create({
-			data: createInfo.chat,
-		});
-		const accounts = await this.prismaService.account.findMany({
-			where: {
-				uuid: { in: createInfo.members }
-			},
-			select: {
-				id: true
-			}
-		});
+	async create(client: ChatWebSocket, clients: ChatWebSocket[], buf: ByteBuffer) {
+		const createInfo: CreateChat = readCreateChat(buf);
+		const newRoom: ChatEntity = await this.chatPrismaService.createChat(createInfo.chat);
+		const accounts = await this.chatPrismaService.getAccountsId(createInfo.members);
 		//초대할 유저들의 id리스트 생성
 		const memberList: number[] = [];
 		for (let account of accounts) {
 			memberList.push(account.id);
 		}
 		//room & chatMemberCreate
-		await this.prismaService.chatMember.create({
-			data: {
-				chatId: newRoom.id,
-				accountId: client.userId,
-				modeFlags: ChatMemberModeFlags.Admin
-			}
-		})
-		await this.prismaService.chatMember.createMany({
-			data: CreateChatMemberArray(newRoom.id, memberList),
-		})
+		await this.chatPrismaService.createChatMember(newRoom.id, client.userId, ChatMemberModeFlags.Admin);
+		await this.chatPrismaService.createChatMembers(newRoom.id, memberList, ChatMemberModeFlags.Normal)
 
 		//roomInformation추출
-		const roomInfo: RoomInfo | null = await this.prismaService.chat.findUnique({
-			where: {
-				id: newRoom.id,
-			},
-			select: {
-				uuid: true,
-				title: true,
-				modeFlags: true,
-				password: true,
-				limit: true,
-				members: {
-					select: {
-						account: {
-							select: {
-								uuid: true,
-								nickName: true,
-								nickTag: true,
-								avatarKey: true,
-								activeStatus: true,
-								activeTimestamp: true,
-								statusMessage: true
-							}
-						},
-						modeFlags: true
-					}
-				},
-			}
-		})
+		const roomInfo: RoomInfo | null = await this.chatPrismaService.getRoomInfo(newRoom.id);
 		//client 내부에 roomUUID, modeFlags를 추가
 		//TODO - invite는 무조건 모드플레그가 normal이면 굳이 for문을 돌릴 필요가없다.
 		if (roomInfo) {

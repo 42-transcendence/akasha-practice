@@ -1,9 +1,9 @@
 import { ByteBuffer } from "@libs/byte-buffer";
-import { ChatOpCode, ChatWithoutId, ChatWithoutIdUuid, RoomInfo, readChats, readRoominfo, writeChatAndMemebers, writeRoomJoinInfo, JoinCode, ChatMessageWithChatUuid, CreatCode, readChatMemberAccount, writeMembersAndChatUUID, readChat, AccountWithUuid, readAccountWithUuids, PartCode, accountInChat, KickCode, readMembersAndChatUUID, removeUser, CreateChatMessaage, writeCreateChatMessaage, readChatMessage } from "./utils";
+import { ChatOpCode, ChatWithoutId, ChatWithoutIdUuid, RoomInfo, readChats, readRoominfo, writeChatAndMemebers, writeRoomJoinInfo, JoinCode, ChatMessageWithChatUuid, CreatCode, readChatMemberAccount, writeMembersAndChatUUID, readChat, AccountWithUuid, readAccountWithUuids, PartCode, accountInChat, KickCode, readMembersAndChatUUID, removeUser, CreateChatMessaage, writeCreateChatMessaage, readChatMessage, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readChatMessagesList, readAccounts, Account } from "./utils";
 import { CustomException } from "./exception";
 
 export function sendConnectMessage(client: WebSocket) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Connect);
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.CONNECT);
 	const jwt = window.localStorage.getItem('jwt');
 	if (jwt)
 		buf.writeString(jwt);
@@ -78,17 +78,32 @@ function addRoomList(room: RoomInfo) {
 }
 
 //accept
-export function connect(client: WebSocket) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Rooms);
-	client.send(buf.toArray());
+export function connect(client: WebSocket, buf: ByteBuffer) {
+	if (buf.readBoolean()) {
+		const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INFO);
+		client.send(sendBuf.toArray());
+	}
+	//TODO - 올바르지 않은 접근일 경우
+	else
+		throw new Error('올바르지 않은 접근입니다.')
 }
 
-export function acceptRoom(client: WebSocket, buf: ByteBuffer) {
-	const rooms: ChatWithoutId[] = readChats(buf);
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
-	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Friends)
+export function acceptInfo(client: WebSocket, buf: ByteBuffer) {
+	const chatRooms: ChatRoom[] = readChatRooms(buf);
+	const chatMembers: ChatMembers[] = readChatMembersList(buf);
+	const chatMEssages: ChatMessages[] = readChatMessagesList(buf);
+	window.localStorage.setItem('chatRooms', JSON.stringify(chatRooms));
+	window.localStorage.setItem('chatMembers', JSON.stringify(chatMembers));
+	window.localStorage.setItem('chatMEssages', JSON.stringify(chatMEssages));
+	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS)
 	client.send(sendBuf.toArray())
 }
+
+export function acceptFriends(buf: ByteBuffer) {
+	const friends: Account[] = readAccounts(buf);
+	window.localStorage.setItem('friends', JSON.stringify(friends));
+}
+
 export function acceptCreat(buf: ByteBuffer) {
 	const code = buf.read1();
 	const nowRoomInfo: RoomInfo = readRoominfo(buf);
@@ -137,11 +152,6 @@ export function accpetInvite(buf: ByteBuffer) {
 	const rooms = JSON.parse(String(window.localStorage.getItem('rooms')));
 	rooms.push(nowRoom);
 	window.localStorage.setItem('rooms', JSON.stringify(rooms));
-}
-
-export function acceptFriends(buf: ByteBuffer) {
-	const friends: AccountWithUuid[] = readAccountWithUuids(buf);
-	window.localStorage.setItem('friends', JSON.stringify(friends));
 }
 
 export function acceptEnter(buf: ByteBuffer) {
@@ -249,12 +259,10 @@ export function accpetChat(buf: ByteBuffer) {
 export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 	const code: ChatOpCode = buf.readOpcode();
 
-	if (code == ChatOpCode.Connect)
-		connect(client);
-	else if (code == ChatOpCode.Rooms)
-		acceptRoom(client, buf);
-	else if (code == ChatOpCode.Friends)
-		acceptFriends(buf);
+	if (code == ChatOpCode.CONNECT)
+		connect(client, buf);
+	else if (code == ChatOpCode.INFO)
+		acceptInfo(client, buf);
 	else if (code == ChatOpCode.Join)
 		accpetJoin(buf);
 	else if (code == ChatOpCode.PublicSearch)
