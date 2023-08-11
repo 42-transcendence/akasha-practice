@@ -10,7 +10,7 @@ import { ChatWebSocket } from "./chat-websocket";
 import { ChatSocket } from "./chat.socket";
 import { ChatOpCode } from "./utils/utils";
 
-@WebSocketGateway({ path: "/chat" })
+@WebSocketGateway({ path: "/chat", WebSocket: ChatWebSocket })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @IsWebSocketServer()
   server: WebSocketServer;
