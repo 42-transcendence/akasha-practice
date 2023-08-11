@@ -8,7 +8,7 @@ import {
 } from "@nestjs/websockets/constants";
 import { MessageMappingProperties } from "@nestjs/websockets/gateway-metadata-explorer";
 import * as http from "http";
-import { ByteBuffer } from "@libs/byte-buffer";
+import { ByteBuffer } from "akasha-lib";
 import { EMPTY, fromEvent, Observable } from "rxjs";
 import { filter, first, mergeMap, share, takeUntil } from "rxjs/operators";
 import { WebSocketServer, WebSocket } from "ws";

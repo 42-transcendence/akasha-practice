@@ -1,5 +1,5 @@
-import { JWTOptions } from "@libs/jwt";
-import { OAuth } from "@libs/oauth";
+import { JWTOptions } from "akasha-lib";
+import { OAuth } from "akasha-lib";
 import { Transform, Type } from "class-transformer";
 import {
   IsArray,
@@ -14,8 +14,8 @@ import {
   isArray,
   isString,
 } from "class-validator";
-import { patternToRegExp } from "@libs/regex";
-import { encodeUTF8 } from "@libs/utf8";
+import { patternToRegExp } from "akasha-lib";
+import { encodeUTF8 } from "akasha-lib";
 
 export class AuthSource {
   @IsNumber() key: number;

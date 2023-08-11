@@ -1,10 +1,10 @@
 import { Module } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { ConfigModule } from "@nestjs/config";
-import { PrismaModule } from "../../prisma/prisma.module";
+import { PrismaModule } from "@/prisma/prisma.module";
 import { AuthController } from "./auth.controller";
-import { AccountsModule } from "../accounts/accounts.module";
-import { SessionsModule } from "../sessions/sessions.module";
+import { AccountsModule } from "@/user/accounts/accounts.module";
+import { SessionsModule } from "@/user/sessions/sessions.module";
 
 @Module({
   imports: [ConfigModule, PrismaModule, AccountsModule, SessionsModule],

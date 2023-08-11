@@ -2,16 +2,16 @@ type HexString = string & { __hex__: never };
 
 export function toHexString(
   arr: Readonly<Uint8Array>,
-  separator?: string | undefined
+  separator?: string | undefined,
 ): string;
 export function toHexString(arr: Readonly<Uint8Array>): HexString;
 
 export function toHexString(
   arr: Readonly<Uint8Array>,
-  separator?: string | undefined
+  separator?: string | undefined,
 ): HexString | string {
   const str = Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join(
-    separator
+    separator,
   );
   return str;
 }

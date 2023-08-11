@@ -8,12 +8,12 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AccountsService } from "../accounts/accounts.service";
+import { AccountsService } from "@/user/accounts/accounts.service";
 import {
   InvalidSessionError,
   ReuseDetectError,
   SessionsService,
-} from "../sessions/sessions.service";
+} from "@/user/sessions/sessions.service";
 import { ConfigService } from "@nestjs/config";
 import { AuthConfiguration, AuthSource } from "./config-auth";
 import { instanceToPlain, plainToClass } from "class-transformer";
@@ -30,10 +30,10 @@ import {
   OAuthError,
   TokenSuccessfulResponse,
   UnknownOAuthError,
-} from "@libs/oauth";
+} from "akasha-lib";
 import { Account, Authorization, Role, Session } from "@prisma/client";
 import * as jose from "jose";
-import { jwtSignatureHMAC, jwtVerifyHMAC } from "@libs/jwt";
+import { jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
 
 export const jwtAlgorithm = "HS256";
 

@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "workspaces": [
+    "akasha-app",
+    "akasha-lib"
+  ]
+}

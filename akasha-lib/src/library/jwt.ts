@@ -1,6 +1,6 @@
 import * as jose from "jose";
 
-export type HashAlgorithm = "HS256" | "HS384" | "HS512";
+export type JWTHashAlgorithm = "HS256" | "HS384" | "HS512";
 
 export type JWTOptions = {
   issuer?: string | undefined;
@@ -15,7 +15,7 @@ type JWTFailed = { success: false; expired: boolean };
 type JWTResult = JWTSuccessful | JWTFailed;
 
 export async function jwtSignatureHMAC(
-  algorithm: HashAlgorithm,
+  algorithm: JWTHashAlgorithm,
   secret: Uint8Array,
   payload: Record<string, unknown>,
   expireSecs?: number | undefined,
@@ -46,7 +46,7 @@ export async function jwtSignatureHMAC(
 
 export async function jwtVerifyHMAC(
   jwt: string,
-  algorithm: HashAlgorithm,
+  algorithm: JWTHashAlgorithm,
   secret: Uint8Array,
   option?: JWTOptions | undefined
 ): Promise<JWTResult> {

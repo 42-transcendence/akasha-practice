@@ -9,7 +9,7 @@ import {
 import { PrismaClientExceptionFilter } from "./prisma/prisma-client-exception.filter";
 import { WsAdapter } from "./ws-adapter";
 import { ConfigService } from "@nestjs/config";
-import { patternToRegExp } from "@libs/regex";
+import { patternToRegExp } from "akasha-lib";
 
 function configCors(app: INestApplication<any>) {
   const config = app.get(ConfigService);

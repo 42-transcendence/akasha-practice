@@ -26,6 +26,9 @@ dependencies:
   '@prisma/client':
     specifier: 5.1.1
     version: 5.1.1(prisma@5.1.1)
+  akasha-lib:
+    specifier: link:../akasha-lib
+    version: link:../akasha-lib
   class-transformer:
     specifier: ^0.5.1
     version: 0.5.1

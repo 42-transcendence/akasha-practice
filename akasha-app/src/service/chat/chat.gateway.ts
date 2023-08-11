@@ -4,7 +4,7 @@ import {
   SubscribeMessage,
   WebSocketGateway,
 } from "@nestjs/websockets";
-import { ByteBuffer } from "@libs/byte-buffer";
+import { ByteBuffer } from "akasha-lib";
 import { WebSocket } from "ws";
 import { IncomingMessage } from "http";
 
