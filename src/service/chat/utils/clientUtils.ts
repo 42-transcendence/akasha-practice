@@ -1,5 +1,5 @@
 import { ByteBuffer } from "@libs/byte-buffer";
-import { ChatOpCode, ChatWithoutId, ChatWithoutIdUuid, RoomInfo, readChats, readRoominfo, writeChatAndMemebers, writeRoomJoinInfo, JoinCode, ChatMessageWithChatUuid, CreatCode, readChatMemberAccount, writeMembersAndChatUUID, readChat, AccountWithUuid, readAccountWithUuids, PartCode, accountInChat, KickCode, readMembersAndChatUUID, removeUser, CreateChatMessaage, writeCreateChatMessaage, readChatMessage, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readChatMessagesList, readAccounts, Account } from "./utils";
+import { ChatOpCode, writeRoomJoinInfo, JoinCode, CreatCode, PartCode, KickCode, CreateChatMessaage, writeCreateChatMessaage, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readChatMessagesList, readAccounts, Account, NowChatRoom, MemberWithModeFlags, Message, readMessage, CreateChat, writeCreateChat, writeChatUUIDAndMemberUUIDs, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, readChatMembers, readChatRoom, readChatMessages, readMemberWithModeFlags } from "./utils";
 import { CustomException } from "./exception";
 
 export function sendConnectMessage(client: WebSocket) {
@@ -12,69 +12,164 @@ export function sendConnectMessage(client: WebSocket) {
 	client.send(buf.toArray());
 }
 
-export function sendCreateRoom(client: WebSocket, room: ChatWithoutIdUuid, members: string[]) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Create);
-	writeChatAndMemebers(buf, room, members);
+export function sendCreateRoom(client: WebSocket, room: CreateChat) {
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.CREATE);
+	writeCreateChat(buf, room);
 	client.send(buf.toArray());
 }
 
 export function snedJoinRoom(client: WebSocket, room: { uuid: string, password: string }) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Join)
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.JOIN)
 	writeRoomJoinInfo(buf, room);
 	client.send(buf.toArray())
 }
 
-export function sendInvite(client: WebSocket, invitation: { chatUUID: string, members: string[] }) {
+export function sendInvite(client: WebSocket, invitation: ChatUUIDAndMemberUUIDs) {
 	//초대권한이 있는지 확인해함.
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Invite);
-	writeMembersAndChatUUID(buf, invitation);
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INVITE);
+	writeChatUUIDAndMemberUUIDs(buf, invitation);
 	client.send(buf.toArray());
 }
 
 export function sendEnter(client: WebSocket, roomUUID: string) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Enter);
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.ENTER);
 	buf.writeString(roomUUID);
 	client.send(buf.toArray());
 }
 
 export function sendPart(client: WebSocket, roomUUID: string) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Part);
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.PART);
 	buf.writeString(roomUUID);
 	client.send(buf.toArray());
 }
 
-export function sendKick(client: WebSocket, kickList: { chatUUID: string, members: string[] }) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Kick);
-	writeMembersAndChatUUID(buf, kickList);
+export function sendKick(client: WebSocket, kickList: ChatUUIDAndMemberUUIDs) {
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.KICK);
+	writeChatUUIDAndMemberUUIDs(buf, kickList);
 	client.send(buf.toArray());
 }
 
 export function sendChat(client: WebSocket, msg: CreateChatMessaage) {
-	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.Chat);
+	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.CHAT);
 	writeCreateChatMessaage(buf, msg);
 	client.send(buf.toArray());
 }
-
 //utils
-function addRoomList(room: RoomInfo) {
-	const message: ChatMessageWithChatUuid[] = [];
-	const members: accountInChat[] = [];
-	for (let member of room.members)
-		members.push({ account: { uuid: member.account.uuid, avatarKey: member.account.avatarKey }, modeFlags: member.modeFlags })
-	if (room.messages)
-		message.push(room.messages[0]);
-	const addRoom: ChatWithoutId = {
-		uuid: room.uuid,
-		title: room.title,
-		modeFlags: room.modeFlags,
-		password: room.password,
-		limit: room.limit,
-		members: members,
-		messages: message,
+function makeNowChatRoom(chatUUID: string): NowChatRoom {
+	const chatRooms: ChatRoom[] = JSON.parse(String(window.localStorage.getItem('chatRooms')));
+	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
+	const chatMEssagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMEssagesList')));
+	const nowChatRoom: NowChatRoom = { chatRoom: null, members: null, messages: null };
+	for (let i = 0; i < chatRooms.length; i++) {
+		if (chatRooms[i].uuid == chatUUID) {
+			nowChatRoom.chatRoom = chatRooms[i];
+		}
 	}
-	const rooms = JSON.parse(String(window.localStorage.getItem('rooms')));
-	rooms.push(addRoom);
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
+	for (let i = 0; i < chatMembersList.length; i++) {
+		if (chatMembersList[i].chatUUID == chatUUID) {
+			nowChatRoom.members = chatMembersList[i];
+		}
+	}
+	for (let i = 0; i < chatMEssagesList.length; i++) {
+		if (chatMEssagesList[i].chatUUID == chatUUID) {
+			nowChatRoom.messages = chatMEssagesList[i];
+		}
+	}
+	return (nowChatRoom);
+}
+
+function addChatRoom(newChatRoom: ChatRoom) {
+	const chatRooms: ChatRoom[] = JSON.parse(String(window.localStorage.getItem('chatRooms')));
+	chatRooms.push(newChatRoom);
+	window.localStorage.setItem('chatRoomst', JSON.stringify(chatRooms));
+}
+
+function deleteChatRoom(chatUUID: string) {
+	const chatRooms: ChatRoom[] = JSON.parse(String(window.localStorage.getItem('chatRooms')));
+	for (let i = 0; i < chatRooms.length; i++) {
+		if (chatRooms[i].uuid == chatUUID) {
+			chatRooms.splice(i, 1);
+			break;
+		}
+	}
+	window.localStorage.setItem('chatRoomst', JSON.stringify(chatRooms));
+}
+
+function addChatMembers(newChatMembers: ChatMembers) {
+	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
+	chatMembersList.push(newChatMembers);
+	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
+}
+
+function addChatMember(chatUUID: string, chatMember: MemberWithModeFlags) {
+	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
+	for (let i = 0; i < chatMembersList.length; i++) {
+		if (chatMembersList[i].chatUUID == chatUUID) {
+			chatMembersList[i].members.push(chatMember);
+			break;
+		}
+	}
+	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
+}
+
+function deleteChatMembers(chatUUID: string) {
+	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
+	for (let i = 0; i < chatMembersList.length; i++) {
+		if (chatMembersList[i].chatUUID == chatUUID) {
+			chatMembersList.splice(i, 1);
+			break;
+		}
+	}
+	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
+}
+
+function deleteChatMember(chatUUID: string, accountUUID: string) {
+	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
+	for (let i = 0; i < chatMembersList.length; i++) {
+		if (chatMembersList[i].chatUUID == chatUUID) {
+			for (let j = 0; j < chatMembersList[i].members.length; j++) {
+				if (chatMembersList[i].members[j].account.uuid == accountUUID) {
+					chatMembersList[i].members.splice(j, 1);
+					break;
+				}
+			}
+			break;
+		}
+	}
+	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
+}
+
+function addChatMessages(newChatMessages: ChatMessages) {
+	const chatMessagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMessagesList')));
+	chatMessagesList.push(newChatMessages);
+	window.localStorage.setItem('chatMessagesList', JSON.stringify(chatMessagesList));
+}
+
+function addChatMessage(chatUUID: string, message: Message) {
+	const chatMessagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMessagesList')));
+	for (let i = 0; i < chatMessagesList.length; i++) {
+		if (chatMessagesList[i].chatUUID == chatUUID) {
+			chatMessagesList[i].messages.push(message);
+			break;
+		}
+	}
+	window.localStorage.setItem('chatMessagesList', JSON.stringify(chatMessagesList));
+}
+
+function deleteChatMessages(chatUUID: string) {
+	const chatMessagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMessagesList')));
+	for (let i = 0; i < chatMessagesList.length; i++) {
+		if (chatMessagesList[i].chatUUID == chatUUID) {
+			chatMessagesList.splice(i, 1);
+			break;
+		}
+	}
+	window.localStorage.setItem('chatMessagesList', JSON.stringify(chatMessagesList));
+}
+
+function setNowChatRoom(uuid: string) {
+	const nowChatRoom: NowChatRoom = makeNowChatRoom(uuid);
+	window.localStorage.setItem('nowChatRoom', JSON.stringify(nowChatRoom));
 }
 
 //accept
@@ -90,13 +185,14 @@ export function connect(client: WebSocket, buf: ByteBuffer) {
 
 export function acceptInfo(client: WebSocket, buf: ByteBuffer) {
 	const chatRooms: ChatRoom[] = readChatRooms(buf);
-	const chatMembers: ChatMembers[] = readChatMembersList(buf);
-	const chatMEssages: ChatMessages[] = readChatMessagesList(buf);
+	const chatMembersList: ChatMembers[] = readChatMembersList(buf);
+	const chatMessagesList: ChatMessages[] = readChatMessagesList(buf);
 	window.localStorage.setItem('chatRooms', JSON.stringify(chatRooms));
-	window.localStorage.setItem('chatMembers', JSON.stringify(chatMembers));
-	window.localStorage.setItem('chatMEssages', JSON.stringify(chatMEssages));
-	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS)
-	client.send(sendBuf.toArray())
+	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
+	window.localStorage.setItem('chatMessagesList', JSON.stringify(chatMessagesList));
+	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS);
+	client.send(sendBuf.toArray());
+	window.localStorage.removeItem('nowChatRoom');
 }
 
 export function acceptFriends(buf: ByteBuffer) {
@@ -106,154 +202,118 @@ export function acceptFriends(buf: ByteBuffer) {
 
 export function acceptCreat(buf: ByteBuffer) {
 	const code = buf.read1();
-	const nowRoomInfo: RoomInfo = readRoominfo(buf);
-	addRoomList(nowRoomInfo);
-	if (code == CreatCode.Creater)
-		window.localStorage.setItem('nowChatInfo', JSON.stringify(nowRoomInfo));
+	const newChatRoom: ChatRoom = readChatRoom(buf);
+	const newChatMembers: ChatMembers = readChatMembers(buf);
+	addChatRoom(newChatRoom);
+	addChatMembers(newChatMembers);
+	if (code == CreatCode.CREATER) {
+		setNowChatRoom(newChatRoom.uuid);
+	}
 }
 
 export function accpetJoin(buf: ByteBuffer) {
 	const code = buf.read1();
-	if (code == JoinCode.Reject)
+	if (code == JoinCode.REJCET)
 		return; // TODO - 비밀번호가 틀렸을경우.
-	else if (code == JoinCode.Accept) {
-		const roomInfo = readRoominfo(buf);
-		addRoomList(roomInfo);
-		window.localStorage.setItem('nowChatInfo', JSON.stringify(roomInfo));
-
+	else if (code == JoinCode.ACCEPT) {
+		const chatRoom = readChatRoom(buf);
+		const chatMembers = readChatMembers(buf);
+		const chatMessages = readChatMessages(buf);
+		addChatRoom(chatRoom);
+		addChatMembers(chatMembers);
+		addChatMessages(chatMessages);
 	}
-	else if (code == JoinCode.NewJoin) {
+	else if (code == JoinCode.NEW_JOIN) {
 		const uuid = buf.readString();
-		const member = readChatMemberAccount(buf);
-		const nowRoom: RoomInfo = JSON.parse(String(window.localStorage.getItem('nowChatInfo')));
-		if (nowRoom.uuid == uuid) {
-			nowRoom.members.push(member);
-			window.localStorage.setItem('nowChatInfo', JSON.stringify(nowRoom));
+		const member: MemberWithModeFlags = readMemberWithModeFlags(buf);
+		const nowChatRoom: NowChatRoom = JSON.parse(String(window.localStorage.getItem('nowChatRoom')));
+		addChatMember(uuid, member);
+		//TODO - join이 들어오면 리렌더를 할것임을 어떻게 알려줄것인가?
+		if (nowChatRoom.chatRoom?.uuid == uuid) {
+			setNowChatRoom(uuid);
 		}
-		const rooms: ChatWithoutId[] = JSON.parse(String(window.localStorage.getItem('rooms')));
-		for (let i = 0; i < rooms.length; ++i) {
-			if (rooms[i].uuid == uuid) {
-				rooms[i].members.push({ account: { uuid: member.account.uuid, avatarKey: member.account.avatarKey }, modeFlags: member.modeFlags })
-				break;
-			}
-		}
-		window.localStorage.setItem('rooms', JSON.stringify(rooms));
 	}
 }
 
 export function accpetPublicSearch(buf: ByteBuffer) {
-	const publicRooms: ChatWithoutId[] = readChats(buf);
+	const publicRooms: ChatRoom[] = readChatRooms(buf);
 	publicRooms;
 	return;
 }
 
 export function accpetInvite(buf: ByteBuffer) {
-	const nowRoom: ChatWithoutId = readChat(buf);
-	const rooms = JSON.parse(String(window.localStorage.getItem('rooms')));
-	rooms.push(nowRoom);
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
+	const chatRoom = readChatRoom(buf);
+	const chatMembers = readChatMembers(buf);
+	const chatMessages = readChatMessages(buf);
+	addChatRoom(chatRoom);
+	addChatMembers(chatMembers);
+	addChatMessages(chatMessages);
 }
 
 export function acceptEnter(buf: ByteBuffer) {
-	const roominfo: RoomInfo = readRoominfo(buf);
-	window.localStorage.setItem('nowChatInfo', JSON.stringify(roominfo));
+	const chatRoom = readChatRoom(buf);
+	const chatMembers = readChatMembers(buf);
+	const chatMessages = readChatMessages(buf);
+	addChatRoom(chatRoom);
+	addChatMembers(chatMembers);
+	addChatMessages(chatMessages);
+	setNowChatRoom(chatRoom.uuid);
 }
 
 export function acceptPart(buf: ByteBuffer) {
 	const code = buf.read1();
-	const roomUUID = buf.readString();
-	const nowRoom: RoomInfo = JSON.parse(String(window.localStorage.getItem('nowChatInfo')));
-	const rooms: ChatWithoutId[] = JSON.parse(String(window.localStorage.getItem('rooms')));
-	if (code == PartCode.Accept) {
-		if (nowRoom.uuid == roomUUID)
-			window.localStorage.setItem('nowChatInfo', JSON.stringify(null));
-		for (let i = 0; i < rooms.length; ++i) {
-			if (rooms[i].uuid == roomUUID) {
-				rooms.splice(i, 1);
-				break;
-			}
+	const chatUUID = buf.readString();
+	const nowChatRoom: NowChatRoom = JSON.parse(String(window.localStorage.getItem('nowChatRoom')));
+	if (code == PartCode.ACCEPT) {
+		if (nowChatRoom.chatRoom?.uuid == chatUUID) {
+			window.localStorage.removeItem('nowChatRoom');
+		}
+		deleteChatRoom(chatUUID);
+		deleteChatMembers(chatUUID);
+		deleteChatMessages(chatUUID);
+	}
+	else if (code == PartCode.PART) {
+		const accountUUID = buf.readString();
+		deleteChatMember(chatUUID, accountUUID);
+		if (nowChatRoom.chatRoom?.uuid == chatUUID) {
+			setNowChatRoom(chatUUID)
 		}
 	}
-	else if (code == PartCode.Part) {
-		const clientUUID = buf.readString();
-		if (nowRoom.uuid == roomUUID) {
-			for (let i = 0; i < nowRoom.members.length; ++i) {
-				if (nowRoom.members[i].account.uuid == clientUUID) {
-					nowRoom.members.splice(i, 1);
-					break;
-				}
-			}
-			window.localStorage.setItem('nowChatInfo', JSON.stringify(nowRoom))
-		}
-		for (let i = 0; i < rooms.length; ++i) {
-			if (rooms[i].uuid == roomUUID) {
-				for (let j = 0; j < rooms[i].members.length; ++j) {
-					if (rooms[i].members[j].account.uuid == clientUUID) {
-						rooms[i].members.splice(j, 1);
-						break;
-					}
-				}
-				break;
-			}
-		}
-	}
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
 }
 
 export function acceptKick(buf: ByteBuffer) {
 	const code = buf.read1();
-	const rooms: ChatWithoutId[] = JSON.parse(String(window.localStorage.getItem('rooms')));
-	const nowRoom: RoomInfo = JSON.parse(String(window.localStorage.getItem('nowChatInfo')));
+	const nowChatRoom: NowChatRoom = JSON.parse(String(window.localStorage.getItem('nowChatRoom')));
 	//TODO - 킥 권한이 없는 경우 어떻게 할것인가
-	if (code == KickCode.Reject) { }
-	else if (code == KickCode.KickUser) {
+	if (code == KickCode.REJCET) { }
+	else if (code == KickCode.KICK_USER) {
 		const chatUUID = buf.readString();
-		if (nowRoom.uuid == chatUUID) {
-			window.localStorage.setItem('nowChatInfo', JSON.stringify(null));
+		if (nowChatRoom.chatRoom?.uuid == chatUUID) {
+			window.localStorage.removeItem('nowChatRoom');
 		}
-		for (let i = 0; i < rooms.length; ++i) {
-			if (rooms[i].uuid == chatUUID) {
-				rooms.splice(i, 1);
-				break;
-			}
+		deleteChatRoom(chatUUID);
+		deleteChatMembers(chatUUID);
+		deleteChatMessages(chatUUID);
+	}
+	else if (code == KickCode.ACCEPT) {
+		const kickList: ChatUUIDAndMemberUUIDs = readChatUUIDAndMemberUUIDs(buf);
+		for (let member of kickList.members) {
+			deleteChatMember(kickList.chatUUID, member);
+		}
+		if (nowChatRoom.chatRoom?.uuid == kickList.chatUUID) {
+			setNowChatRoom(kickList.chatUUID);
 		}
 	}
-	else if (code == KickCode.Accept) {
-		const kickList: { chatUUID: string, members: string[] } = readMembersAndChatUUID(buf);
-		if (nowRoom.uuid == kickList.chatUUID) {
-			for (let kickUser of kickList.members) {
-				removeUser(nowRoom.members, kickUser)
-			}
-			window.localStorage.setItem('nowChatInfo', JSON.stringify(nowRoom));
-		}
-		for (let i = 0; i < rooms.length; ++i) {
-			if (rooms[i].uuid == kickList.chatUUID) {
-				for (let kickUser of kickList.members) {
-					removeUser(rooms[i].members, kickUser)
-				}
-				break;
-			};
-		}
-	}
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
 }
 
 export function accpetChat(buf: ByteBuffer) {
-	const roomUUID = buf.readString();
-	const msg: ChatMessageWithChatUuid = readChatMessage(buf);
-	const rooms: ChatWithoutId[] = JSON.parse(String(window.localStorage.getItem('rooms')));
-	const nowRoom: RoomInfo = JSON.parse(String(window.localStorage.getItem('nowChatInfo')));
-	if (nowRoom.uuid == roomUUID) {
-		nowRoom.messages?.push(msg);
-		window.localStorage.setItem('nowChatInfo', JSON.stringify(nowRoom));
+	const chatUUID = buf.readString();
+	const msg: Message = readMessage(buf);
+	const nowChatRoom: NowChatRoom = JSON.parse(String(window.localStorage.getItem('nowChatRoom')));
+	addChatMessage(chatUUID, msg);
+	if (nowChatRoom.chatRoom?.uuid == chatUUID) {
+		setNowChatRoom(chatUUID);
 	}
-	for (let i = 0; i < rooms.length; ++i) {
-		if (rooms[i].uuid == roomUUID) {
-			rooms[i].messages[0] = msg;
-		}
-		break;
-	}
-	window.localStorage.setItem('rooms', JSON.stringify(rooms));
 }
 
 export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
@@ -263,18 +323,18 @@ export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 		connect(client, buf);
 	else if (code == ChatOpCode.INFO)
 		acceptInfo(client, buf);
-	else if (code == ChatOpCode.Join)
+	else if (code == ChatOpCode.JOIN)
 		accpetJoin(buf);
-	else if (code == ChatOpCode.PublicSearch)
+	else if (code == ChatOpCode.PUBLIC_SEARCH)
 		accpetPublicSearch(buf);
-	else if (code == ChatOpCode.Invite)
+	else if (code == ChatOpCode.INVITE)
 		accpetInvite(buf);
-	else if (code == ChatOpCode.Enter)
+	else if (code == ChatOpCode.ENTER)
 		acceptEnter(buf);
-	else if (code == ChatOpCode.Part)
+	else if (code == ChatOpCode.PART)
 		acceptPart(buf);
-	else if (code == ChatOpCode.Kick)
+	else if (code == ChatOpCode.KICK)
 		acceptKick(buf);
-	else if (code == ChatOpCode.Chat)
+	else if (code == ChatOpCode.CHAT)
 		accpetChat(buf);
 }

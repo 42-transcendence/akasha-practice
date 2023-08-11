@@ -6,8 +6,8 @@ import {
 } from "@nestjs/websockets";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { WebSocketServer } from "ws";
-import { ChatWebSocket } from "./chat-socket";
-import { ChatService } from "./chat.service";
+import { ChatWebSocket } from "./chat-websocket";
+import { ChatSocket } from "./chat.socket";
 import { ChatOpCode } from "./utils/utils";
 
 @WebSocketGateway({ path: "/chat" })
@@ -17,7 +17,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   private clients: ChatWebSocket[];
 
-  constructor(private chatService: ChatService) {
+  constructor(private chatSocket: ChatSocket) {
     this.clients = [];
   }
 
@@ -34,59 +34,59 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     }
   }
 
-  @SubscribeMessage(ChatOpCode.Connect)
+  @SubscribeMessage(ChatOpCode.CONNECT)
   async connection(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.chatServerConnect(data, client);
+    await this.chatSocket.chatServerConnect(data, client);
   }
 
-  @SubscribeMessage(ChatOpCode.Rooms)
-  async sendRooms(client: ChatWebSocket): Promise<void> {
-    await this.chatService.sendRooms(client);
+  @SubscribeMessage(ChatOpCode.INFO)
+  async sendInfo(client: ChatWebSocket): Promise<ByteBuffer> {
+    return await this.chatSocket.sendInfo(client);
   }
 
-  @SubscribeMessage(ChatOpCode.Friends)
-  async sendFriends(client: ChatWebSocket): Promise<void> {
-    await this.chatService.sendFriends(client);
+  @SubscribeMessage(ChatOpCode.FRIENDS)
+  async sendFriends(client: ChatWebSocket): Promise<ByteBuffer> {
+    return await this.chatSocket.sendFriends(client);
   }
 
-  @SubscribeMessage(ChatOpCode.Create)
+  @SubscribeMessage(ChatOpCode.CREATE)
   async create(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.create(data, client, this.clients);
+    await this.chatSocket.create(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.Join)
+  @SubscribeMessage(ChatOpCode.JOIN)
   async join(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.join(data, client, this.clients);
+    await this.chatSocket.join(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.PublicSearch)
-  async searchPubilcRoom(client: ChatWebSocket): Promise<void> {
-    await this.chatService.searchPubilcRoom(client);
+  @SubscribeMessage(ChatOpCode.PUBLIC_SEARCH)
+  async searchPubilcRoom(): Promise<ByteBuffer> {
+    return await this.chatSocket.searchPubilcRoom();
   }
 
-  @SubscribeMessage(ChatOpCode.Invite)
+  @SubscribeMessage(ChatOpCode.INVITE)
   async invite(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.invite(client, this.clients, data);
+    await this.chatSocket.invite(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.Enter)
-  async enter(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.enterRoom(data, client);
+  @SubscribeMessage(ChatOpCode.ENTER)
+  async enter(data: ByteBuffer): Promise<ByteBuffer> {
+    return await this.chatSocket.enterRoom(data);
   }
 
-  @SubscribeMessage(ChatOpCode.Part)
+  @SubscribeMessage(ChatOpCode.PART)
   async part(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.part(data, client, this.clients);
+    await this.chatSocket.part(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.Kick)
+  @SubscribeMessage(ChatOpCode.KICK)
   async kick(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.kick(data, client, this.clients);
+    await this.chatSocket.kick(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.Chat)
+  @SubscribeMessage(ChatOpCode.CHAT)
   async chat(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatService.chat(data, client, this.clients);
+    await this.chatSocket.chat(client, this.clients, data);
   }
 
 }
