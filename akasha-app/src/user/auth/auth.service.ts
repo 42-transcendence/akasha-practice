@@ -33,9 +33,7 @@ import {
 } from "akasha-lib";
 import { Account, Authorization, Role, Session } from "@prisma/client";
 import * as jose from "jose";
-import { jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
-
-export const jwtAlgorithm = "HS256";
+import { JWTHashAlgorithm, jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
 
 export class AuthPayload {
   @IsUUID() user_id: string;
@@ -54,6 +52,8 @@ export type TokenSet = {
 
 @Injectable()
 export class AuthService {
+  static readonly jwtAlgorithm: JWTHashAlgorithm = "HS256";
+
   protected readonly logger = new Logger(AuthService.name);
   private readonly config: AuthConfiguration;
 
@@ -207,7 +207,7 @@ export class AuthService {
     const payloadRaw: Record<string, unknown> = instanceToPlain(payload);
 
     const accessToken: string = await jwtSignatureHMAC(
-      jwtAlgorithm,
+      AuthService.jwtAlgorithm,
       this.config.jwt_secret,
       payloadRaw,
       this.config.jwt_expire_secs,
@@ -292,7 +292,7 @@ export class AuthService {
   async extractJWTPayload(token: string): Promise<AuthPayload> {
     const verify = await jwtVerifyHMAC(
       token,
-      jwtAlgorithm,
+      AuthService.jwtAlgorithm,
       this.config.jwt_secret,
       this.config.jwt_options,
     );

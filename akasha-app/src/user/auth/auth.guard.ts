@@ -5,6 +5,8 @@ import { HttpArgumentsHost } from "@nestjs/common/interfaces";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
+  static AuthPayloadKey: string = "_auth";
+
   constructor(private readonly authService: AuthService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
@@ -18,7 +20,7 @@ export class AuthGuard implements CanActivate {
     const payload: AuthPayload = await this.authService.extractJWTPayload(
       token,
     );
-    request["_auth"] = payload;
+    request[AuthGuard.AuthPayloadKey] = payload;
     return true;
   }
 

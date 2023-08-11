@@ -46,7 +46,9 @@ export class AuthController {
   @Get("test")
   @UseGuards(AuthGuard)
   test(@Req() req: Request) {
-    const auth: any = (req as Record<string, any>)["auth"] as AuthPayload;
+    const auth: any = (req as Record<string, any>)[
+      AuthGuard.AuthPayloadKey
+    ] as AuthPayload;
     console.log(auth);
   }
 }
