@@ -35,67 +35,6 @@ export class ChatSocket {
 			client.send(sendBuf.toArray());
 		}
 	}
-	//utils
-	private divideChatsMembersMessages(chatRooms: ChatRoom[], chatMembers: ChatMembers[], chatMessages: ChatMessages[], room: RoomInfo) {
-		chatRooms.push({
-			uuid: room.uuid,
-			title: room.title,
-			modeFlags: room.modeFlags,
-			password: room.password,
-			limit: room.limit
-		});
-		const members: MemberWithModeFlags[] = [];
-		for (const member of room.members) {
-			members.push({
-				account: member.account,
-				modeFalgs: member.modeFlags
-			})
-		}
-		chatMembers.push({
-			chatUUID: room.uuid,
-			members: members,
-		})
-		const messages: Message[] = [];
-		if (room.messages) {
-			for (const message of room.messages) {
-				messages.push({
-					id: message.id,
-					accountUUID: message.account.uuid,
-					content: message.content,
-					modeFlags: message.modeFlags,
-					timestamp: message.timestamp,
-				});
-			}
-		}
-		chatMessages.push({
-			chatUUID: room.uuid,
-			messages: messages
-		})
-	}
-
-	private writeChatRoomInfo(buf: ByteBuffer, chatRoomInfo: RoomInfo) {
-		const chatRooms: ChatRoom[] = [];
-		const chatMembersList: ChatMembers[] = [];
-		const chatMessagesList: ChatMessages[] = [];
-		this.divideChatsMembersMessages(chatRooms, chatMembersList, chatMessagesList, chatRoomInfo);
-		writeChatRoom(buf, chatRooms[0]);
-		writeChatMembers(buf, chatMembersList[0]);
-		writeChatMessages(buf, chatMessagesList[0]);
-		return buf;
-	}
-
-	private writeChatRoomInfos(buf: ByteBuffer, roomList: { chat: RoomInfo }[]) {
-		const chatRooms: ChatRoom[] = [];
-		const chatMembersList: ChatMembers[] = [];
-		const chatMessagesList: ChatMessages[] = [];
-		for (const room of roomList) {
-			this.divideChatsMembersMessages(chatRooms, chatMembersList, chatMessagesList, room.chat);
-		}
-		writeChatRooms(buf, chatRooms);
-		writeChatMembersList(buf, chatMembersList);
-		writeChatMessagesList(buf, chatMessagesList);
-		return buf;
-	}
 
 	async sendInfo(client: ChatWebSocket) {
 		const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INFO);
@@ -160,9 +99,9 @@ export class ChatSocket {
 			if (createInfo.members.includes(otherClient.account.uuid))
 				otherClient.send(sendInviterBuf.toArray());
 		}
+		//TODO - create message
 		// client.send(sendCreaterBuf.toArray());
 		return sendCreaterBuf;
-		//TODO - create message
 	}
 
 	async join(client: ChatWebSocket, clients: ChatWebSocket[], buf: ByteBuffer) {
@@ -384,5 +323,66 @@ export class ChatSocket {
 				_client.send(sendBuf.toArray());
 			}
 		}
+	}
+
+	private divideChatsMembersMessages(chatRooms: ChatRoom[], chatMembers: ChatMembers[], chatMessages: ChatMessages[], room: RoomInfo) {
+		chatRooms.push({
+			uuid: room.uuid,
+			title: room.title,
+			modeFlags: room.modeFlags,
+			password: room.password,
+			limit: room.limit
+		});
+		const members: MemberWithModeFlags[] = [];
+		for (const member of room.members) {
+			members.push({
+				account: member.account,
+				modeFalgs: member.modeFlags
+			})
+		}
+		chatMembers.push({
+			chatUUID: room.uuid,
+			members: members,
+		})
+		const messages: Message[] = [];
+		if (room.messages) {
+			for (const message of room.messages) {
+				messages.push({
+					id: message.id,
+					accountUUID: message.account.uuid,
+					content: message.content,
+					modeFlags: message.modeFlags,
+					timestamp: message.timestamp,
+				});
+			}
+		}
+		chatMessages.push({
+			chatUUID: room.uuid,
+			messages: messages
+		})
+	}
+
+	private writeChatRoomInfo(buf: ByteBuffer, chatRoomInfo: RoomInfo) {
+		const chatRooms: ChatRoom[] = [];
+		const chatMembersList: ChatMembers[] = [];
+		const chatMessagesList: ChatMessages[] = [];
+		this.divideChatsMembersMessages(chatRooms, chatMembersList, chatMessagesList, chatRoomInfo);
+		writeChatRoom(buf, chatRooms[0]);
+		writeChatMembers(buf, chatMembersList[0]);
+		writeChatMessages(buf, chatMessagesList[0]);
+		return buf;
+	}
+
+	private writeChatRoomInfos(buf: ByteBuffer, roomList: { chat: RoomInfo }[]) {
+		const chatRooms: ChatRoom[] = [];
+		const chatMembersList: ChatMembers[] = [];
+		const chatMessagesList: ChatMessages[] = [];
+		for (const room of roomList) {
+			this.divideChatsMembersMessages(chatRooms, chatMembersList, chatMessagesList, room.chat);
+		}
+		writeChatRooms(buf, chatRooms);
+		writeChatMembersList(buf, chatMembersList);
+		writeChatMessagesList(buf, chatMessagesList);
+		return buf;
 	}
 }

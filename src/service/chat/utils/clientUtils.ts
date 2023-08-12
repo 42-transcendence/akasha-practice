@@ -1,6 +1,5 @@
 import { ByteBuffer } from "@libs/byte-buffer";
 import { ChatOpCode, writeRoomJoinInfo, JoinCode, CreatCode, PartCode, KickCode, CreateChatMessaage, writeCreateChatMessaage, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readChatMessagesList, readAccounts, Account, NowChatRoom, MemberWithModeFlags, Message, readMessage, CreateChat, writeCreateChat, writeChatUUIDAndMemberUUIDs, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, readChatMembers, readChatRoom, readChatMessages, readMemberWithModeFlags } from "./utils";
-import { CustomException } from "./exception";
 
 export function sendConnectMessage(client: WebSocket) {
 	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.CONNECT);
@@ -8,7 +7,7 @@ export function sendConnectMessage(client: WebSocket) {
 	if (jwt)
 		buf.writeString(jwt);
 	else
-		throw new CustomException('로그인 상태가 아닙니다.')
+		throw new Error('로그인 상태가 아닙니다.')
 	client.send(buf.toArray());
 }
 
@@ -173,7 +172,7 @@ function setNowChatRoom(uuid: string) {
 }
 
 //accept
-export function connect(client: WebSocket, buf: ByteBuffer) {
+export function acceptConnect(client: WebSocket, buf: ByteBuffer) {
 	if (buf.readBoolean()) {
 		const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INFO);
 		client.send(sendBuf.toArray());
@@ -320,7 +319,7 @@ export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 	const code: ChatOpCode = buf.readOpcode();
 
 	if (code == ChatOpCode.CONNECT)
-		connect(client, buf);
+		acceptConnect(client, buf);
 	else if (code == ChatOpCode.INFO)
 		acceptInfo(client, buf);
 	else if (code == ChatOpCode.JOIN)
