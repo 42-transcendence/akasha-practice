@@ -55,6 +55,11 @@ export enum KickCode {
 	KICK_USER
 }
 
+export enum InviteCode {
+	INVITER,
+	MEMBER
+}
+
 // use Join
 export function writeRoomJoinInfo(buf: ByteBuffer, roomJoinInfo: { uuid: string, password: string }): ByteBuffer {
 	buf.writeString(roomJoinInfo.uuid);

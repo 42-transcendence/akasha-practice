@@ -2,7 +2,7 @@ import { ByteBuffer } from "@libs/byte-buffer";
 import { Injectable } from "@nestjs/common";
 import { ChatWebSocket } from "./chat-websocket";
 import { CustomException } from "./utils/exception";
-import { ChatMemberModeFlags, CreatCode, RoomInfo, readRoomJoinInfo, PartCode, KickCode, readCreateChatMessaage, CreateChatMessaage, ChatRoom, ChatMessages, ChatMembers, Account, MemberWithModeFlags, Message, writeChatRooms, writeChatMembersList, writeChatMessagesList, writeAccounts, CreateChat, readCreateChat, writeMessage, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, writeChatUUIDAndMemberUUIDs, writeChatRoom, writeChatMembers, writeChatMessages, writeMemberWithModeFlags } from "./utils/utils";
+import { ChatMemberModeFlags, CreatCode, RoomInfo, readRoomJoinInfo, PartCode, KickCode, readCreateChatMessaage, CreateChatMessaage, ChatRoom, ChatMessages, ChatMembers, Account, MemberWithModeFlags, Message, writeChatRooms, writeChatMembersList, writeChatMessagesList, writeAccounts, CreateChat, readCreateChat, writeMessage, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, writeChatUUIDAndMemberUUIDs, writeChatRoom, writeChatMembers, writeChatMessages, writeMemberWithModeFlags, InviteCode, writeMembersWithModeFlags } from "./utils/utils";
 import { ChatOpCode, JoinCode } from "./utils/utils";
 import { ChatEntity } from "src/generated/model";
 import { AuthPayload, AuthService } from "src/user/auth/auth.service";
@@ -128,7 +128,7 @@ export class ChatSocket {
 		//Accept
 		const sendAcceptBuf = ByteBuffer.createWithOpcode(ChatOpCode.JOIN);
 		sendAcceptBuf.write1(JoinCode.ACCEPT);
-		this.writeChatRoomInfo(buf, roomInfo);
+		this.writeChatRoomInfo(sendAcceptBuf, roomInfo);
 		client.send(sendAcceptBuf.toArray());
 		//NewJoin
 		const sendNewJoinBuf = ByteBuffer.createWithOpcode(ChatOpCode.JOIN);
@@ -160,19 +160,30 @@ export class ChatSocket {
 
 	async invite(client: ChatWebSocket, clients: ChatWebSocket[], buf: ByteBuffer) {
 		const invitation: ChatUUIDAndMemberUUIDs = readChatUUIDAndMemberUUIDs(buf);
-		const accounts = await this.chatService.getAccounts(invitation.members);
-		//권한이 없으면 초대 거부
-		const room = await this.chatService.getRoomId(invitation.chatUUID);
+		//TODO - 권한이 없으면 초대 거부
+		const room = await this.chatService.getRoomIdAndMembersUUID(invitation.chatUUID);
+		if (!room)
+			throw new CustomException('채팅방이 존재하지 않습니다.');
+		if (client.getModeFlags(invitation.chatUUID) == ChatMemberModeFlags.NORMAL)
+			throw new CustomException('초대 권한이 없습니다.');
+		//기존 방 멤버들 목록
+		const nonInvitedMembers: string[] = [];
+		for (const member of room.members) {
+			nonInvitedMembers.push(member.account.uuid);
+		}
+		// 초대 목록에 중복되는 유저들 삭제
+		const invitedMembers: string[] = [];
+		for (const member of invitation.members) {
+			if (!nonInvitedMembers.includes(member)) {
+				invitedMembers.push(member);
+			}
+		}
+		const accounts = await this.chatService.getAccounts(invitedMembers);
 		//초대할 유저들의 id리스트 생성
 		const memberList: number[] = [];
 		for (let account of accounts) {
 			memberList.push(account.id);
 		}
-		//
-		if (!room)
-			throw new CustomException('채팅방이 존재하지 않습니다.');
-		if (client.getModeFlags(invitation.chatUUID) == ChatMemberModeFlags.NORMAL)
-			throw new CustomException('초대 권한이 없습니다.');
 		//chatMember add
 		await this.chatService.createChatMembers(room?.id, memberList, ChatMemberModeFlags.NORMAL)
 		//roomInformation추출
@@ -180,17 +191,41 @@ export class ChatSocket {
 		if (!roomInfo) {
 			throw new CustomException('존재하지 않는 채팅방입니다.')
 		}
+		// room의 멤버 리스트 작성
+		const roomMembers: string[] = [];
+		for (let member of roomInfo.members) {
+			roomMembers.push(member.account.uuid);
+		}
+		const invitedMembersWithModeFlags: MemberWithModeFlags[] = [];
+		for (let member of roomInfo.members) {
+			if (invitedMembers.includes(member.account.uuid)) {
+				const inviter: MemberWithModeFlags = {
+					account: member.account,
+					modeFalgs: member.modeFlags
+				};
+				invitedMembersWithModeFlags.push(inviter);
+			}
+		}
 		//초대받을 client 내부에 roomUUID, modeFlags를 추가
 		for (let i = 0; i < clients.length; i++) {
-			if (invitation.members.includes(clients[i].account.uuid)) {
+			if (invitedMembers.includes(clients[i].account.uuid)) {
 				clients[i].addRoomsInClientSocket([{ chat: roomInfo }])
 			}
 		}
-		const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INVITE);
-		this.writeChatRoomInfo(buf, roomInfo);
+		const sendInviterBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INVITE);
+		const sendMemberBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INVITE);
+		sendInviterBuf.write1(InviteCode.INVITER);
+		sendMemberBuf.write1(InviteCode.MEMBER);
+		this.writeChatRoomInfo(sendInviterBuf, roomInfo);
+		sendMemberBuf.writeString(roomInfo.uuid);
+		writeMembersWithModeFlags(sendMemberBuf, invitedMembersWithModeFlags);
 		for (let otherClient of clients) {
-			if (invitation.members.includes(otherClient.account.uuid))
-				otherClient.send(sendBuf.toArray());
+			if (invitedMembers.includes(otherClient.account.uuid)) {
+				otherClient.send(sendInviterBuf.toArray());
+			}
+			else if (roomMembers.includes(otherClient.account.uuid)) {
+				otherClient.send(sendMemberBuf.toArray());
+			}
 		}
 		//TODO - invite message
 	}
@@ -200,7 +235,7 @@ export class ChatSocket {
 		const roomInfo: RoomInfo | null = await this.chatService.getChatRoomFromUUID(roomUUID);
 		const sendBuf = ByteBuffer.createWithOpcode(ChatOpCode.ENTER);
 		if (roomInfo) {
-			this.writeChatRoomInfo(buf, roomInfo)
+			this.writeChatRoomInfo(sendBuf, roomInfo)
 		}
 		else {
 			throw new CustomException('채팅방이 존재하지 않습니다.');
@@ -219,9 +254,9 @@ export class ChatSocket {
 		await this.chatService.deleteChatMember(room.id, client.userId);
 		//나가는 방에 혼자있으면 방 삭제
 		if (room.members.length == 1) {
-			await this.chatService.deleteChatRoom(roomUUID);
 			//나가는 방에 모든 채팅 기록 삭제
 			await this.chatService.deleteChatMessages(room.id);
+			await this.chatService.deleteChatRoom(roomUUID);
 		}
 		//TODO: 나가는 유저의 권한이 admin일때 어떻게 admin 권한을 넘길것인가?
 		else if (client.getModeFlags(roomUUID) == ChatMemberModeFlags.ADMIN) { }//
@@ -239,7 +274,7 @@ export class ChatSocket {
 		for (let member of room.members)
 			roomUserIds.push(member.accountId);
 		for (let otherClient of clients)
-			if (roomUserIds.includes(otherClient.userId))
+			if (roomUserIds.includes(otherClient.userId) && otherClient.userId != client.userId)
 				otherClient.send(sendOtherUserBuf.toArray());
 		//client 내부에 roomUUID, modeFlags를 삭제
 		client.deleteRoomInClientSocket(roomUUID);

@@ -2,7 +2,7 @@ import {
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer as IsWebSocketServer,
-  OnGatewayConnection, OnGatewayDisconnect
+  OnGatewayConnection, OnGatewayDisconnect, MessageBody
 } from "@nestjs/websockets";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { WebSocketServer } from "ws";
@@ -50,8 +50,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(ChatOpCode.CREATE)
-  async create(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatSocket.create(client, this.clients, data);
+  async create(client: ChatWebSocket, data: ByteBuffer): Promise<ByteBuffer> {
+    return await this.chatSocket.create(client, this.clients, data);
   }
 
   @SubscribeMessage(ChatOpCode.JOIN)
@@ -70,7 +70,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage(ChatOpCode.ENTER)
-  async enter(data: ByteBuffer): Promise<ByteBuffer> {
+  async enter(@MessageBody() data: ByteBuffer): Promise<ByteBuffer> {
     return await this.chatSocket.enterRoom(data);
   }
 

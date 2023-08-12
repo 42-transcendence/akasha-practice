@@ -284,7 +284,7 @@ export class ChatService {
 		}));
 	}
 
-	async getRoomId(chatUUID: string) {
+	async getRoomIdAndMembersUUID(chatUUID: string) {
 		return (await this.prismaService.chat.findUnique({
 			where: {
 				uuid: chatUUID
@@ -292,6 +292,15 @@ export class ChatService {
 			select:
 			{
 				id: true,
+				members: {
+					select: {
+						account: {
+							select: {
+								uuid: true
+							}
+						}
+					}
+				}
 			}
 		}));
 	}
