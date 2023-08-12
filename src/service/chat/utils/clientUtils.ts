@@ -322,6 +322,8 @@ export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 		acceptConnect(client, buf);
 	else if (code == ChatOpCode.INFO)
 		acceptInfo(client, buf);
+	else if (code == ChatOpCode.FRIENDS)
+		acceptFriends(buf);
 	else if (code == ChatOpCode.JOIN)
 		accpetJoin(buf);
 	else if (code == ChatOpCode.PUBLIC_SEARCH)
