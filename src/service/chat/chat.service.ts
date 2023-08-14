@@ -381,10 +381,10 @@ export class ChatService {
 			where: {
 				OR: [
 					{
-						modeFlags: ChatRoomMode.PUBLIC_NOPASS
+						modeFlags: ChatRoomMode.SECRET
 					},
 					{
-						modeFlags: ChatRoomMode.PUBLIC_PASS
+						modeFlags: 0
 					}
 				]
 			},
