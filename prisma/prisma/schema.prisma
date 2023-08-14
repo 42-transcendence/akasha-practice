@@ -224,13 +224,13 @@ model Chat {
 }
 
 model ChatMember {
-  chat          Chat        @relation(fields: [chatId], references: [id])
+  chat          Chat         @relation(fields: [chatId], references: [id])
   chatId        Int
-  account       Account     @relation(fields: [accountId], references: [id])
+  account       Account      @relation(fields: [accountId], references: [id])
   accountId     Int
   modeFlags     Int
-  lastMessage   ChatMessage @relation(fields: [lastMessageId], references: [uuid])
-  lastMessageId String      @db.Uuid
+  lastMessage   ChatMessage? @relation(fields: [lastMessageId], references: [uuid])
+  lastMessageId String?      @db.Uuid
 
   @@id([chatId, accountId])
   @@map("chat_members")
