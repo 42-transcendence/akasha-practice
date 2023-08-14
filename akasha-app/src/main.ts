@@ -22,7 +22,7 @@ function configCors(app: INestApplication<any>) {
 
   const corsOrigin = config.get("cors.origin");
   let origin: RegExp | RegExp[];
-  if (corsOrigin instanceof Array) {
+  if (Array.isArray(corsOrigin)) {
     if (!corsOrigin.every((e) => typeof e === "string")) {
       throw new TypeError("Configured CORS origin is not an array of string");
     }
@@ -37,7 +37,7 @@ function configCors(app: INestApplication<any>) {
 
   const corsMethod = config.get("cors.method");
   let methods: string | string[];
-  if (corsMethod instanceof Array) {
+  if (Array.isArray(corsMethod)) {
     if (!corsMethod.every((e) => typeof e === "string")) {
       throw new TypeError("Configured CORS methods is not an array of string");
     }
