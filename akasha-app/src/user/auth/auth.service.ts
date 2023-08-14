@@ -52,7 +52,7 @@ export type TokenSet = {
 
 @Injectable()
 export class AuthService {
-  static readonly jwtAlgorithm: JWTHashAlgorithm = "HS256";
+  static readonly JWT_ALGORITHM: JWTHashAlgorithm = "HS256";
 
   protected readonly logger = new Logger(AuthService.name);
   private readonly config: AuthConfiguration;
@@ -207,7 +207,7 @@ export class AuthService {
     const payloadRaw: Record<string, unknown> = instanceToPlain(payload);
 
     const accessToken: string = await jwtSignatureHMAC(
-      AuthService.jwtAlgorithm,
+      AuthService.JWT_ALGORITHM,
       this.config.jwt_secret,
       payloadRaw,
       this.config.jwt_expire_secs,
@@ -292,7 +292,7 @@ export class AuthService {
   async extractJWTPayload(token: string): Promise<AuthPayload> {
     const verify = await jwtVerifyHMAC(
       token,
-      AuthService.jwtAlgorithm,
+      AuthService.JWT_ALGORITHM,
       this.config.jwt_secret,
       this.config.jwt_options,
     );
