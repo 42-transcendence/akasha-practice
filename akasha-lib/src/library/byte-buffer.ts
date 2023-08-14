@@ -25,8 +25,33 @@ const isDefined_SharedArrayBuffer_: boolean =
   typeof SharedArrayBuffer === "function";
 
 export class ByteBuffer {
-  private static readonly textEncoder: TextEncoder = new TextEncoder();
-  private static readonly textDecoder: TextDecoder = new TextDecoder();
+  private static readonly TEXT_ENCODER: TextEncoder = new TextEncoder();
+  private static readonly TEXT_DECODER: TextDecoder = new TextDecoder();
+
+  private static readonly SMART_ACTION: Record<
+    string,
+    (buf: ByteBuffer, value: string) => any
+  > = {
+    ["O"]: (buf, value) => buf.writeOpcode(Number(value)),
+    ["1"]: (buf, value) => buf.write1Signed(Number(value)),
+    ["B"]: (buf, value) => buf.write1(Number(value)),
+    ["2"]: (buf, value) => buf.write2(Number(value)),
+    ["W"]: (buf, value) => buf.write2Unsigned(Number(value)),
+    ["4"]: (buf, value) => buf.write4(Number(value)),
+    ["D"]: (buf, value) => buf.write4Unsigned(Number(value)),
+    ["8"]: (buf, value) => buf.write8(BigInt(value)),
+    ["Q"]: (buf, value) => buf.write8Unsigned(BigInt(value)),
+    ["f"]: (buf, value) => buf.write4Float(Number(value)),
+    ["d"]: (buf, value) => buf.write8Float(Number(value)),
+    ["S"]: (buf, value) => buf.writeString(value),
+    ["t"]: (buf, value) => buf.writeDate(new Date(Date.now() + Number(value))),
+    ["T"]: (buf, value) => buf.writeDate(new Date(value)),
+    ["U"]: (buf, value) => buf.writeUUID(value),
+  };
+  private static readonly SMART_REGEX = new RegExp(
+    `([${Object.keys(ByteBuffer.SMART_ACTION).join("|")}]){(.*?)}`,
+    "g"
+  );
 
   accessor: DataView;
   offset: number;
@@ -79,6 +104,18 @@ export class ByteBuffer {
           )
         : new DataView(arrayOrBuffer);
     return new ByteBuffer(accessor, endian);
+  }
+
+  static fromSmartBufferString(smart: string): ByteBuffer {
+    const buffer = ByteBuffer.create();
+    const it = smart.matchAll(ByteBuffer.SMART_REGEX);
+    for (const [, key, value] of it) {
+      const action = ByteBuffer.SMART_ACTION[key];
+      if (action !== undefined) {
+        action(buffer, value);
+      }
+    }
+    return buffer;
   }
 
   seek(offset: number): void {
@@ -185,7 +222,7 @@ export class ByteBuffer {
   readString(): string {
     const length: number = this.readLength();
     const data: ReadonlyUint8Array = this.read(length);
-    const value = ByteBuffer.textDecoder.decode(data);
+    const value = ByteBuffer.TEXT_DECODER.decode(data);
     return value;
   }
 
@@ -299,7 +336,7 @@ export class ByteBuffer {
   }
 
   writeString(value: string): this {
-    const data: Uint8Array = ByteBuffer.textEncoder.encode(value);
+    const data: Uint8Array = ByteBuffer.TEXT_ENCODER.encode(value);
     const length: number = data.length;
     this.writeLength(length);
     this.write(data, length);
