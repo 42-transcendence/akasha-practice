@@ -27,10 +27,8 @@ export enum ChatMessageFlags {
 }
 
 export enum ChatRoomMode {
-	PUBLIC_PASS,
-	PUBLIC_NOPASS,
-	PRIVATE_PASS,
-	PRIVATE_NOPASS,
+	PRIVATE = 1 << 0,
+	SECRET = 1 << 1,
 }
 
 export enum JoinCode {
