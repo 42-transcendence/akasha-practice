@@ -12,8 +12,8 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import {
-  SocketCloseResult,
   SocketState,
+  SocketStateNumber,
   WebSocketListenProps,
   WebSocketRegisterProps,
   WebSocketRegistry,
@@ -48,33 +48,39 @@ export function WebSocketContainer({
 export function useWebSocket(
   name: string,
   opcode?: number | number[] | undefined,
-  once?: (
-    opcode: number,
-    buffer: ByteBuffer
-  ) => ByteBuffer | ByteBuffer[] | undefined | void
+  once?:
+    | ((
+        opcode: number,
+        buffer: ByteBuffer
+      ) => ByteBuffer | ByteBuffer[] | undefined | void)
+    | undefined
 ): {
   dangerouslyGetWebSocketRef: React.MutableRefObject<WebSocket | undefined>;
   socketState: SocketState;
-  socketCloseResult: SocketCloseResult | undefined;
   lastOpcode: number | undefined;
   lastPayload: ByteBuffer | undefined;
   sendPayload: (value: ByteBuffer) => void;
 } {
   const registry: WebSocketRegistry = useContext(RegistryContext);
   const webSocketRef = useRef<WebSocket>();
-  const [socketState, setSocketState] = useState(SocketState.INITIAL);
-  const [socketCloseResult, setSocketCloseResult] =
-    useState<SocketCloseResult>();
-  const [lastMessage, _setLastMessage] = useState<ArrayBuffer>();
+  const [socketState, setSocketState] = useState<SocketState>({
+    number: SocketStateNumber.INITIAL,
+  });
+  const [lastMessage, setLastMessage] = useState<ArrayBuffer>();
   const sendPayload = useCallback((value: ByteBuffer): void => {
     webSocketRef.current?.send(value.toArray());
   }, []);
+  const opcodeRef = useRef<typeof opcode>();
   useEffect(() => {
-    const setLastMessage = (
+    opcodeRef.current = opcode;
+  }, [opcode]);
+  useEffect(() => {
+    const opcode = opcodeRef.current;
+    const setLastMessageSync = (
       value: React.SetStateAction<ArrayBuffer | undefined>
     ): void => {
       flushSync(() => {
-        _setLastMessage(value);
+        setLastMessage(value);
       });
     };
     const filter =
@@ -91,13 +97,18 @@ export function useWebSocket(
       name,
       webSocketRef,
       setSocketState,
-      setSocketCloseResult,
       setLastMessage,
+      setLastMessageSync,
       filter,
     };
     return registry.listen(props);
-  }, [registry, name, opcode]);
+  }, [name, registry]);
+  const onceRef = useRef<typeof once>();
   useEffect(() => {
+    onceRef.current = once;
+  }, [once]);
+  useEffect(() => {
+    const once = onceRef.current;
     if (lastMessage === undefined || once === undefined) {
       return;
     }
@@ -114,7 +125,6 @@ export function useWebSocket(
         webSocketRef.current?.send(response.toArray());
       }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastMessage]);
 
   const lastPayload =
@@ -124,7 +134,6 @@ export function useWebSocket(
   return {
     dangerouslyGetWebSocketRef: webSocketRef,
     socketState,
-    socketCloseResult,
     lastOpcode,
     lastPayload,
     sendPayload,
