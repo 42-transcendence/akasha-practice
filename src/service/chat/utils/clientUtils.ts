@@ -3,7 +3,7 @@ import { ChatOpCode, writeRoomJoinInfo, JoinCode, CreatCode, PartCode, KickCode,
 
 export function sendConnectMessage(client: WebSocket) {
 	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.CONNECT);
-	const jwt = window.localStorage.getItem('jwt');
+	const jwt = window.localStorage.getItem('access_token');
 	if (jwt)
 		buf.writeString(jwt);
 	else
@@ -57,7 +57,7 @@ export function sendChat(client: WebSocket, msg: CreateChatMessaage) {
 function makeNowChatRoom(chatUUID: string): NowChatRoom {
 	const chatRooms: ChatRoom[] = JSON.parse(String(window.localStorage.getItem('chatRooms')));
 	const chatMembersList: ChatMembers[] = JSON.parse(String(window.localStorage.getItem('chatMembersList')));
-	const chatMEssagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMEssagesList')));
+	const chatMessagesList: ChatMessages[] = JSON.parse(String(window.localStorage.getItem('chatMessagesList')));
 	const nowChatRoom: NowChatRoom = { chatRoom: null, members: null, messages: null };
 	for (let i = 0; i < chatRooms.length; i++) {
 		if (chatRooms[i].uuid == chatUUID) {
@@ -71,9 +71,9 @@ function makeNowChatRoom(chatUUID: string): NowChatRoom {
 			break;
 		}
 	}
-	for (let i = 0; i < chatMEssagesList.length; i++) {
-		if (chatMEssagesList[i].chatUUID == chatUUID) {
-			nowChatRoom.messages = chatMEssagesList[i];
+	for (let i = 0; i < chatMessagesList.length; i++) {
+		if (chatMessagesList[i].chatUUID == chatUUID) {
+			nowChatRoom.messages = chatMessagesList[i];
 			break;
 		}
 	}
@@ -269,11 +269,11 @@ export function accpetInvite(buf: ByteBuffer) {
 
 export function acceptEnter(buf: ByteBuffer) {
 	const chatRoom = readChatRoom(buf);
-	const chatMembers = readChatMembers(buf);
-	const chatMessages = readChatMessages(buf);
-	addChatRoom(chatRoom);
-	addChatMembers(chatMembers);
-	addChatMessages(chatMessages);
+	// const chatMembers = readChatMembers(buf);
+	// const chatMessages = readChatMessages(buf);
+	// addChatRoom(chatRoom);
+	// addChatMembers(chatMembers);
+	// addChatMessages(chatMessages);
 	setNowChatRoom(chatRoom.uuid);
 }
 
