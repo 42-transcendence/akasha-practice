@@ -224,11 +224,13 @@ model Chat {
 }
 
 model ChatMember {
-  chat      Chat    @relation(fields: [chatId], references: [id])
-  chatId    Int
-  account   Account @relation(fields: [accountId], references: [id])
-  accountId Int
-  modeFlags Int
+  chat          Chat        @relation(fields: [chatId], references: [id])
+  chatId        Int
+  account       Account     @relation(fields: [accountId], references: [id])
+  accountId     Int
+  modeFlags     Int
+  lastMessage   ChatMessage @relation(fields: [lastMessageId], references: [uuid])
+  lastMessageId String      @db.Uuid
 
   @@id([chatId, accountId])
   @@map("chat_members")
@@ -236,14 +238,15 @@ model ChatMember {
 }
 
 model ChatMessage {
-  id        BigInt   @id @default(autoincrement())
-  chat      Chat     @relation(fields: [chatId], references: [id])
-  chatId    Int
-  account   Account  @relation(fields: [accountId], references: [id])
-  accountId Int
-  content   String
-  modeFlags Int
-  timestamp DateTime @default(now())
+  uuid           String       @id @unique @default(uuid()) @db.Uuid
+  chat           Chat         @relation(fields: [chatId], references: [id])
+  chatId         Int
+  account        Account      @relation(fields: [accountId], references: [id])
+  accountId      Int
+  content        String
+  modeFlags      Int
+  timestamp      DateTime     @default(now())
+  reachedMembers ChatMember[] @ignore
 
   @@index([timestamp(ops: TimestampMinMaxOps)], type: Brin)
   @@map("chat_messages")
