@@ -55,7 +55,7 @@ export type TokenSet = {
 @Injectable()
 export class AuthService {
   protected readonly logger = new Logger(AuthService.name);
-  private readonly config: AuthConfiguration;
+  readonly config: AuthConfiguration;
 
   constructor(
     env: ConfigService,
