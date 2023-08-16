@@ -31,6 +31,7 @@ export class ChatService {
 			},
 			select: {
 				id: true,
+				uuid: true,
 				nickName: true,
 				nickTag: true,
 				avatarKey: true,
@@ -67,12 +68,13 @@ export class ChatService {
 										statusMessage: true
 									}
 								},
-								modeFlags: true
+								modeFlags: true,
+								lastMessageId: true
 							},
 						},
 						messages: {
 							select: {
-								id: true,
+								uuid: true,
 								content: true,
 								timestamp: true,
 								modeFlags: true,
@@ -83,7 +85,7 @@ export class ChatService {
 								}
 							},
 							orderBy: {
-								id: 'desc'
+								timestamp: 'desc'
 							},
 						}
 					}
@@ -119,37 +121,40 @@ export class ChatService {
 		}));
 	}
 
-	async getAccountsId(members: string[]) {
+	async getAccountsIdUUID(members: string[]) {
 		return (await this.prismaService.account.findMany({
 			where: {
 				uuid: { in: members }
 			},
 			select: {
-				id: true
+				id: true,
+				uuid: true,
+				nickName: true
 			}
 		}));
 	}
 
-	async createChatMember(chatId: number, accountId: number, modeFlags: ChatMemberModeFlags) {
+	async createChatMember(chatId: number, accountId: number, modeFlags: ChatMemberModeFlags, lastMessageId: string | null) {
 		return (await this.prismaService.chatMember.create({
 			data: {
 				chatId,
 				accountId,
-				modeFlags
+				modeFlags,
+				lastMessageId
 			}
 		}));
 	}
 
-	private CreateChatMemberArray(chatRoomId: number, memberList: number[], modeFlags: ChatMemberModeFlags): ChatMemberEntity[] {
+	private CreateChatMemberArray(chatRoomId: number, memberList: number[], modeFlags: ChatMemberModeFlags, lastMessageId: string | null): ChatMemberEntity[] {
 		const arr: ChatMemberEntity[] = [];
 		for (let i of memberList)
-			arr.push({ chatId: chatRoomId, accountId: i, modeFlags: modeFlags });
+			arr.push({ chatId: chatRoomId, accountId: i, modeFlags: modeFlags, lastMessageId: lastMessageId });
 		return arr;
 	}
 
-	async createChatMembers(chatId: number, accountIds: number[], modeFlags: ChatMemberModeFlags) {
+	async createChatMembers(chatId: number, accountIds: number[], modeFlags: ChatMemberModeFlags, lastMessageId: string | null) {
 		return (await this.prismaService.chatMember.createMany({
-			data: this.CreateChatMemberArray(chatId, accountIds, modeFlags),
+			data: this.CreateChatMemberArray(chatId, accountIds, modeFlags, lastMessageId),
 		}));
 	}
 
@@ -177,7 +182,8 @@ export class ChatService {
 								statusMessage: true
 							}
 						},
-						modeFlags: true
+						modeFlags: true,
+						lastMessageId: true
 					}
 				},
 			}
@@ -187,6 +193,23 @@ export class ChatService {
 		return (await this.prismaService.chat.findUnique({
 			where: {
 				uuid: chatUUID,
+			},
+			include: {
+				messages: {
+					where: {
+						//TODO - 공지 모드 플레그
+						NOT: {
+							modeFlags: 1
+						}
+					},
+					select: {
+						uuid: true
+					},
+					orderBy: {
+						timestamp: 'desc'
+					},
+					take: 1
+				}
 			}
 		}));
 	}
@@ -214,12 +237,13 @@ export class ChatService {
 								statusMessage: true
 							}
 						},
-						modeFlags: true
+						modeFlags: true,
+						lastMessageId: true
 					}
 				},
 				messages: {
 					select: {
-						id: true,
+						uuid: true,
 						account: {
 							select: {
 								uuid: true
@@ -230,7 +254,7 @@ export class ChatService {
 						timestamp: true
 					},
 					orderBy: {
-						id: 'desc'
+						timestamp: 'desc'
 					}
 				}
 			}
@@ -262,11 +286,12 @@ export class ChatService {
 							}
 						},
 						modeFlags: true,
+						lastMessageId: true
 					},
 				},
 				messages: {
 					select: {
-						id: true,
+						uuid: true,
 						account: {
 							select: {
 								uuid: true,
@@ -277,7 +302,7 @@ export class ChatService {
 						modeFlags: true,
 					},
 					orderBy: {
-						id: 'desc'
+						timestamp: 'desc'
 					},
 				}
 			},
@@ -300,6 +325,21 @@ export class ChatService {
 							}
 						}
 					}
+				},
+				messages: {
+					where: {
+						//TODO - 공지 모드 플레그
+						NOT: {
+							modeFlags: 1
+						}
+					},
+					select: {
+						uuid: true
+					},
+					orderBy: {
+						timestamp: 'desc'
+					},
+					take: 1
 				}
 			}
 		}));
@@ -345,16 +385,16 @@ export class ChatService {
 		}));
 	}
 
-	async getAccountOfId(accountUUIDs: string[]) {
-		return (await this.prismaService.account.findMany({
-			where: {
-				uuid: { in: accountUUIDs }
-			},
-			select: {
-				id: true
-			}
-		}));
-	}
+	// async getAccountOfId(accountUUIDs: string[]) {
+	// 	return (await this.prismaService.account.findMany({
+	// 		where: {
+	// 			uuid: { in: accountUUIDs }
+	// 		},
+	// 		select: {
+	// 			id: true
+	// 		}
+	// 	}));
+	// }
 
 	async deleteChatMembers(chatId: number, accountIds: number[]) {
 		return (await this.prismaService.chatMember.deleteMany({

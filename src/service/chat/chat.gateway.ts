@@ -2,13 +2,13 @@ import {
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer as IsWebSocketServer,
-  OnGatewayConnection, OnGatewayDisconnect, MessageBody
+  OnGatewayConnection, OnGatewayDisconnect
 } from "@nestjs/websockets";
 import { ByteBuffer } from "@libs/byte-buffer";
 import { WebSocketServer } from "ws";
 import { ChatWebSocket } from "./chat-websocket";
 import { ChatSocket } from "./chat.socket";
-import { ChatOpCode } from "./utils/utils";
+import { ChatCode, ChatMessageFlags, ChatOpCode } from "./utils/utils";
 
 @WebSocketGateway({ path: "/chat", WebSocket: ChatWebSocket })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
@@ -69,10 +69,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
     await this.chatSocket.invite(client, this.clients, data);
   }
 
-  @SubscribeMessage(ChatOpCode.ENTER)
-  async enter(@MessageBody() data: ByteBuffer): Promise<ByteBuffer> {
-    return await this.chatSocket.enterRoom(data);
-  }
+  // @SubscribeMessage(ChatOpCode.ENTER)
+  // async enter(@MessageBody() data: ByteBuffer): Promise<ByteBuffer> {
+  //   return await this.chatSocket.enterRoom(data);
+  // }
 
   @SubscribeMessage(ChatOpCode.PART)
   async part(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
@@ -86,7 +86,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   @SubscribeMessage(ChatOpCode.CHAT)
   async chat(client: ChatWebSocket, data: ByteBuffer): Promise<void> {
-    await this.chatSocket.chat(client, this.clients, data);
+    const chatCode = data.read1();
+    if (chatCode == ChatCode.NORMAL)
+      await this.chatSocket.chat(client, this.clients, ChatMessageFlags.NORMAL, data);
   }
 
 }
