@@ -2,6 +2,7 @@
   "private": true,
   "workspaces": [
     "akasha-app",
-    "akasha-lib"
+    "akasha-lib",
+    "akasha-prisma-generator"
   ]
 }

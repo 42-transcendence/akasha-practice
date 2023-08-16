@@ -93,6 +93,8 @@ function download_node() {
 	curl -O "https://nodejs.org/dist/$NODE_VERSION/$NODE_DIST_NAME.tar.gz" && validate_node
 }
 
+NODE_DIRECTORY_NAME="node"
+
 function install_node() {
 	echo "Install node.js. . ."
 
@@ -119,10 +121,11 @@ function install_node() {
 		fi
 	fi
 
-	tar -xvf "$NODE_DIST_NAME.tar.gz"
+	mkdir -p "$NODE_DIRECTORY_NAME"
+	tar -xvf "$NODE_DIST_NAME.tar.gz" -C "$NODE_DIRECTORY_NAME" --strip-components=1
 }
 
-NODE_PATH="$SETUP_DIRECTORY/$NODE_DIST_NAME/bin"
+NODE_PATH="$SETUP_DIRECTORY/$NODE_DIRECTORY_NAME/bin"
 
 function export_node_path() {
 	if [ $(uname -s) = "Linux" ]

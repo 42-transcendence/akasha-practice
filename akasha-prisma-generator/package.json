@@ -1,0 +1,24 @@
+{
+  "name": "akasha-prisma-generator",
+  "version": "1.0.0",
+  "main": "dist/bin.js",
+  "bin": {
+    "akasha-prisma-generator": "dist/bin.js"
+  },
+  "scripts": {
+    "start": "node dist/bin.js",
+    "dev": "npx tsc -w",
+    "build": "npx tsc"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.1.1",
+    "@prisma/generator-helper": "^5.1.1",
+    "@prisma/internals": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.5.0",
+    "prettier": "^3.0.1",
+    "prisma": "^5.1.1",
+    "typescript": "^5.1.6"
+  }
+}

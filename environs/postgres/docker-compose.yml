@@ -36,7 +36,7 @@ services:
       - database
     restart: always
     volumes:
-      - ./config.d/pgadmin4-servers.json:/pgadmin4/servers.json
+      - ./.config.d/pgadmin4-servers.json:/pgadmin4/servers.json
       - dbadmin_volume:/var/lib/pgadmin
     networks:
       - http_network
