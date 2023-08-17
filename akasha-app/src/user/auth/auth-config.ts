@@ -1,6 +1,6 @@
 import { JWTOptions } from "akasha-lib";
 import { OAuth } from "akasha-lib";
-import { Transform, Type } from "class-transformer";
+import { Transform, Type, plainToClass } from "class-transformer";
 import {
   IsArray,
   IsBoolean,
@@ -13,9 +13,12 @@ import {
   ValidateNested,
   isArray,
   isString,
+  validateSync,
 } from "class-validator";
 import { patternToRegExp } from "akasha-lib";
 import { encodeUTF8 } from "akasha-lib";
+import { ConfigService } from "@nestjs/config";
+import { Logger } from "@nestjs/common";
 
 export class AuthSource {
   @IsNumber() key: number;
@@ -39,6 +42,24 @@ export class AuthJWTOptions implements JWTOptions {
 }
 
 export class AuthConfiguration {
+  static readonly logger = new Logger(AuthConfiguration.name);
+
+  static load(env: ConfigService) {
+    const config = plainToClass(AuthConfiguration, env.get("auth"));
+    const validationErrrors = validateSync(config, {
+      whitelist: true,
+      forbidNonWhitelisted: true,
+    });
+
+    if (validationErrrors.length !== 0) {
+      for (const validationError of validationErrrors) {
+        AuthConfiguration.logger.error(validationError.toString());
+      }
+      throw new Error("Validation error");
+    }
+    return config;
+  }
+
   @Transform(({ value }) =>
     isArray(value)
       ? value.map((e) => (isString(e) ? patternToRegExp(e, "i") : undefined))
@@ -56,6 +77,9 @@ export class AuthConfiguration {
   @Transform(({ value }) => (isString(value) ? encodeUTF8(value) : undefined))
   @IsDefined()
   jwt_secret: Uint8Array;
+
+  @IsNumber()
+  jwt_temp_expire_secs: number;
 
   @IsNumber()
   jwt_expire_secs: number;

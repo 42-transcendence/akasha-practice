@@ -10,6 +10,7 @@ import { PrismaClientExceptionFilter } from "./prisma/prisma-client-exception.fi
 import { WsAdapter } from "./ws-adapter";
 import { ConfigService } from "@nestjs/config";
 import { patternToRegExp } from "akasha-lib";
+import { AkashaGlobal } from "./global";
 
 function configCors(app: INestApplication<any>) {
   const config = app.get(ConfigService);
@@ -58,6 +59,7 @@ function configCors(app: INestApplication<any>) {
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  AkashaGlobal.setInstance(app);
   configCors(app);
 
   const { httpAdapter } = app.get(HttpAdapterHost);
@@ -68,6 +70,6 @@ async function bootstrap() {
 
   app.useWebSocketAdapter(new WsAdapter(app));
 
-  await app.listen(6262);
+  await app.listen(3001);
 }
 bootstrap();

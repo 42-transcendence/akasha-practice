@@ -6,9 +6,11 @@ import {
   Req,
   UseGuards,
 } from "@nestjs/common";
-import { AuthPayload, AuthService, TokenSet } from "./auth.service";
+import { AuthService } from "./auth.service";
 import { AuthGuard } from "./auth.guard";
 import { Request } from "express";
+import { AuthLevel, AuthPayload, TokenSet } from "./auth-payload";
+import { AuthLevelMin } from "./auth.decorator";
 
 @Controller("auth")
 export class AuthController {
@@ -43,12 +45,14 @@ export class AuthController {
     return await this.authService.refreshAuth(refreshToken);
   }
 
-  @Get("test")
+  @Get("promotion")
+  @AuthLevelMin(AuthLevel.TEMPORARY)
   @UseGuards(AuthGuard)
-  test(@Req() req: Request) {
-    const auth: any = (req as Record<string, any>)[
-      AuthGuard.AUTH_PAYLOAD_KEY
-    ] as AuthPayload;
-    console.log(auth);
+  async promotion(
+    @Req() req: Request,
+    @Query() query: Record<string, string>,
+  ): Promise<TokenSet> {
+    const auth: AuthPayload = AuthGuard.getAuthPayloadFromRequest(req);
+    return await this.authService.promotionAuth(auth, query);
   }
 }

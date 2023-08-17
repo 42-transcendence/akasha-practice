@@ -5,10 +5,16 @@ import {
   WebSocketGateway,
 } from "@nestjs/websockets";
 import { ByteBuffer } from "akasha-lib";
-import { WebSocket } from "ws";
+import { ServerOptions, WebSocket } from "ws";
 import { IncomingMessage } from "http";
+import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
+import { ChatWebSocket } from "./chat-websocket";
 
-@WebSocketGateway({ path: "/chat" })
+@WebSocketGateway<ServerOptions>({
+  path: "/chat",
+  verifyClient: verifyClientViaQueryParam("token"),
+  WebSocket: ChatWebSocket,
+})
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect {
   handleConnection(client: WebSocket, arg: IncomingMessage) {
     void client, arg;

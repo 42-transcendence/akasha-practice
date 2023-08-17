@@ -13,13 +13,6 @@ import { EMPTY, fromEvent, Observable } from "rxjs";
 import { filter, first, mergeMap, share, takeUntil } from "rxjs/operators";
 import { WebSocketServer, WebSocket } from "ws";
 
-enum WsReadyState {
-  CONNECTING = WebSocket.CONNECTING,
-  OPEN = WebSocket.OPEN,
-  CLOSING = WebSocket.CLOSING,
-  CLOSED = WebSocket.CLOSED,
-}
-
 type WsServer = WebSocketServer;
 type WsClient = WebSocket;
 type WsOption = GatewayMetadata;
@@ -110,7 +103,7 @@ export class WsAdapter extends AbstractWsAdapter {
       takeUntil(close$),
     );
     const onMessage = (response: unknown) => {
-      if (client.readyState !== WsReadyState.OPEN) {
+      if (client.readyState !== WebSocket.OPEN) {
         return;
       }
       // WsResponsePayload
@@ -191,8 +184,8 @@ export class WsAdapter extends AbstractWsAdapter {
     this.httpServersRegistry.set(port, httpServer);
 
     httpServer.on("upgrade", (request, socket, head) => {
-      const baseUrl = "ws://" + request.headers.host + "/";
-      const pathname = new URL(request.url ?? "", baseUrl).pathname;
+      const url = new URL(request.url ?? "", `ws://${request.headers.host}/`);
+      const pathname = url.pathname;
       const wsServersCollection = this.wsServersRegistry.get(port) ?? [];
 
       let isRequestDelegated = false;

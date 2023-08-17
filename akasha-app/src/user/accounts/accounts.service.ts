@@ -5,7 +5,9 @@ import { PrismaService } from "@/prisma/prisma.service";
 const accountWithRecord = Prisma.validator<Prisma.AccountDefaultArgs>()({
   include: { record: true },
 });
-type AccountWithRecord = Prisma.AccountGetPayload<typeof accountWithRecord>;
+export type AccountWithRecord = Prisma.AccountGetPayload<
+  typeof accountWithRecord
+>;
 
 @Injectable()
 export class AccountsService {
@@ -30,8 +32,8 @@ export class AccountsService {
     return await this.prisma.account.findUnique({ where: { id } });
   }
 
-  async getAccountForUUID(uuid: string): Promise<Account> {
-    return await this.prisma.account.findUniqueOrThrow({ where: { uuid } });
+  async getAccountForUUID(uuid: string): Promise<Account | null> {
+    return await this.prisma.account.findUnique({ where: { uuid } });
   }
 
   async getAccountWithRecordForUUID(uuid: string): Promise<AccountWithRecord> {

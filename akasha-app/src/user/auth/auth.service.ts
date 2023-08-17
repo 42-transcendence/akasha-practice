@@ -15,40 +15,29 @@ import {
   SessionsService,
 } from "@/user/sessions/sessions.service";
 import { ConfigService } from "@nestjs/config";
-import { AuthConfiguration, AuthSource } from "./config-auth";
-import { instanceToPlain, plainToClass } from "class-transformer";
-import {
-  IsEnum,
-  IsUUID,
-  validateOrReject,
-  validateSync,
-} from "class-validator";
+import { AuthConfiguration, AuthSource } from "./auth-config";
 import {
   AuthorizationCodeRequest,
   OAuth,
   OAuthDefinedError,
   OAuthError,
+  TOTP,
   TokenSuccessfulResponse,
   UnknownOAuthError,
+  decodeBase32,
+  generateOTP,
+  isBase32,
 } from "akasha-lib";
-import { Account, Authorization, Role, Session } from "@prisma/client";
+import { Account, Authorization, Session } from "@prisma/client";
 import * as jose from "jose";
 import { JWTHashAlgorithm, jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
-
-export class AuthPayload {
-  @IsUUID() user_id: string;
-  @IsEnum(Role) user_role: Role;
-
-  constructor(user_id: string, user_role: Role) {
-    this.user_id = user_id;
-    this.user_role = user_role;
-  }
-}
-
-export type TokenSet = {
-  access_token: string;
-  refresh_token: string;
-};
+import {
+  AuthLevel,
+  AuthPayload,
+  TokenSet,
+  isAuthPayload,
+} from "./auth-payload";
+import { getRoleNumber } from "@/generated/types";
 
 @Injectable()
 export class AuthService {
@@ -62,18 +51,7 @@ export class AuthService {
     private readonly accounts: AccountsService,
     private readonly sessions: SessionsService,
   ) {
-    const config = plainToClass(AuthConfiguration, env.get("auth"));
-    const validationErrrors = validateSync(config, {
-      whitelist: true,
-      forbidNonWhitelisted: true,
-    });
-
-    if (validationErrrors.length !== 0) {
-      for (const validationError of validationErrrors) {
-        this.logger.error(validationError.toString());
-      }
-      throw new Error("Validation error");
-    }
+    const config = AuthConfiguration.load(env);
 
     for (const [sourceKey, source] of config.source) {
       source._oauth = new OAuth(
@@ -150,15 +128,21 @@ export class AuthService {
           authorizationCode,
           state.redirectURI,
         );
-      const subject: string = await this.fetchSubject(source, param);
+      const subject: string = await AuthService.fetchSubject(source, param);
 
       const account: Account = await this.accounts.getOrCreateAccountForAuth({
         authIssuer: source.key,
         authSubject: subject,
       });
+
+      if (account.otpSecret !== null) {
+        // Issue temporary token that require promotion using OTP.
+        return await this.makeTemporaryToken(account);
+      }
+
       const session: Session = await this.sessions.createNewSession(account.id);
 
-      return await this.makeToken(account, session);
+      return await this.makeCompletedToken(account, session);
     } catch (e) {
       if (e instanceof UnknownOAuthError) {
         throw new BadRequestException("Invalid query parameter");
@@ -187,7 +171,7 @@ export class AuthService {
         throw new ForbiddenException("Gone account");
       }
 
-      return await this.makeToken(account, session);
+      return await this.makeCompletedToken(account, session);
     } catch (e) {
       if (e instanceof ReuseDetectError) {
         throw new ConflictException("Reuse detected");
@@ -199,17 +183,126 @@ export class AuthService {
     }
   }
 
-  private async makeToken(
-    account: Account,
-    session: Session,
+  async promotionAuth(
+    auth: AuthPayload,
+    query: Record<string, string>,
   ): Promise<TokenSet> {
-    const payload = new AuthPayload(account.uuid, account.role);
-    const payloadRaw: Record<string, unknown> = instanceToPlain(payload);
+    if (auth.auth_level === AuthLevel.TEMPORARY) {
+      const clientOTP: string = query["otp"];
+      if (clientOTP === undefined) {
+        throw new BadRequestException("Undefined OTP");
+      }
+
+      const state: Authorization | null =
+        await this.sessions.findAndDeleteTemporaryState(auth.state);
+      if (state === null) {
+        throw new BadRequestException("Not found state");
+      }
+
+      const account: Account | null = await this.accounts.getAccountForUUID(
+        state.redirectURI,
+      );
+      if (account === null) {
+        throw new BadRequestException("Not found account");
+      }
+
+      if (account.otpSecret === null) {
+        throw new InternalServerErrorException("Missing OTP data");
+      }
+      const params = new URLSearchParams(account.otpSecret);
+
+      const secretStr: string | null = params.get("secret");
+      const codeDigitsStr: string | null = params.get("digits");
+      const movingPeriodStr: string | null = params.get("period");
+      const algorithm: string | null = params.get("algorithm");
+      if (
+        secretStr === null ||
+        codeDigitsStr === null ||
+        movingPeriodStr === null ||
+        algorithm === null
+      ) {
+        throw new InternalServerErrorException("Corrupted OTP data");
+      }
+
+      const codeDigits = Number(codeDigitsStr);
+      const movingPeriod = Number(movingPeriodStr);
+      if (Number.isNaN(codeDigits) || Number.isNaN(movingPeriod)) {
+        throw new InternalServerErrorException("Corrupted OTP data (numbers)");
+      }
+
+      if (
+        algorithm !== "SHA-256" &&
+        algorithm !== "SHA-384" &&
+        algorithm !== "SHA-512"
+      ) {
+        throw new InternalServerErrorException(
+          "Corrupted OTP data (algorithm)",
+        );
+      }
+
+      if (!isBase32(secretStr)) {
+        throw new InternalServerErrorException("Corrupted OTP data (base32)");
+      }
+
+      const secret = decodeBase32(secretStr);
+      const movingFactor = TOTP.getMovingFactor(movingPeriod);
+
+      const serverOTP: string = await generateOTP(
+        secret,
+        movingFactor,
+        codeDigits,
+        algorithm,
+      );
+
+      if (clientOTP !== serverOTP) {
+        throw new UnauthorizedException("Wrong OTP");
+      }
+
+      const session: Session = await this.sessions.createNewSession(account.id);
+
+      return await this.makeCompletedToken(account, session);
+    }
+    throw new BadRequestException("Invalid promotion request");
+  }
+
+  private async makeTemporaryToken(account: Account): Promise<TokenSet> {
+    const state: Authorization = await this.sessions.createNewTemporaryState({
+      //XXX: Temporary access token을 일회용으로 만들기 위하여 endpointKey에 빈 문자열을 사용하여 표시하고 활용했음.
+      endpointKey: "",
+      //XXX: 계정의 식별자로 정수형 ID를 사용하는 것이 효율적이나 형식과 관계의 설정이 번거로운 관계로 UUID를 활용했음.
+      redirectURI: account.uuid,
+    });
+
+    const payload: AuthPayload = {
+      auth_level: AuthLevel.TEMPORARY,
+      state: state.id,
+    };
 
     const accessToken: string = await jwtSignatureHMAC(
       AuthService.JWT_ALGORITHM,
       this.config.jwt_secret,
-      payloadRaw,
+      payload,
+      this.config.jwt_temp_expire_secs,
+      this.config.jwt_options,
+    );
+
+    return { access_token: accessToken };
+  }
+
+  private async makeCompletedToken(
+    account: Account,
+    session: Session,
+  ): Promise<TokenSet> {
+    const payload: AuthPayload = {
+      auth_level: AuthLevel.COMPLETED,
+      user_id: account.uuid,
+      user_role: getRoleNumber(account.role),
+    };
+
+    const accessToken: string = await jwtSignatureHMAC(
+      AuthService.JWT_ALGORITHM,
+      this.config.jwt_secret,
+      payload,
       this.config.jwt_expire_secs,
       this.config.jwt_options,
     );
@@ -218,7 +311,7 @@ export class AuthService {
     return { access_token: accessToken, refresh_token: refreshToken };
   }
 
-  private async fetchSubject(
+  private static async fetchSubject(
     source: AuthSource,
     param: AuthorizationCodeRequest,
   ): Promise<string> {
@@ -229,8 +322,8 @@ export class AuthService {
       );
 
       return source.openid
-        ? this.fetchSubject_OpenID(source, token)
-        : this.fetchSubject_Manual(source, token);
+        ? AuthService.fetchSubject_OpenID(source, token)
+        : AuthService.fetchSubject_Manual(source, token);
     } catch (e) {
       if (e instanceof OAuthDefinedError) {
         throw new InternalServerErrorException(e);
@@ -242,7 +335,7 @@ export class AuthService {
     }
   }
 
-  private async fetchSubject_OpenID(
+  private static async fetchSubject_OpenID(
     source: AuthSource,
     token: TokenSuccessfulResponse,
   ) {
@@ -265,7 +358,7 @@ export class AuthService {
     return subject;
   }
 
-  private async fetchSubject_Manual(
+  private static async fetchSubject_Manual(
     source: AuthSource,
     token: TokenSuccessfulResponse,
   ) {
@@ -303,12 +396,9 @@ export class AuthService {
         : new BadRequestException("Invalid JWT");
     }
 
-    const payloadRaw: Record<string, unknown> = verify.payload;
-    const payload = plainToClass(AuthPayload, payloadRaw);
-    try {
-      await validateOrReject(payload);
-    } catch (e) {
-      throw new InternalServerErrorException(e);
+    const payload: Record<string, unknown> = verify.payload;
+    if (!isAuthPayload(payload)) {
+      throw new InternalServerErrorException("Unexpected JWT Payload");
     }
     return payload;
   }

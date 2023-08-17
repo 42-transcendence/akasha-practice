@@ -41,7 +41,8 @@ auth:
   # openssl rand -base64 33
   jwt_secret: your-256-bit-secret
 
-  jwt_expire_secs: 7200
+  jwt_temp_expire_secs: 90
+  jwt_expire_secs: 600
 
   jwt_options:
     issuer: Akasha

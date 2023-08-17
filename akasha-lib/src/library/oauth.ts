@@ -1,5 +1,7 @@
 // Reference: https://datatracker.ietf.org/doc/html/rfc6749
 
+import { hasProperty } from "./property";
+
 export class OAuthError extends Error {
   override get name() {
     return "OAuthError";
@@ -214,11 +216,15 @@ type AuthorizationResponseBase = {
 function isAuthorizationResponseBase(
   value: unknown
 ): value is AuthorizationResponseBase {
-  return (
+  if (
     typeof value === "object" &&
     value !== null &&
     (!("state" in value) || typeof value.state === "string")
-  );
+  ) {
+    value satisfies AuthorizationResponseBase;
+    return true;
+  }
+  return false;
 }
 
 export type AuthorizationSuccessfulResponse = AuthorizationResponseBase & {
@@ -228,11 +234,14 @@ export type AuthorizationSuccessfulResponse = AuthorizationResponseBase & {
 export function isAuthorizationSuccessfulResponse(
   value: unknown
 ): value is AuthorizationSuccessfulResponse {
-  return (
+  if (
     isAuthorizationResponseBase(value) &&
-    "code" in value &&
-    typeof value.code === "string"
-  );
+    hasProperty("string", value, "code")
+  ) {
+    value satisfies AuthorizationSuccessfulResponse;
+    return true;
+  }
+  return false;
 }
 
 type AuthorizationError =
@@ -247,7 +256,7 @@ type AuthorizationError =
 export function isAuthorizationErrorResponseError(
   value: string
 ): value is AuthorizationError {
-  return (
+  if (
     value === "invalid_request" ||
     value === "unauthorized_client" ||
     value === "access_denied" ||
@@ -255,7 +264,11 @@ export function isAuthorizationErrorResponseError(
     value === "invalid_scope" ||
     value === "server_error" ||
     value === "temporarily_unavailable"
-  );
+  ) {
+    value satisfies AuthorizationError;
+    return true;
+  }
+  return false;
 }
 
 export type AuthorizationErrorProps = OAuthErrorProps & {
@@ -348,14 +361,18 @@ export type TokenSuccessfulResponse = {
 export function isTokenSuccessfulResponse(
   value: unknown
 ): value is TokenSuccessfulResponse {
-  return (
+  if (
     typeof value === "object" &&
     value !== null &&
-    "access_token" in value &&
-    typeof value.access_token === "string" &&
-    "token_type" in value &&
-    typeof value.token_type === "string"
-  );
+    hasProperty("string", value, "access_token") &&
+    hasProperty("string", value, "token_type")
+  ) {
+    value.access_token satisfies string;
+    value.token_type satisfies string;
+    value satisfies TokenSuccessfulResponse;
+    return true;
+  }
+  return false;
 }
 
 type TokenError =
@@ -370,19 +387,40 @@ export type TokenErrorProps = OAuthErrorProps & {
   error: TokenError;
 };
 
+export function isTokenErrorResponseError(value: string): value is TokenError {
+  if (
+    value === "invalid_request" ||
+    value === "invalid_client" ||
+    value === "invalid_grant" ||
+    value === "unauthorized_client" ||
+    value === "unsupported_grant_type" ||
+    value === "invalid_scope"
+  ) {
+    value satisfies TokenError;
+    return true;
+  }
+  return false;
+}
+
 export function isTokenErrorResponse(value: unknown): value is TokenErrorProps {
-  return (
+  function hasTokenErrorResponseError<
+    T extends Record<K, string>,
+    K extends keyof any
+  >(value: T, key: K): value is T & Record<K, TokenError> {
+    return isTokenErrorResponseError(value[key]);
+  }
+
+  if (
     typeof value === "object" &&
     value !== null &&
-    "error" in value &&
-    typeof value.error === "string" &&
-    (value.error === "invalid_request" ||
-      value.error === "invalid_client" ||
-      value.error === "invalid_grant" ||
-      value.error === "unauthorized_client" ||
-      value.error === "unsupported_grant_type" ||
-      value.error === "invalid_scope")
-  );
+    hasProperty("string", value, "access_token") &&
+    hasProperty("string", value, "error") &&
+    hasTokenErrorResponseError(value, "error")
+  ) {
+    value satisfies TokenErrorProps;
+    return true;
+  }
+  return false;
 }
 
 function throwTokenError(errorResponse: TokenErrorProps): never {

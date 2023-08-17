@@ -6,6 +6,7 @@ export * from "./library/hex";
 export * from "./library/jwt";
 export * from "./library/oauth";
 export * from "./library/otp";
+export * from "./library/property";
 export * from "./library/regex";
 export * from "./library/utf8";
 export * from "./library/uuid";
