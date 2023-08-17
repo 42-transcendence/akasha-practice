@@ -437,4 +437,24 @@ export class ChatService {
 			}
 		}));
 	}
+	async getChatId(chatUUID: string) {
+		return (await this.prismaService.chat.findUnique({
+			where: {
+				uuid: chatUUID
+			},
+			select: {
+				id: true
+			}
+		}));
+	}
+	async lastMessageIdUpdate(chatId: number, accountId: number, lastMessageId: string) {
+		await this.prismaService.chatMember.update({
+			where: {
+				chatId_accountId: { chatId: chatId, accountId: accountId }
+			},
+			data: {
+				lastMessageId: lastMessageId
+			}
+		})
+	}
 }

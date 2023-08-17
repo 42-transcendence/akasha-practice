@@ -352,6 +352,15 @@ export class ChatSocket {
 		await this.chatWithCreateChatMessage(msgInfo, _client, clients);
 	}
 
+	async chatUpdate(client: ChatWebSocket, buf: ByteBuffer) {
+		const chatUUID = buf.readUUID();
+		const lastMessageId = buf.readUUID();
+		const chatId = await this.chatService.getChatId(chatUUID);
+		if (chatId != null) {
+			await this.chatService.lastMessageIdUpdate(chatId.id, client.userId, lastMessageId);
+		}
+	}
+
 	//utils
 
 	private async chatWithCreateChatMessage(msgInfo: CreateChatMessaage, client: { userId: number, userUUID: string }, clients: ChatWebSocket[]) {

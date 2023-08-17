@@ -25,17 +25,11 @@ export function sendJoinRoom(client: WebSocket, room: { uuid: string, password: 
 }
 
 export function sendInvite(client: WebSocket, invitation: ChatUUIDAndMemberUUIDs) {
-	//초대권한이 있는지 확인해함.
 	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.INVITE);
 	writeChatUUIDAndMemberUUIDs(buf, invitation);
 	client.send(buf.toArray());
 }
 
-// export function sendEnter(client: WebSocket, roomUUID: string) {
-// 	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.ENTER);
-// 	buf.writeString(roomUUID);
-// 	client.send(buf.toArray());
-// }
 
 export function sendPart(client: WebSocket, roomUUID: string) {
 	const buf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.PART);
@@ -326,15 +320,10 @@ export function accpetInvite(buf: ByteBuffer) {
 	}
 }
 
-// export function acceptEnter(buf: ByteBuffer) {
-// 	const chatRoom = readChatRoom(buf);
-// 	const chatMembers = readChatMembers(buf);
-// 	const chatMessages = readChatMessages(buf);
-// 	addChatRoom(chatRoom);
-// 	addChatMembers(chatMembers);
-// 	addChatMessages(chatMessages);
-// 	setNowChatRoom(chatRoom.uuid);
-// }
+export function enter(client: WebSocket, chatUUID: string) {
+	updateLastMessageId(client, chatUUID);
+	setNowChatRoom(chatUUID);
+}
 
 export function acceptPart(buf: ByteBuffer) {
 	const code = buf.read1();
@@ -410,8 +399,6 @@ export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 		accpetPublicSearch(buf);
 	else if (code == ChatOpCode.INVITE)
 		accpetInvite(buf);
-	// else if (code == ChatOpCode.ENTER)
-	// 	acceptEnter(buf);
 	else if (code == ChatOpCode.PART)
 		acceptPart(buf);
 	else if (code == ChatOpCode.KICK)
