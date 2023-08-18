@@ -1,21 +1,29 @@
-import { ChatMessages, Message } from "./utils";
+import { NULL_UUID } from "@libs/uuid";
+import { ChatMessages, ChatRoomWithLastMessageUUID, Message } from "./utils";
 
-class ManageDatabase {
+export class ManageDatabase {
 
 	private IndxDb: IDBFactory;
-	public req: IDBOpenDBRequest;
-	public db: IDBDatabase;
-	public tables: IDBObjectStore[];
+	private req: IDBOpenDBRequest;
+	private db: IDBDatabase;
+	private tables: Map<string, IDBObjectStore>;
+	private chatCursor: Map<string, string>;
+	private nowChatMessages: ChatMessages | undefined = undefined;
 
-	constructor(public dbName: string, private chatMessagesList: ChatMessages[]) {
+	constructor(private chatMessagesList: ChatMessages[], chatRooms: ChatRoomWithLastMessageUUID[]) {
 		this.IndxDb = window.indexedDB;
-		this.OpenInitDB();
+		this.chatCursor = new Map<string, string>;
+		for (const chatRoom of chatRooms) {
+			this.chatCursor.set(chatRoom.info.uuid, chatRoom.lastMessageId);
+		}
+		this.openInitDB();
 	}
 
-	private OpenInitDB() {
+	private openInitDB() {
 
-		this.req = this.IndxDb.open(this.dbName);
-		this.req.onupgradeneeded = this.AddTables;
+		this.req = this.IndxDb.open("messagesDB");
+		this.tables = new Map<string, IDBObjectStore>;
+		this.req.onupgradeneeded = this.addTables;
 		this.req.onsuccess = this.setDB;
 		this.req.onerror = function (_evt) {
 			alert("Why didn't you allow my web app to use IndexedDB?!");
@@ -26,60 +34,149 @@ class ManageDatabase {
 		this.db = e.target.result;
 	}
 
-	private AddTables(e: any) {
+	private addTables(e: any) {
 		this.db = e.target.result;
 		for (let i = 0; i < this.chatMessagesList.length; i++) {
 			const parms: IDBObjectStoreParameters = { keyPath: 'uuid' };
 			const table: IDBObjectStore = this.db.createObjectStore(this.chatMessagesList[i].chatUUID, parms);
+			this.nowChatMessages = this.chatMessagesList[i];
 			table.createIndex('uuid', 'uuid', { unique: true });
-			this.tables.push(table);
+			table.createIndex('timestamp', 'timestamp', { unique: true });
+			table.transaction.oncomplete = this.setMessages;
+			this.tables.set(this.chatMessagesList[i].chatUUID, table);
+		}
+		this.nowChatMessages = undefined;
+	}
+
+	private setMessages(_event: any) {
+		if (this.nowChatMessages != undefined) {
+			const objectStore: IDBObjectStore = this.getObjectStore(this.nowChatMessages.chatUUID, "readwrite");
+			this.nowChatMessages.messages.forEach(function (message) {
+				objectStore.add(message);
+			})
 		}
 	}
 
-	ResetDB() {
+	private getObjectStore(store_name: string, mode: IDBTransactionMode): IDBObjectStore {
+		const tx = this.db.transaction([store_name], mode);
+		return tx.objectStore(store_name);
+	}
+
+	// private clearObjectStore(store_name: string) {
+	// 	const store = this.getObjectStore(store_name, "readwrite");
+	// 	store.clear();
+	// }
+
+	resetDB() {
 		this.db.close();
-		this.IndxDb.deleteDatabase(this.dbName);
-		this.OpenInitDB();
+		this.IndxDb.deleteDatabase("messagesDB");
+		this.openInitDB();
 	}
 
-	CreateRow(chatUUID: string, messages: Message[]) {
-		const trans: IDBTransaction = this.db.transaction([chatUUID], "readwrite");
-		const tbl: IDBObjectStore = trans.objectStore(chatUUID);
-		tbl.add(obj);
+	createRows(chatUUID: string, messages: Message[]) {
+		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
+		for (const message of messages)
+			tbl.add(message);
 	}
 
-	DeleteRow(id: string) {
-		const trans: IDBTransaction = this.db.transaction([this.tInfo.TableName], "readwrite");
-		const tbl: IDBObjectStore = trans.objectStore(this.tInfo.TableName);
-		tbl.delete(id)
+	createRow(chatUUID: string, message: Message) {
+		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
+		tbl.add(message);
 	}
 
-	UpdateRow(obj: any) {
-		const trans: IDBTransaction = this.db.transaction([this.tInfo.TableName], "readwrite");
-		const tbl: IDBObjectStore = trans.objectStore(this.tInfo.TableName);
-		const idx: IDBIndex = tbl.index(this.tInfo.PrimaryIndexName);
-		const req: IDBRequest = idx.get(obj[this.tInfo.PrimaryFieldName]);
+	deleteRow(chatUUID: string, messageUUID: string) {
+		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
+		tbl.delete(messageUUID)
+	}
 
-		req.onsuccess = function (_e: any) {
-			tbl.put(obj);
+	updateRow(chatUUID: string, messageUUID: string, message: Message) {
+		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
+		const idx: IDBIndex = tbl.index('uuid');
+		const req: IDBRequest = idx.get(messageUUID);
+		const updateMessage: Message = message;
+
+		req.onsuccess = function (event: any) {
+			const data = event.target.result;
+			data.accountUUID = updateMessage.accountUUID;
+			data.content = updateMessage.content;
+			data.modeFlags = updateMessage.modeFlags;
+			data.timestamp = updateMessage.timestamp;
+			tbl.put(data);
 		};
-		req.onerror = function (e: any) {
-			alert(e.target.result);
+		req.onerror = function (event: any) {
+			alert(event.target.result);
 		}
 	}
 
-	ReadRow(Id: string) {
-		const trans: IDBTransaction = this.db.transaction([this.tInfo.TableName], "readonly");
-		const tbl: IDBObjectStore = trans.objectStore(this.tInfo.TableName);
-		const idx: IDBIndex = tbl.index(this.tInfo.PrimaryIndexName);
-		const req: IDBRequest = idx.get(Id);
+	async readRow(chatUUID: string, messageUUID: string): Promise<Message | null> {
+		const message = new Promise((resolve, reject) => {
+			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const idx: IDBIndex = tbl.index('uuid');
+			const req: IDBRequest = idx.get(messageUUID);
 
-		req.onsuccess = function (e: any) {
-			const obj = e.target.result; // row열 값이 result에 할당
-			console.log(obj);
-		};
-		req.onerror = function (e: any) {
-			alert(e.target.result);
+			req.onsuccess = resolve;
+			req.onerror = reject;
+		})
+		return message.then((event: any) => event.target.result).catch((_event: any) => null);
+	}
+
+	private async moveChatCursor(chatUUID: string) {
+		const messageUUID = this.chatCursor.get(chatUUID);
+		if (messageUUID !== undefined && messageUUID !== NULL_UUID) {
+			const messageTime = await this.readRow(chatUUID, messageUUID);
+			if (messageTime !== null) {
+				const timestamp = new Promise((resolve, reject) => {
+					const range = IDBKeyRange.lowerBound(messageTime.timestamp);
+					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const index = tbl.index('timestamp');
+					const req = index.openCursor(range, 'next');
+
+					req.onsuccess = function (event: any) {
+						const cursor = event.target.result;
+						if (cursor) {
+							resolve(cursor)
+						}
+					};
+					req.onerror = reject;
+				})
+				const promise = timestamp.then((cursor: any) => {
+					cursor.advance();
+					return (cursor);
+				}).catch((_event: any) => null)
+			}
 		}
 	}
 }
+
+loadMessages(chatUUID: string) {
+	const range = IDBKeyRange.lowerBound("444-44-4444");
+	var index = db.transaction(["customers"], "readwrite")
+		.objectStore("customers").index('ssn');
+	let i = 0;
+	index.openCursor(range).onsuccess = function (event) {
+		var cursor = event.target.result;
+		if (cursor && i < 3) {
+			alert(cursor.key + " " + cursor.value.name);
+			// 조회된 값으로 무언가 수행한다.
+			cursor.continue();
+			i++;
+		}
+	};
+	const messageUUID = this.chatCursor.get(chatUUID);
+	let lower;
+	if (messageUUID != undefined) {
+		lower = this.readRow(chatUUID, messageUUID);
+	}
+	else {
+
+	}
+	const range = IDBKeyRange.lowerBound(lower, true);
+	const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+	const idx: IDBIndex = tbl.index('timestamp');
+	const request = idx.openCursor(range);
+
+	request.onsuccess = 
+	}
+
+}
+
