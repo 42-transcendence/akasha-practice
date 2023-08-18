@@ -1,3 +1,4 @@
+export * from "./library/assert";
 export * from "./library/base32";
 export * from "./library/byte-buffer";
 export * from "./library/google-otpauth";

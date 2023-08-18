@@ -12,6 +12,10 @@ type AuthPayloadBase = {
   auth_level: AuthLevel;
 };
 
+type NoneAuthPayload = AuthPayloadBase & {
+  auth_level: AuthLevel.NONE;
+};
+
 type TemporaryAuthPayload = AuthPayloadBase & {
   auth_level: AuthLevel.TEMPORARY;
   state: string;
@@ -23,7 +27,10 @@ type CompletedAuthPayload = AuthPayloadBase & {
   user_role: RoleNumber;
 };
 
-export type AuthPayload = TemporaryAuthPayload | CompletedAuthPayload;
+export type AuthPayload =
+  | NoneAuthPayload
+  | TemporaryAuthPayload
+  | CompletedAuthPayload;
 
 export type TokenSet = {
   access_token: string;

@@ -52,7 +52,7 @@ export class AuthController {
     @Req() req: Request,
     @Query() query: Record<string, string>,
   ): Promise<TokenSet> {
-    const auth: AuthPayload = AuthGuard.getAuthPayloadFromRequest(req);
+    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.authService.promotionAuth(auth, query);
   }
 }

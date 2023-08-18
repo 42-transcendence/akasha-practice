@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { AuthService } from "./auth.service";
 import { Request } from "express";
+import { IncomingMessage } from "http";
 import { HttpArgumentsHost } from "@nestjs/common/interfaces";
 import { AuthLevel, AuthPayload } from "./auth-payload";
 import { Reflector } from "@nestjs/core";
@@ -15,7 +16,10 @@ import { AUTH_LEVEL_MIN_KEY } from "./auth.decorator";
 export class AuthGuard implements CanActivate {
   static AUTH_PAYLOAD_KEY: string = "_auth";
 
-  static getAuthPayloadFromRequest(req: Request): AuthPayload {
+  static extractAuthPayload(req: Request): AuthPayload;
+  static extractAuthPayload(req: IncomingMessage): AuthPayload;
+
+  static extractAuthPayload(req: any): AuthPayload {
     return (req as Record<string, any>)[
       AuthGuard.AUTH_PAYLOAD_KEY
     ] as AuthPayload;

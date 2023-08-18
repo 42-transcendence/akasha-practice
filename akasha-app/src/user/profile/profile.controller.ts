@@ -13,7 +13,7 @@ export class ProfileController {
 
   @Get("me")
   async me(@Req() req: Request): Promise<AccountWithRecord> {
-    const auth: AuthPayload = AuthGuard.getAuthPayloadFromRequest(req);
+    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getMyRecord(auth);
   }
 
