@@ -36,8 +36,8 @@ export class AuthGuard implements CanActivate {
       AuthLevel.REGULAR;
 
     const http: HttpArgumentsHost = context.switchToHttp();
-    const request: any = http.getRequest();
-    const token: string | undefined = this.extractTokenFromHeader(request);
+    const req = http.getRequest<Request>();
+    const token: string | undefined = this.extractTokenFromHeader(req);
     if (token === undefined) {
       throw new BadRequestException("Missing token");
     }
@@ -49,12 +49,12 @@ export class AuthGuard implements CanActivate {
       return false;
     }
 
-    request[AuthGuard.AUTH_PAYLOAD_KEY] = payload;
+    (req as Record<string, any>)[AuthGuard.AUTH_PAYLOAD_KEY] = payload;
     return true;
   }
 
-  private extractTokenFromHeader(request: Request): string | undefined {
-    const [type, token] = request.headers.authorization?.split(" ") ?? [];
+  private extractTokenFromHeader(req: Request): string | undefined {
+    const [type, token] = req.headers.authorization?.split(" ") ?? [];
     return type === "Bearer" ? token : undefined;
   }
 }

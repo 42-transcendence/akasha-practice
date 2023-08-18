@@ -2,6 +2,7 @@ import { JWTOptions } from "akasha-lib";
 import { OAuth } from "akasha-lib";
 import { Transform, Type, plainToClass } from "class-transformer";
 import {
+  Equals,
   IsArray,
   IsBoolean,
   IsDefined,
@@ -21,18 +22,18 @@ import { ConfigService } from "@nestjs/config";
 import { Logger } from "@nestjs/common";
 
 export class AuthSource {
-  @IsNumber() key: number;
-  @IsUrl() auth_url: string;
-  @IsUrl() token_url: string;
+  @IsNumber() key!: number;
+  @IsUrl() auth_url!: string;
+  @IsUrl() token_url!: string;
   @IsUrl() @IsOptional() jwks_url?: string | undefined;
-  @IsString() client_id: string;
-  @IsString() client_secret: string;
-  @IsArray() @IsString({ each: true }) scope: string[];
-  @IsBoolean() openid: boolean;
+  @IsString() client_id!: string;
+  @IsString() client_secret!: string;
+  @IsArray() @IsString({ each: true }) scope!: string[];
+  @IsBoolean() openid!: boolean;
   @IsUrl() @IsOptional() subject_url?: string | undefined;
   @IsString() @IsOptional() subject_key?: string | undefined;
 
-  _oauth: OAuth;
+  @Equals(undefined) _oauth: OAuth = undefined!;
 }
 
 export class AuthJWTOptions implements JWTOptions {
@@ -67,25 +68,25 @@ export class AuthConfiguration {
   )
   @IsArray()
   @IsDefined({ each: true })
-  redirect_uri: RegExp[];
+  redirect_uri!: RegExp[];
 
   @Type(() => AuthSource)
   @IsObject()
   @ValidateNested()
-  source: Map<string, AuthSource>;
+  source!: Map<string, AuthSource>;
 
   @Transform(({ value }) => (isString(value) ? encodeUTF8(value) : undefined))
   @IsDefined()
-  jwt_secret: Uint8Array;
+  jwt_secret!: Uint8Array;
 
   @IsNumber()
-  jwt_temp_expire_secs: number;
+  jwt_temp_expire_secs!: number;
 
   @IsNumber()
-  jwt_expire_secs: number;
+  jwt_expire_secs!: number;
 
   @Type(() => AuthJWTOptions)
   @IsObject()
   @ValidateNested()
-  jwt_options: AuthJWTOptions;
+  jwt_options!: AuthJWTOptions;
 }

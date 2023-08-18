@@ -1,9 +1,8 @@
 import { IncomingMessage } from "http";
 import { WebSocket } from "ws";
-import { assert } from "akasha-lib";
+import { ByteBuffer, assert } from "akasha-lib";
 import { AuthPayload } from "@/user/auth/auth-payload";
 import { AuthGuard } from "@/user/auth/auth.guard";
-import { Logger } from "@nestjs/common";
 
 const pingDelayInMillis = 30 * 1000;
 
@@ -12,7 +11,7 @@ export abstract class ServiceWebSocketBase extends WebSocket {
   private pingInterval: NodeJS.Timeout | string | number | undefined =
     undefined;
 
-  _backing_auth: AuthPayload | undefined = undefined;
+  private _backing_auth: AuthPayload | undefined = undefined;
   protected get auth(): AuthPayload {
     assert(this._backing_auth !== undefined);
 
@@ -22,40 +21,30 @@ export abstract class ServiceWebSocketBase extends WebSocket {
     this._backing_auth = value;
   }
 
-  remoteAddress: string;
-  remoteURL: string;
+  remoteAddress: string | undefined;
+  remoteURL: string | undefined;
 
   onConnection(req: IncomingMessage): void {
-    try {
-      this.auth = AuthGuard.extractAuthPayload(req);
-      this.on("pong", () => this.onHeartbeat());
-      this.pingInterval = setInterval(() => this.sendPing(), pingDelayInMillis);
+    this.auth = AuthGuard.extractAuthPayload(req);
+    this.on("pong", () => this.onHeartbeat());
+    this.pingInterval = setInterval(() => this.sendPing(), pingDelayInMillis);
 
-      this.remoteAddress = req.socket.remoteAddress!;
-      this.remoteURL = req.url!;
-
-      this.onServiceConnection();
-    } catch (e) {
-      //XXX: NestJS가 OnGatewayConnection에서 발생하는 오류를 이벤트 루프에 도달할 때까지 잡지 않음.
-      Logger.error(`OnConnection: ${e}`, "UnhandledWebSocketError");
-      this.terminate();
-    }
+    this.remoteAddress = req.socket.remoteAddress!;
+    this.remoteURL = req.url!;
   }
-
-  abstract onServiceConnection(): void;
 
   onDisconnect(): void {
-    try {
-      clearInterval(this.pingInterval);
-
-      this.onServiceDisconnection();
-    } catch (e) {
-      //XXX: NestJS가 OnGatewayDisconnect에서 발생하는 오류를 이벤트 루프에 도달할 때까지 잡지 않음.
-      Logger.error(`OnDisconnect: ${e}`, "UnhandledWebSocketError");
-    }
+    clearInterval(this.pingInterval);
   }
 
-  abstract onServiceDisconnection(): void;
+  isIllegalException(exception: unknown): boolean {
+    void exception;
+    return true;
+  }
+
+  sendPayload(payload: ByteBuffer): void {
+    this.send(payload.toArray());
+  }
 
   private sendPing(): void {
     if (this.isAlive === false) {

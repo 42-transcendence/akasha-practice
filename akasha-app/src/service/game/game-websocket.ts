@@ -1,16 +1,21 @@
+import { assert } from "akasha-lib";
 import { ServiceWebSocketBase } from "@/service/service-socket";
-import { Logger } from "@nestjs/common";
+import { GameService } from "./game.service";
 
 export class GameWebSocket extends ServiceWebSocketBase {
-  override onServiceConnection(): void {
-    Logger.debug(
-      `Connection GameWebSocket[${this.remoteAddress} -> ${this.remoteURL}]`,
-    );
+  _backing_gameService: GameService | undefined = undefined;
+  protected get gameService(): GameService {
+    assert(this._backing_gameService !== undefined);
+
+    return this._backing_gameService;
+  }
+  private set gameService(value: GameService) {
+    assert(this._backing_gameService === undefined);
+
+    this._backing_gameService = value;
   }
 
-  override onServiceDisconnection(): void {
-    Logger.debug(
-      `Disconnect GameWebSocket[${this.remoteAddress} -> ${this.remoteURL}]`,
-    );
+  injectGameService(gameService: GameService): void {
+    this.gameService = gameService;
   }
 }
