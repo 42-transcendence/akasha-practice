@@ -12,15 +12,14 @@ export class ManageDatabase {
 
 	constructor(private chatMessagesList: ChatMessages[], chatRooms: ChatRoomWithLastMessageUUID[]) {
 		this.IndxDb = window.indexedDB;
+		this.openInitDB();
 		this.chatCursor = new Map<string, string>;
 		for (const chatRoom of chatRooms) {
 			this.chatCursor.set(chatRoom.info.uuid, chatRoom.lastMessageId);
 		}
-		this.openInitDB();
 	}
 
 	private openInitDB() {
-
 		this.req = this.IndxDb.open("messagesDB");
 		this.tables = new Map<string, IDBObjectStore>;
 		this.req.onupgradeneeded = this.addTables;
@@ -89,23 +88,26 @@ export class ManageDatabase {
 		tbl.delete(messageUUID)
 	}
 
-	updateRow(chatUUID: string, messageUUID: string, message: Message) {
+	async updateRow(chatUUID: string, message: Message) {
+		const updateMessage: Message = message;
 		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
 		const idx: IDBIndex = tbl.index('uuid');
-		const req: IDBRequest = idx.get(messageUUID);
-		const updateMessage: Message = message;
+		const update = new Promise((resolve, reject) => {
+			const req: IDBRequest = idx.get(message.uuid);
 
-		req.onsuccess = function (event: any) {
+			req.onsuccess = resolve;
+			req.onerror = reject;
+		});
+		await update.then((event: any) => {
 			const data = event.target.result;
 			data.accountUUID = updateMessage.accountUUID;
 			data.content = updateMessage.content;
 			data.modeFlags = updateMessage.modeFlags;
 			data.timestamp = updateMessage.timestamp;
 			tbl.put(data);
-		};
-		req.onerror = function (event: any) {
+		}).catch((event: any) => {
 			alert(event.target.result);
-		}
+		})
 	}
 
 	async readRow(chatUUID: string, messageUUID: string): Promise<Message | null> {
@@ -117,11 +119,108 @@ export class ManageDatabase {
 			req.onsuccess = resolve;
 			req.onerror = reject;
 		})
-		return message.then((event: any) => event.target.result).catch((_event: any) => null);
+		return await message.then((event: any) => event.target.result).catch((_event: any) => null);
 	}
 
-	private async moveChatCursor(chatUUID: string) {
+
+	private async readUpper20Messages(chatUUID: string): Promise<Message[]> {
 		const messageUUID = this.chatCursor.get(chatUUID);
+		let cur: Message[] = [];
+		if (messageUUID !== undefined && messageUUID !== NULL_UUID) {
+			const messageTime = await this.readRow(chatUUID, messageUUID);
+			if (messageTime !== null) {
+				const timestamp = new Promise((resolve, reject) => {
+					const range = IDBKeyRange.upperBound(messageTime.timestamp);
+					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const index = tbl.index('timestamp');
+					const req = index.openCursor(range, 'prev');
+					let count = 0
+
+					req.onsuccess = (event: any) => {
+						const cursor = event.target.result;
+						if (cursor && count < 20) {
+							cursor.continue();
+							cur.unshift(cursor.value);
+							count++;
+						}
+						else {
+							const firstMessage = cur.at(0);
+							if (firstMessage !== undefined) {
+								this.chatCursor.set(chatUUID, firstMessage.uuid);
+							}
+							resolve(cur);
+						}
+					};
+					req.onerror = reject;
+				})
+				const promise = await timestamp.then((cursor: any) => {
+					return (cursor);
+				}).catch((_event: any) => [])
+				return (promise);
+			}
+			else {
+				const timestamp = new Promise((resolve, reject) => {
+					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const index = tbl.index('timestamp');
+					const req = index.openCursor(undefined, 'prev');
+
+					req.onsuccess = (event: any) => {
+						const cursor = event.target.result;
+						if (cursor) {
+							cursor.continue();
+							cur.unshift(cursor.value);
+						}
+						else {
+							const firstMessage = cur.at(0);
+							if (firstMessage !== undefined) {
+								this.chatCursor.set(chatUUID, firstMessage.uuid);
+							}
+							resolve(cur);
+						}
+					};
+					req.onerror = reject;
+				})
+				const promise = await timestamp.then((cursor: any) => {
+					return (cursor);
+				}).catch((_event: any) => []);
+				return (promise);
+			}
+		}
+		else if (messageUUID !== undefined && messageUUID === NULL_UUID) {
+			const timestamp = new Promise((resolve, reject) => {
+				const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+				const index = tbl.index('timestamp');
+				const req = index.openCursor(undefined, 'prev');
+				let count = 0
+
+				req.onsuccess = (event: any) => {
+					const cursor = event.target.result;
+					if (cursor && count < 20) {
+						cursor.continue();
+						cur.unshift(cursor.value);
+						count++;
+					}
+					else {
+						const firstMessage = cur.at(0);
+						if (firstMessage !== undefined) {
+							this.chatCursor.set(chatUUID, firstMessage.uuid);
+						}
+						resolve(cur);
+					}
+				};
+				req.onerror = reject;
+			})
+			const promise = await timestamp.then((cursor: any) => {
+				return (cursor);
+			}).catch((_event: any) => [])
+			return (promise);
+		}
+		return (cur);
+	}
+
+	private async readUnreadMessages(chatUUID: string): Promise<Message[]> {
+		const messageUUID = this.chatCursor.get(chatUUID);
+		let cur: Message[] = [];
 		if (messageUUID !== undefined && messageUUID !== NULL_UUID) {
 			const messageTime = await this.readRow(chatUUID, messageUUID);
 			if (messageTime !== null) {
@@ -129,54 +228,125 @@ export class ManageDatabase {
 					const range = IDBKeyRange.lowerBound(messageTime.timestamp);
 					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
 					const index = tbl.index('timestamp');
-					const req = index.openCursor(range, 'next');
+					const req = index.openCursor(range, 'prev');
 
-					req.onsuccess = function (event: any) {
+					req.onsuccess = (event: any) => {
 						const cursor = event.target.result;
 						if (cursor) {
-							resolve(cursor)
+							cursor.continue();
+							cur.push(cursor.value);
+						}
+						else {
+							resolve(cur);
 						}
 					};
 					req.onerror = reject;
 				})
-				const promise = timestamp.then((cursor: any) => {
-					cursor.advance();
+				const promise = await timestamp.then((cursor: any) => {
 					return (cursor);
-				}).catch((_event: any) => null)
+				}).catch((_event: any) => [])
+				return (promise);
 			}
 		}
+		return (cur);
 	}
-}
 
-loadMessages(chatUUID: string) {
-	const range = IDBKeyRange.lowerBound("444-44-4444");
-	var index = db.transaction(["customers"], "readwrite")
-		.objectStore("customers").index('ssn');
-	let i = 0;
-	index.openCursor(range).onsuccess = function (event) {
-		var cursor = event.target.result;
-		if (cursor && i < 3) {
-			alert(cursor.key + " " + cursor.value.name);
-			// 조회된 값으로 무언가 수행한다.
-			cursor.continue();
-			i++;
+	async enterLoadMessages(chatUUID: string): Promise<Message[]> {
+		const prevMessages: Message[] = await this.readUpper20Messages(chatUUID);
+		const newMessages: Message[] = await this.readUnreadMessages(chatUUID);
+		const retMessages: Message[] = prevMessages.concat(newMessages);
+		return retMessages;
+	}
+
+	async scrollLoadMessages(chatUUID: string): Promise<Message[]> {
+		const retMessages: Message[] = await this.readUpper20Messages(chatUUID);
+		return retMessages;
+	}
+
+	async exitRoom(chatUUID: string) {
+		const cursor = await this.retMostlowerMessage(chatUUID);
+		if (cursor !== null) {
+			this.chatCursor.set(chatUUID, cursor);
 		}
-	};
-	const messageUUID = this.chatCursor.get(chatUUID);
-	let lower;
-	if (messageUUID != undefined) {
-		lower = this.readRow(chatUUID, messageUUID);
-	}
-	else {
-
-	}
-	const range = IDBKeyRange.lowerBound(lower, true);
-	const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
-	const idx: IDBIndex = tbl.index('timestamp');
-	const request = idx.openCursor(range);
-
-	request.onsuccess = 
 	}
 
+	private async retMostUpperMessage(chatUUID: string): Promise<string | null> {
+		const timestamp = new Promise((resolve, reject) => {
+			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const index = tbl.index('timestamp');
+			const req = index.openCursor(undefined, 'next');
+
+			req.onsuccess = (event: any) => {
+				const cursor = event.target.result;
+				resolve(cursor);
+			};
+			req.onerror = reject;
+		})
+		const promise = await timestamp.then((cursor: any) => {
+			if (cursor) {
+				return cursor.value?.uuid ?? NULL_UUID;
+			}
+			else {
+				return NULL_UUID;
+			}
+		}).catch((_event: any) => null);
+		return promise;
+	}
+
+	private async retMostlowerMessage(chatUUID: string): Promise<string | null> {
+		const timestamp = new Promise((resolve, reject) => {
+			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const index = tbl.index('timestamp');
+			const req = index.openCursor(undefined, 'prev');
+
+			req.onsuccess = (event: any) => {
+				const cursor = event.target.result;
+				resolve(cursor);
+			};
+			req.onerror = reject;
+		})
+		const promise = await timestamp.then((cursor: any) => {
+			if (cursor) {
+				return cursor.value?.uuid ?? NULL_UUID;
+			}
+			else {
+				return NULL_UUID;
+			}
+		}).catch((_event: any) => null);
+		return promise;
+	}
+
+	async nonReadMessagesCounts(chatUUID: string, messageUUID: string): Promise<number | null> {
+		const newMessageUUID = this.readRow(chatUUID, messageUUID);
+		let messsageId;
+		if (newMessageUUID === null) {
+			messsageId = await this.retMostUpperMessage(chatUUID);
+			if (messsageId === null) {
+				return null;
+			}
+		}
+		else {
+			messsageId = messageUUID;
+		}
+		if (messsageId !== NULL_UUID) {
+			const messageTime = await this.readRow(chatUUID, messsageId);
+			if (messageTime !== null) {
+				const timestamp = new Promise((resolve, reject) => {
+					const range = IDBKeyRange.lowerBound(messageTime.timestamp);
+					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const index = tbl.index('timestamp');
+					const req = index.count(range);
+
+					req.onsuccess = resolve;
+					req.onerror = reject;
+				})
+				const promise = await timestamp.then((event: any) => {
+					const result = event.target.result;
+					return (result);
+				}).catch((_event: any) => null)
+				return (promise);
+			}
+		}
+		return null;
+	}
 }
-
