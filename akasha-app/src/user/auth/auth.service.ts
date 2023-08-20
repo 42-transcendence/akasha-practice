@@ -8,7 +8,10 @@ import {
   Logger,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AccountsService } from "@/user/accounts/accounts.service";
+import {
+  AccountWithBans,
+  AccountsService,
+} from "@/user/accounts/accounts.service";
 import {
   InvalidSessionError,
   ReuseDetectError,
@@ -38,6 +41,7 @@ import {
   isAuthPayload,
 } from "./auth-payload";
 import { getRoleNumber } from "@/generated/types";
+import { banToSummaryPayload } from "@/user/accounts/account-payload";
 
 @Injectable()
 export class AuthService {
@@ -130,14 +134,16 @@ export class AuthService {
         );
       const subject: string = await AuthService.fetchSubject(source, param);
 
-      const account: Account = await this.accounts.getOrCreateAccountForAuth({
-        authIssuer: source.key,
-        authSubject: subject,
-      });
+      const account: AccountWithBans =
+        await this.accounts.getOrCreateAccountForAuth(source.key, subject);
 
       if (account.otpSecret !== null) {
         // Issue temporary token that require promotion using OTP.
         return await this.makeTemporaryToken(account);
+      }
+
+      if (account.bans.length !== 0) {
+        return await this.makeBlockedToken(account);
       }
 
       const session: Session = await this.sessions.createNewSession(account.id);
@@ -163,12 +169,16 @@ export class AuthService {
         throw new UnauthorizedException("Not found token");
       }
 
-      const account: Account | null = await this.accounts.getAccount(
-        session.accountId,
-      );
+      const account: AccountWithBans | null =
+        await this.accounts.getAccountForAuth(session.accountId);
       if (account === null) {
         this.sessions.invalidateSession(session.id);
         throw new ForbiddenException("Gone account");
+      }
+
+      if (account.bans.length !== 0) {
+        this.sessions.invalidateSession(session.id);
+        return await this.makeBlockedToken(account);
       }
 
       return await this.makeCompletedToken(account, session);
@@ -199,9 +209,12 @@ export class AuthService {
         throw new BadRequestException("Not found state");
       }
 
-      const account: Account | null = await this.accounts.getAccountForUUID(
+      const accountId: number = await this.accounts.loadAccountIdByUUID(
+        //XXX: Hack
         state.redirectURI,
       );
+      const account: AccountWithBans | null =
+        await this.accounts.getAccountForAuth(accountId);
       if (account === null) {
         throw new BadRequestException("Not found account");
       }
@@ -258,6 +271,10 @@ export class AuthService {
         throw new UnauthorizedException("Wrong OTP");
       }
 
+      if (account.bans.length !== 0) {
+        return await this.makeBlockedToken(account);
+      }
+
       const session: Session = await this.sessions.createNewSession(account.id);
 
       return await this.makeCompletedToken(account, session);
@@ -283,6 +300,24 @@ export class AuthService {
       this.config.jwt_secret,
       payload,
       this.config.jwt_temp_expire_secs,
+      this.config.jwt_options,
+    );
+
+    return { access_token: accessToken };
+  }
+
+  private async makeBlockedToken(account: AccountWithBans): Promise<TokenSet> {
+    const payload: AuthPayload = {
+      auth_level: AuthLevel.BLOCKED,
+      user_id: account.uuid,
+      bans: banToSummaryPayload(account.bans),
+    };
+
+    const accessToken: string = await jwtSignatureHMAC(
+      AuthService.JWT_ALGORITHM,
+      this.config.jwt_secret,
+      payload,
+      0,
       this.config.jwt_options,
     );
 

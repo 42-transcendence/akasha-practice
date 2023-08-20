@@ -4,7 +4,7 @@ import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@/user/auth/auth-payload";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { ProfileService } from "./profile.service";
-import { AccountWithRecord } from "@/user/accounts/accounts.service";
+import { Account } from "@prisma/client";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -12,7 +12,7 @@ export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
   @Get("me")
-  async me(@Req() req: Request): Promise<AccountWithRecord> {
+  async me(@Req() req: Request): Promise<Account> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getMyRecord(auth);
   }

@@ -1,21 +1,48 @@
 import { Injectable } from "@nestjs/common";
 import { Account, Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
+import { SocialPayload } from "./account-payload";
 
-const accountWithRecord = Prisma.validator<Prisma.AccountDefaultArgs>()({
-  include: { record: true },
+const accountWithBans = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  include: { bans: true },
 });
-export type AccountWithRecord = Prisma.AccountGetPayload<
-  typeof accountWithRecord
->;
+export type AccountWithBans = Prisma.AccountGetPayload<typeof accountWithBans>;
+
+const activeBanCondition = (): Prisma.BanWhereInput => ({
+  AND: [
+    { type: "ACCESS" },
+    {
+      OR: [{ expireTimestamp: null }, { expireTimestamp: { gte: new Date() } }],
+    },
+  ],
+});
 
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async findAccountById(id: number): Promise<Account | null> {
+    return await this.prisma.account.findUnique({ where: { id } });
+  }
+
+  async findAccountByUUID(uuid: string): Promise<Account | null> {
+    return await this.prisma.account.findUnique({ where: { uuid } });
+  }
+
+  async loadAccountIdByUUID(uuid: string): Promise<number> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { uuid },
+      select: { id: true },
+    });
+    return account.id;
+  }
+
   async getOrCreateAccountForAuth(
-    authIssuer_authSubject: Prisma.AccountAuthIssuerAuthSubjectCompoundUniqueInput,
-  ): Promise<Account> {
+    authIssuer: number,
+    authSubject: string,
+  ): Promise<AccountWithBans> {
+    const authIssuer_authSubject: Prisma.AccountAuthIssuerAuthSubjectCompoundUniqueInput =
+      { authIssuer, authSubject };
     return await this.prisma.account.upsert({
       where: { authIssuer_authSubject },
       update: {},
@@ -25,21 +52,68 @@ export class AccountsService {
         changedTimestamp: new Date(),
         record: { create: {} },
       },
+      include: {
+        bans: {
+          where: activeBanCondition(),
+        },
+      },
     });
   }
 
-  async getAccount(id: number): Promise<Account | null> {
-    return await this.prisma.account.findUnique({ where: { id } });
-  }
-
-  async getAccountForUUID(uuid: string): Promise<Account | null> {
-    return await this.prisma.account.findUnique({ where: { uuid } });
-  }
-
-  async getAccountWithRecordForUUID(uuid: string): Promise<AccountWithRecord> {
-    return await this.prisma.account.findUniqueOrThrow({
-      where: { uuid },
-      include: { record: true },
+  async getAccountForAuth(id: number): Promise<AccountWithBans | null> {
+    return await this.prisma.account.findUnique({
+      where: { id },
+      include: {
+        bans: {
+          where: activeBanCondition(),
+        },
+      },
     });
+  }
+
+  async loadSocialById(id: number): Promise<SocialPayload> {
+    const data = await this.prisma.account.findUniqueOrThrow({
+      where: { id },
+      select: {
+        friends: {
+          select: {
+            friendAccount: { select: { uuid: true } },
+            groupName: true,
+            activeFlags: true,
+          },
+        },
+        friendReferences: {
+          select: {
+            account: { select: { uuid: true } },
+          },
+        },
+        enemies: {
+          select: {
+            enemyAccount: { select: { uuid: true } },
+            memo: true,
+          },
+        },
+      },
+    });
+
+    const friendList = data.friends.map((e) => ({
+      uuid: e.friendAccount.uuid,
+      groupName: e.groupName,
+      activeFlags: e.activeFlags,
+    }));
+
+    const friendUUIDSet = new Set<string>(
+      data.friends.map((e) => e.friendAccount.uuid),
+    );
+    const friendRequestList = data.friendReferences
+      .map((e) => e.account.uuid)
+      .filter((e) => friendUUIDSet.has(e));
+
+    const enemyList = data.enemies.map((e) => ({
+      uuid: e.enemyAccount.uuid,
+      memo: e.memo,
+    }));
+
+    return { friendList, friendRequestList, enemyList };
   }
 }

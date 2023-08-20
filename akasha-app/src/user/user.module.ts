@@ -13,6 +13,5 @@ import { ProfileModule } from "./profile/profile.module";
     SessionsModule,
     ProfileModule,
   ],
-  exports: [AccountsModule, SessionsModule],
 })
 export class UserModule {}

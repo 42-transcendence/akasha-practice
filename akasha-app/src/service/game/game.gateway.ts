@@ -6,7 +6,7 @@ import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
-import { GameServerOpcode, GameClientOpcode } from "./game-opcode";
+import { GameServerOpcode, GameClientOpcode } from "./game-opcodes";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",
@@ -14,7 +14,7 @@ import { GameServerOpcode, GameClientOpcode } from "./game-opcode";
   WebSocket: GameWebSocket,
 })
 export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
-  constructor(readonly gameService: GameService) {
+  constructor(private readonly gameService: GameService) {
     super();
   }
 

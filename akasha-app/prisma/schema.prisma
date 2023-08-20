@@ -44,6 +44,14 @@ enum ActiveStatus {
   @@schema("services")
 }
 
+enum BanType {
+  ACCESS
+  COMMIT
+
+  @@map("ban_type")
+  @@schema("services")
+}
+
 model Account {
   id                    Int               @id @default(autoincrement())
   uuid                  String            @unique @default(uuid()) @db.Uuid
@@ -191,6 +199,7 @@ model Ban {
   accountId        Int
   managerAccount   Account   @relation("ManagedBanTarget", fields: [managerAccountId], references: [id])
   managerAccountId Int
+  type             BanType
   reason           String
   memo             String
   expireTimestamp  DateTime?
@@ -229,7 +238,7 @@ model ChatMember {
 }
 
 model ChatMessage {
-  uuid           String       @id @unique @default(uuid()) @db.Uuid
+  uuid           String       @id @default(uuid()) @db.Uuid
   chat           Chat         @relation(fields: [chatId], references: [id])
   chatId         Int
   account        Account      @relation(fields: [accountId], references: [id])
@@ -250,6 +259,7 @@ model ChatBan {
   accountId        Int
   managerAccount   Account   @relation("ManagedChatBanTarget", fields: [managerAccountId], references: [id])
   managerAccountId Int
+  type             BanType
   reason           String
   memo             String
   expireTimestamp  DateTime?

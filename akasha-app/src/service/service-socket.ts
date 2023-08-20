@@ -12,12 +12,12 @@ export abstract class ServiceWebSocketBase extends WebSocket {
     undefined;
 
   private _backing_auth: AuthPayload | undefined = undefined;
-  protected get auth(): AuthPayload {
+  get auth(): AuthPayload {
     assert(this._backing_auth !== undefined);
 
     return this._backing_auth;
   }
-  private set auth(value: AuthPayload) {
+  protected set auth(value: AuthPayload) {
     this._backing_auth = value;
   }
 
@@ -43,7 +43,7 @@ export abstract class ServiceWebSocketBase extends WebSocket {
   }
 
   sendPayload(payload: ByteBuffer): void {
-    this.send(payload.toArray());
+    this.send(payload.toArray(), { mask: true, binary: true });
   }
 
   private sendPing(): void {

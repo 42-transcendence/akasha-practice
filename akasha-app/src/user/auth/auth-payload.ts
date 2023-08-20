@@ -1,9 +1,11 @@
 import { RoleNumber } from "@/generated/types";
 import { hasProperty } from "akasha-lib";
+import { BanSummaryPayload } from "@/user/accounts/account-payload";
 
 export const enum AuthLevel {
   NONE = 0,
   TEMPORARY = 1,
+  BLOCKED = 99,
   REGULAR = 100,
   COMPLETED = 101,
 }
@@ -21,6 +23,12 @@ type TemporaryAuthPayload = AuthPayloadBase & {
   state: string;
 };
 
+type BlockedAuthPayload = AuthPayloadBase & {
+  auth_level: AuthLevel.BLOCKED;
+  user_id: string;
+  bans: BanSummaryPayload[];
+};
+
 type CompletedAuthPayload = AuthPayloadBase & {
   auth_level: AuthLevel.COMPLETED;
   user_id: string;
@@ -30,6 +38,7 @@ type CompletedAuthPayload = AuthPayloadBase & {
 export type AuthPayload =
   | NoneAuthPayload
   | TemporaryAuthPayload
+  | BlockedAuthPayload
   | CompletedAuthPayload;
 
 export type TokenSet = {

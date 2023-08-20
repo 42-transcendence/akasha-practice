@@ -205,25 +205,22 @@ export class ByteBuffer {
     return value;
   }
 
-  readOpcode(): number {
-    return this.read2Unsigned();
-  }
-
-  readLength(): number {
-    return this.read2Unsigned();
-  }
-
   readBoolean(): boolean {
     const data: number = this.read1();
     const value: boolean = data !== 0;
     return value;
   }
 
-  readString(): string {
-    const length: number = this.readLength();
-    const data: ReadonlyUint8Array = this.read(length);
-    const value = ByteBuffer.TEXT_DECODER.decode(data);
-    return value;
+  readOpcode(): number {
+    return this.read2Unsigned();
+  }
+
+  readLength(): number {
+    let length: number = this.read1();
+    if (length === 255) {
+      length = this.read4Unsigned();
+    }
+    return length;
   }
 
   readDate(): Date {
@@ -236,6 +233,41 @@ export class ByteBuffer {
     const data: ReadonlyUint8Array = this.read(16);
     const value = stringifyUUID(data as Readonly<Uint8Array>);
     return value;
+  }
+
+  readString(): string {
+    const length: number = this.readLength();
+    const data: ReadonlyUint8Array = this.read(length);
+    const value = ByteBuffer.TEXT_DECODER.decode(data);
+    return value;
+  }
+
+  readArray<T>(reader: (this: ByteBuffer, buf: ByteBuffer) => T): Array<T> {
+    const count: number = this.readLength();
+    const value = new Array<T>();
+    const this_reader = reader.bind(this);
+    for (let i = 0; i < count; i++) {
+      value.push(this_reader(this));
+    }
+    return value;
+  }
+
+  readNullable<T>(
+    reader: (this: ByteBuffer, buf: ByteBuffer) => T,
+    nullValue?: T | undefined
+  ): T | null {
+    const this_reader = reader.bind(this);
+    if (nullValue !== undefined) {
+      const value = this_reader(this);
+	  return value !== nullValue ? value : null;
+    } else {
+      if (this.readBoolean()) {
+        const value = this_reader(this);
+        return value;
+      } else {
+        return null;
+      }
+    }
   }
   // END Read
 
@@ -321,26 +353,23 @@ export class ByteBuffer {
     return this;
   }
 
-  writeOpcode(value: number): this {
-    return this.write2Unsigned(value);
-  }
-
-  writeLength(value: number): this {
-    return this.write2Unsigned(value);
-  }
-
   writeBoolean(value: boolean): this {
     const data: number = value ? 1 : 0;
     this.write1(data);
     return this;
   }
 
-  writeString(value: string): this {
-    const data: Uint8Array = ByteBuffer.TEXT_ENCODER.encode(value);
-    const length: number = data.length;
-    this.writeLength(length);
-    this.write(data, length);
-    return this;
+  writeOpcode(value: number): this {
+    return this.write2Unsigned(value);
+  }
+
+  writeLength(value: number): this {
+    if (value >= 255) {
+      this.write1(255);
+      return this.write4(value);
+    } else {
+      return this.write1(value);
+    }
   }
 
   writeDate(value: Date): this {
@@ -355,6 +384,46 @@ export class ByteBuffer {
     }
     const data: Uint8Array = parseUUID(value);
     this.write(data, 16);
+    return this;
+  }
+
+  writeString(value: string): this {
+    const data: Uint8Array = ByteBuffer.TEXT_ENCODER.encode(value);
+    const length: number = data.length;
+    this.writeLength(length);
+    this.write(data, length);
+    return this;
+  }
+
+  writeArray<T>(
+    value: Array<T>,
+    writer: (this: ByteBuffer, obj: T, buf: ByteBuffer) => any
+  ): this {
+    const count: number = value.length;
+    this.writeLength(count);
+    const this_writer = writer.bind(this);
+    for (const obj of value) {
+      this_writer(obj, this);
+    }
+    return this;
+  }
+
+  writeNullable<T>(
+    value: T | null,
+    writer: (this: ByteBuffer, obj: T, buf: ByteBuffer) => void,
+    nullValue?: T | undefined
+  ): this {
+    const this_writer = writer.bind(this);
+    if (nullValue !== undefined) {
+      this_writer(value ?? nullValue, this);
+    } else {
+      if (value !== null) {
+        this.writeBoolean(true);
+        this_writer(value, this);
+      } else {
+        this.writeBoolean(false);
+      }
+    }
     return this;
   }
   // END Write
