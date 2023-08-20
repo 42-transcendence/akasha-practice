@@ -2,7 +2,7 @@ import { ByteBuffer } from "@libs/byte-buffer";
 import { Injectable } from "@nestjs/common";
 import { ChatWebSocket } from "./chat-websocket";
 import { CustomException } from "./utils/exception";
-import { ChatMemberModeFlags, CreatCode, RoomInfo, readRoomJoinInfo, PartCode, KickCode, CreateChatMessaage, ChatRoom, ChatMessages, ChatMembers, Account, MemberWithModeFlags, Message, writeChatRooms, writeChatMembersList, writeChatMessagesList, writeAccounts, CreateChat, readCreateChat, writeMessage, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, writeChatUUIDAndMemberUUIDs, writeChatMembers, writeChatMessages, writeMemberWithModeFlags, InviteCode, writeMembersWithModeFlags, ChatRoomWithLastMessageUUID, writeChatRoomWithLastMessageUUID, writeChatRoomsWithLastMessageUUID, readCreateChatMessageWithOutModeFlags, ChatMessageFlags } from "./utils/utils";
+import { ChatMemberModeFlags, CreatCode, RoomInfo, readRoomJoinInfo, PartCode, KickCode, CreateChatMessaage, ChatRoom, ChatMessages, ChatMembers, Account, MemberWithModeFlags, Message, writeChatRooms, writeChatMembersList, writeChatMessagesList, writeAccounts, CreateChat, readCreateChat, writeMessage, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, writeChatUUIDAndMemberUUIDs, writeChatMembers, writeChatMessages, writeMemberWithModeFlags, InviteCode, writeMembersWithModeFlags, ChatRoomWithLastMessageUUID, writeChatRoomWithLastMessageUUID, writeChatRoomsWithLastMessageUUID, readCreateChatMessageWithOutModeFlags } from "./utils/utils";
 import { ChatOpCode, JoinCode } from "./utils/utils";
 import { ChatEntity } from "src/generated/model";
 import { AuthPayload, AuthService } from "src/user/auth/auth.service";
@@ -61,7 +61,7 @@ export class ChatSocket {
 	async create(client: ChatWebSocket, clients: ChatWebSocket[], buf: ByteBuffer) {
 		const createInfo: CreateChat = readCreateChat(buf);
 		const newRoom: ChatEntity = await this.chatService.createChat(createInfo.chat);
-		const accounts = await this.chatService.getAccountsIdUUID(createInfo.members);
+		const accounts = await this.chatService.getAccountsOfId(createInfo.members);
 		//초대할 유저들의 id리스트 생성
 		const memberList: number[] = [];
 		for (let account of accounts) {
@@ -95,15 +95,15 @@ export class ChatSocket {
 			if (createInfo.members.includes(otherClient.account.uuid))
 				otherClient.send(sendInviterBuf.toArray());
 		}
-		//create message Notice
-		const content = client.account.nickName + "님이" + createInfo.chat.title + "을 생성하셨습니다.";
-		const _client = { userId: client.userId, userUUID: client.account.uuid };
-		this.makeNotice(newRoom.uuid, content, _client, clients);
-		for (const account of accounts) {
-			const content = account.nickName + "님이 입장하셨습니다.";
-			const _client = { userId: account.id, userUUID: account.uuid };
-			this.makeNotice(newRoom.uuid, content, _client, clients);
-		}
+		// //create message Notice
+		// const content = client.account.nickName + "님이" + createInfo.chat.title + "을 생성하셨습니다.";
+		// const _client = { userId: client.userId, userUUID: client.account.uuid };
+		// this.makeNotice(newRoom.uuid, content, _client, clients);
+		// for (const account of accounts) {
+		// 	const content = account.nickName + "님이 입장하셨습니다.";
+		// 	const _client = { userId: account.id, userUUID: account.uuid };
+		// 	this.makeNotice(newRoom.uuid, content, _client, clients);
+		// }
 		return sendCreaterBuf;
 	}
 
@@ -141,7 +141,7 @@ export class ChatSocket {
 		const otherMembers: string[] = []
 		for (let member of roomInfo.members) {
 			if (member.account.uuid == client.account.uuid) {
-				writeMemberWithModeFlags(sendNewJoinBuf, { account: member.account, modeFalgs: member.modeFlags })
+				writeMemberWithModeFlags(sendNewJoinBuf, { accountUUID: member.account.uuid, modeFalgs: member.modeFlags })
 			}
 			else {
 				otherMembers.push(member.account.uuid);
@@ -151,9 +151,9 @@ export class ChatSocket {
 			if (otherMembers.includes(otherClinet.account.uuid))
 				otherClinet.send(sendNewJoinBuf.toArray());
 		//join message Notice : 공지 모드 플레그
-		const content: string = client.account.nickName + "님이 입장하셨습니다.";
-		const _client = { userId: client.userId, userUUID: client.account.uuid }
-		this.makeNotice(roomJoinInfo.uuid, content, _client, clients);
+		// const content: string = client.account.nickName + "님이 입장하셨습니다.";
+		// const _client = { userId: client.userId, userUUID: client.account.uuid }
+		// this.makeNotice(roomJoinInfo.uuid, content, _client, clients);
 	}
 
 	async searchPubilcRoom() {
@@ -185,7 +185,7 @@ export class ChatSocket {
 				invitedMembers.push(member);
 			}
 		}
-		const accounts = await this.chatService.getAccounts(invitedMembers);
+		const accounts = await this.chatService.getAccountsOfId(invitedMembers);
 		//초대할 유저들의 id리스트 생성
 		const memberList: number[] = [];
 		for (let account of accounts) {
@@ -207,7 +207,7 @@ export class ChatSocket {
 		for (const member of roomInfo.members) {
 			if (invitedMembers.includes(member.account.uuid)) {
 				const inviter: MemberWithModeFlags = {
-					account: member.account,
+					accountUUID: member.account.uuid,
 					modeFalgs: member.modeFlags,
 				};
 				invitedMembersWithModeFlags.push(inviter);
@@ -234,12 +234,12 @@ export class ChatSocket {
 				otherClient.send(sendMemberBuf.toArray());
 			}
 		}
-		//invite message Notice
-		for (const account of accounts) {
-			const content = account.nickName + "님이 입장하셨습니다.";
-			const _client = { userId: account.id, userUUID: account.uuid };
-			this.makeNotice(invitation.chatUUID, content, _client, clients);
-		}
+		// //invite message Notice
+		// for (const account of accounts) {
+		// 	const content = account.nickName + "님이 입장하셨습니다.";
+		// 	const _client = { userId: account.id, userUUID: account.uuid };
+		// 	this.makeNotice(invitation.chatUUID, content, _client, clients);
+		// }
 	}
 
 	// async enterRoom(buf: ByteBuffer) {
@@ -290,10 +290,10 @@ export class ChatSocket {
 				otherClient.send(sendOtherUserBuf.toArray());
 		//client 내부에 roomUUID, modeFlags를 삭제
 		client.deleteRoomInClientSocket(roomUUID);
-		//part message Notice
-		const content = client.account.nickName + "님이 퇴장하셨습니다.";
-		const _client = { userId: client.userId, userUUID: client.account.uuid };
-		this.makeNotice(roomUUID, content, _client, clients);
+		// //part message Notice
+		// const content = client.account.nickName + "님이 퇴장하셨습니다.";
+		// const _client = { userId: client.userId, userUUID: client.account.uuid };
+		// this.makeNotice(roomUUID, content, _client, clients);
 	}
 
 	async kick(client: ChatWebSocket, clients: ChatWebSocket[], buf: ByteBuffer) {
@@ -315,7 +315,7 @@ export class ChatSocket {
 		for (const member of room.members) {
 			roomMembers.push(member.accountId);
 		}
-		const accounts = await this.chatService.getAccountsIdUUID(kickList.members);
+		const accounts = await this.chatService.getAccountsOfId(kickList.members);
 		const kickMembers: number[] = [];
 		for (const account of accounts) {
 			kickMembers.push(account.id);
@@ -337,12 +337,12 @@ export class ChatSocket {
 				clients[i].send(sendBuf.toArray());
 			}
 		}
-		//kick message Notice
-		for (const account of accounts) {
-			const content = account.nickName + "님이 퇴장당하셨습니다.";
-			const _client = { userId: account.id, userUUID: account.uuid };
-			this.makeNotice(kickList.chatUUID, content, _client, clients);
-		}
+		// //kick message Notice
+		// for (const account of accounts) {
+		// 	const content = account.nickName + "님이 퇴장당하셨습니다.";
+		// 	const _client = { userId: account.id, userUUID: account.uuid };
+		// 	this.makeNotice(kickList.chatUUID, content, _client, clients);
+		// }
 	}
 
 	async chat(client: ChatWebSocket, clients: ChatWebSocket[], modeFalgs: number, buf: ByteBuffer) {
@@ -407,7 +407,7 @@ export class ChatSocket {
 		const members: MemberWithModeFlags[] = [];
 		for (const member of room.members) {
 			members.push({
-				account: member.account,
+				accountUUID: member.account.uuid,
 				modeFalgs: member.modeFlags,
 			});
 		}
@@ -440,7 +440,7 @@ export class ChatSocket {
 		let lastMessageId: string = NULL_UUID;
 		for (const member of room.members) {
 			members.push({
-				account: member.account,
+				accountUUID: member.account.uuid,
 				modeFalgs: member.modeFlags,
 			});
 			if (member.account.uuid == accountUUID && member.lastMessageId != null) {
@@ -513,13 +513,13 @@ export class ChatSocket {
 		return messageAt0.uuid;
 	}
 
-	private makeNotice(chatUUID: string, content: string, client: { userId: number, userUUID: string }, clients: ChatWebSocket[]) {
-		const msg: CreateChatMessaage = {
-			chatUUID: chatUUID,
-			//TODO - 공지 모드 플레그
-			modeFalgs: ChatMessageFlags.NOTICE,
-			content
-		};
-		this.chatWithCreateChatMessage(msg, client, clients);
-	}
+	// 	private makeNotice(chatUUID: string, content: string, client: { userId: number, userUUID: string }, clients: ChatWebSocket[]) {
+	// 		const msg: CreateChatMessaage = {
+	// 			chatUUID: chatUUID,
+	// 			//TODO - 공지 모드 플레그
+	// 			modeFalgs: ChatMessageFlags.NOTICE,
+	// 			content
+	// 		};
+	// 		this.chatWithCreateChatMessage(msg, client, clients);
+	// 	}
 }

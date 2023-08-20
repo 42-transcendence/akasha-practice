@@ -60,12 +60,6 @@ export class ChatService {
 								account: {
 									select: {
 										uuid: true,
-										nickName: true,
-										nickTag: true,
-										avatarKey: true,
-										activeStatus: true,
-										activeTimestamp: true,
-										statusMessage: true
 									}
 								},
 								modeFlags: true,
@@ -121,15 +115,24 @@ export class ChatService {
 		}));
 	}
 
-	async getAccountsIdUUID(members: string[]) {
+	async getAccountsOfUUID(members: string[]) {
+		return (await this.prismaService.account.findMany({
+			where: {
+				uuid: { in: members }
+			},
+			select: {
+				uuid: true,
+			}
+		}));
+	}
+
+	async getAccountsOfId(members: string[]) {
 		return (await this.prismaService.account.findMany({
 			where: {
 				uuid: { in: members }
 			},
 			select: {
 				id: true,
-				uuid: true,
-				nickName: true
 			}
 		}));
 	}
@@ -174,12 +177,6 @@ export class ChatService {
 						account: {
 							select: {
 								uuid: true,
-								nickName: true,
-								nickTag: true,
-								avatarKey: true,
-								activeStatus: true,
-								activeTimestamp: true,
-								statusMessage: true
 							}
 						},
 						modeFlags: true,
@@ -229,12 +226,6 @@ export class ChatService {
 						account: {
 							select: {
 								uuid: true,
-								nickName: true,
-								nickTag: true,
-								avatarKey: true,
-								activeStatus: true,
-								activeTimestamp: true,
-								statusMessage: true
 							}
 						},
 						modeFlags: true,
@@ -277,12 +268,6 @@ export class ChatService {
 						account: {
 							select: {
 								uuid: true,
-								nickName: true,
-								nickTag: true,
-								avatarKey: true,
-								activeStatus: true,
-								activeTimestamp: true,
-								statusMessage: true
 							}
 						},
 						modeFlags: true,
@@ -384,17 +369,6 @@ export class ChatService {
 			}
 		}));
 	}
-
-	// async getAccountOfId(accountUUIDs: string[]) {
-	// 	return (await this.prismaService.account.findMany({
-	// 		where: {
-	// 			uuid: { in: accountUUIDs }
-	// 		},
-	// 		select: {
-	// 			id: true
-	// 		}
-	// 	}));
-	// }
 
 	async deleteChatMembers(chatId: number, accountIds: number[]) {
 		return (await this.prismaService.chatMember.deleteMany({

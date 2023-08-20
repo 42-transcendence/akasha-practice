@@ -382,21 +382,21 @@ export function readAccounts(buf: ByteBuffer): Account[] {
 
 //MemberWithModeFlags Type
 export type MemberWithModeFlags = {
-	account: Account,
+	accountUUID: string,
 	modeFalgs: number,
 }
 
 export function writeMemberWithModeFlags(buf: ByteBuffer, member: MemberWithModeFlags) {
-	writeAccount(buf, member.account);
+	buf.writeUUID(member.accountUUID);
 	buf.write4Unsigned(member.modeFalgs);
 	return buf;
 }
 
 export function readMemberWithModeFlags(buf: ByteBuffer): MemberWithModeFlags {
-	const account: Account = readAccount(buf);
+	const accountUUID: string = buf.readUUID();
 	const modeFlags = buf.read4Unsigned();
 	return ({
-		account: account,
+		accountUUID: accountUUID,
 		modeFalgs: modeFlags,
 	})
 
@@ -405,7 +405,7 @@ export function readMemberWithModeFlags(buf: ByteBuffer): MemberWithModeFlags {
 export function writeMembersWithModeFlags(buf: ByteBuffer, members: MemberWithModeFlags[]) {
 	buf.write4Unsigned(members.length); // members의 크기
 	for (let i = 0; i < members.length; i++) {
-		writeAccount(buf, members[i].account);
+		buf.writeUUID(members[i].accountUUID);
 		buf.write4Unsigned(members[i].modeFalgs);
 	}
 	return buf;
@@ -415,10 +415,10 @@ export function readMembersWithModeFlags(buf: ByteBuffer): MemberWithModeFlags[]
 	const size = buf.read4Unsigned(); // members의 크기
 	const members: MemberWithModeFlags[] = [];
 	for (let i = 0; i < size; i++) {
-		const account: Account = readAccount(buf);
+		const accountUUID: string = buf.readUUID();
 		const modeFlags = buf.read4Unsigned();
 		members.push({
-			account: account,
+			accountUUID: accountUUID,
 			modeFalgs: modeFlags,
 		})
 
@@ -678,12 +678,6 @@ export type RoomInfo = {
 
 type RoomInfoAccount = {
 	uuid: string,
-	nickName: string | null,
-	nickTag: number,
-	avatarKey: string | null,
-	activeStatus: ActiveStatus,
-	activeTimestamp: Date,
-	statusMessage: string
 }
 
 type RoomInfoMessage = {
@@ -700,5 +694,5 @@ type RoomInfoMessage = {
 export type NowChatRoom = {
 	chatRoom: ChatRoomWithLastMessageUUID | null,
 	members: ChatMembers | null,
-	messages: ChatMessages | null
+	messages: ChatMessages
 }
