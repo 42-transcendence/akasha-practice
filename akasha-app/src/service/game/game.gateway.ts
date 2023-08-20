@@ -1,6 +1,10 @@
-import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
+import {
+  SubscribeMessage,
+  WebSocketGateway,
+  WebSocketServer,
+} from "@nestjs/websockets";
 import { ByteBuffer } from "akasha-lib";
-import { ServerOptions } from "ws";
+import { ServerOptions, WebSocketServer as Server } from "ws";
 import { Logger } from "@nestjs/common";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
@@ -14,8 +18,12 @@ import { GameServerOpcode, GameClientOpcode } from "./game-opcodes";
   WebSocket: GameWebSocket,
 })
 export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
+  @WebSocketServer()
+  private readonly server!: Server;
+
   constructor(private readonly gameService: GameService) {
     super();
+    void this.server;
   }
 
   override handleServiceConnection(client: GameWebSocket): void {

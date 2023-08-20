@@ -29,6 +29,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       `Connection ChatWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );
 
+    this.chatService.trackClientTemporary(client);
     client.injectChatService(this.chatService);
   }
 
@@ -36,6 +37,8 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     Logger.debug(
       `Disconnect ChatWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );
+
+    this.chatService.untrackClient(client);
   }
 
   @SubscribeMessage(ChatServerOpcode.HANDSHAKE)
@@ -46,6 +49,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const uuid = client.auth.user_id;
     const id = await this.accounts.loadAccountIdByUUID(uuid);
     client.record = { uuid, id };
+    this.chatService.trackClient(client);
 
     const chatRoomList: ChatRoomEntry[] =
       await this.chatService.loadOwnRoomListByAccountId(id);
