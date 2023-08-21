@@ -3,6 +3,9 @@ export const enum ChatServerOpcode {
   ADD_FRIEND,
   MODIFY_FRIEND,
   DELETE_FRIEND,
+  ADD_ENEMY,
+  MODIFY_ENEMY,
+  DELETE_ENEMY,
   PUBLIC_ROOM_LIST_REQUEST,
   CREATE_ROOM,
   ENTER_ROOM,
@@ -12,7 +15,6 @@ export const enum ChatServerOpcode {
   SYNC_CURSOR,
   MUTE_MEMBER,
   KICK_MEMBER,
-  BAN_MEMBER,
 }
 
 export const enum ChatClientOpcode {
@@ -22,6 +24,9 @@ export const enum ChatClientOpcode {
   MODIFY_FRIEND_RESULT,
   UPDATE_FRIEND_ACTIVE_STATUS,
   DELETE_FRIEND_RESULT,
+  ADD_ENEMY_RESULT,
+  MODIFY_ENEMY_RESULT,
+  DELETE_ENEMY_RESULT,
   PUBLIC_ROOM_LIST,
   INSERT_ROOM,
   CREATE_ROOM_FAILED,

@@ -37,6 +37,19 @@ export class AccountsService {
     return account.id;
   }
 
+  async loadAccountIdByUUIDMany(
+    uuidArray: string[],
+  ): Promise<Map<string, number>> {
+    const accounts = await this.prisma.account.findMany({
+      where: { uuid: { in: uuidArray } },
+      select: { id: true, uuid: true },
+    });
+    return accounts.reduce(
+      (map, e) => map.set(e.uuid, e.id),
+      new Map<string, number>(),
+    );
+  }
+
   async getOrCreateAccountForAuth(
     authIssuer: number,
     authSubject: string,

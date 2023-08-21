@@ -7,9 +7,18 @@ import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { ChatService } from "./chat.service";
 import { ChatWebSocket } from "./chat-websocket";
 import { ChatServerOpcode, ChatClientOpcode } from "./chat-opcodes";
-import { ChatRoomEntry, writeChatRoom } from "./chat-payloads";
+import {
+  ChatMemberModeFlags,
+  ChatRoomEntry,
+  ChatRoomModeFlags,
+  writeChatMessage,
+  writeChatRoom,
+} from "./chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import { AuthLevel } from "@/user/auth/auth-payload";
+import { PacketHackException } from "../packet-hack-exception";
+
+export const MAX_MEMBER_CAPACITY = 50000;
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -111,27 +120,86 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleCreateRoom(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const title = payload.readString();
+    const modeFlagsClient = payload.read1();
+    let modeFlags = 0;
+    let password: string = "";
+    const isPrivate = (modeFlagsClient & ChatRoomModeFlags.PRIVATE) !== 0;
+    if (isPrivate) {
+      password = payload.readString();
+      //NOTE: password에 대하여 유효한 bcrypt 검사
+      modeFlags |= ChatRoomModeFlags.PRIVATE;
+    }
+    const isSecret = (modeFlagsClient & ChatRoomModeFlags.SECRET) !== 0;
+    if (isSecret) {
+      modeFlags |= ChatRoomModeFlags.SECRET;
+    }
+    const limit = payload.read2Unsigned();
+    if (limit == 0 || limit > MAX_MEMBER_CAPACITY) {
+      throw new PacketHackException(
+        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Illegal limit [${limit}]`,
+      );
+    }
+    const memberUUIDs = payload.readArray(payload.readUUID);
+    if (memberUUIDs.length > limit) {
+      throw new PacketHackException(
+        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Exceed limit [${limit}], member count [${memberUUIDs.length}]`,
+      );
+    }
+    const ownerUUID = client.record.uuid;
+    if (!memberUUIDs.includes(ownerUUID)) {
+      throw new PacketHackException(
+        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Member without owner`,
+      );
+    }
+    const members = memberUUIDs.map((e) => ({
+      uuid: e,
+      modeFlags: e === ownerUUID ? ChatMemberModeFlags.ADMIN : 0,
+    }));
+    //FIXME: 차단한 상대가 유저를 채팅방을 만들 때 초대할 수 있음?
+
+    const result = await this.chatService.createNewRoom({
+      title,
+      modeFlags,
+      password,
+      limit,
+      members,
+    });
+
+    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM);
+    writeChatRoom(result, buf);
+
+    this.chatService.multicastToRoom(result.uuid, buf);
   }
 
   @SubscribeMessage(ChatServerOpcode.ENTER_ROOM)
   async handleEnterRoom(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
+    const password = payload.readString();
+    //FIXME: password 검사
+    void password;
+    //FIXME: 이미 꽉 찬 채팅방
+    this.chatService.insertChatMember(roomUUID, client.record.id, 0);
   }
 
   @SubscribeMessage(ChatServerOpcode.LEAVE_ROOM)
   async handleLeaveRoom(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    //FIXME: 입장하지 않은 채팅방
+    //FIXME: 방장은 나갈 수 없게 혹은 자동으로 양도
+    this.chatService.deleteChatMember(roomUUID, client.record.id);
   }
 
   @SubscribeMessage(ChatServerOpcode.INVITE_USER)
   async handleInviteUser(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
+    //FIXME: 상대가 차단하여 초대할 수 없음
     void payload; //FIXME: service
   }
 
@@ -139,34 +207,46 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleChatMessage(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    //FIXME: 없는 방, 채팅금지 상태
+    const content = payload.readString();
+    //FIXME: 내용이 malicious
+
+    const message = await this.chatService.createNewChatMessage(
+      roomUUID,
+      client.record.id,
+      content,
+      0,
+    );
+
+    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_MESSAGE);
+    writeChatMessage(message, buf);
+
+    this.chatService.multicastToRoom(roomUUID, buf);
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
   async handleSyncCursor(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    const lastMessageId = payload.readUUID();
+    void roomUUID, lastMessageId; //FIXME: service
   }
 
   @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
   async handleMuteMember(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    void roomUUID; //FIXME: service
   }
 
   @SubscribeMessage(ChatServerOpcode.KICK_MEMBER)
   async handleKickMember(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.record !== undefined);
 
-    void payload; //FIXME: service
-  }
-
-  @SubscribeMessage(ChatServerOpcode.BAN_MEMBER)
-  async handleBanMember(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
-
-    void payload; //FIXME: service
+    const roomUUID = payload.readUUID();
+    void roomUUID; //FIXME: service
   }
 }
