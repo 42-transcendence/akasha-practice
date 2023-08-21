@@ -1,9 +1,9 @@
 import { ByteBuffer } from "@libs/byte-buffer";
-import { ChatOpCode, writeRoomJoinInfo, JoinCode, CreatCode, PartCode, KickCode, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readAccounts, Account, NowChatRoom, MemberWithModeFlags, Message, readMessage, CreateChat, writeCreateChat, writeChatUUIDAndMemberUUIDs, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, readChatMembers, readChatMessages, readMemberWithModeFlags, InviteCode, readMembersWithModeFlags, ChatRoomWithLastMessageUUID, readChatRoomsWithLastMessageUUID, readChatRoomWithLastMessageUUID, ChatCode, CreateChatMessageWithOutModeFlags, writeCreateChatMessageWithOutModeFlags } from "./utils";
+import { ChatOpCode, writeRoomJoinInfo, JoinCode, CreatCode, PartCode, KickCode, ChatRoom, ChatMembers, ChatMessages, readChatRooms, readChatMembersList, readAccounts, Account, NowChatRoom, MemberWithModeFlags, Message, readMessage, CreateChat, writeCreateChat, writeChatUUIDAndMemberUUIDs, ChatUUIDAndMemberUUIDs, readChatUUIDAndMemberUUIDs, readChatMembers, readChatMessages, readMemberWithModeFlags, InviteCode, readMembersWithModeFlags, ChatRoomWithLastMessageUUID, readChatRoomsWithLastMessageUUID, readChatRoomWithLastMessageUUID, ChatCode, CreateChatMessageWithOutModeFlags, writeCreateChatMessageWithOutModeFlags, readChatMessagesList } from "./utils";
 import { NULL_UUID } from "@libs/uuid";
 import { MessagesDB } from "./message_indexedDB";
 
-let messageDB = new MessagesDB([], []);
+let messageDB: MessagesDB;
 let nowChatRoom: NowChatRoom | null = null;
 
 export function sendConnectMessage(client: WebSocket) {
@@ -178,7 +178,7 @@ function deleteChatMessages(chatUUID: string) {
 	messageDB.clearObjectStore("chat_" + chatUUID);
 }
 
-async function updateLastMessageId(client: WebSocket, chatUUID: string) {
+export async function updateLastMessageId(client: WebSocket, chatUUID: string) {
 	const chatRooms: ChatRoomWithLastMessageUUID[] = JSON.parse(String(window.localStorage.getItem('chatRooms')));
 	const messages: Message[] = await messageDB.readBelowCursorMessages(chatUUID);
 	if (messages.length !== 0) {
@@ -214,12 +214,12 @@ async function updateLastMessageId(client: WebSocket, chatUUID: string) {
 	window.localStorage.setItem('chatRooms', JSON.stringify(chatRooms));
 }
 
-async function setNowChatRoom(chatUUID: string): Promise<NowChatRoom> {
+export async function setNowChatRoom(chatUUID: string): Promise<NowChatRoom> {
 	const nowChatRoom: NowChatRoom = await makeEnterChatRoom(chatUUID);
 	return nowChatRoom;
 }
 
-async function updateNowChatRoom(chatUUID: string) {
+export async function updateNowChatRoom(chatUUID: string) {
 	const nowChatRoom: NowChatRoom = await makeUpdateChatRoom(chatUUID);
 	return nowChatRoom;
 }
@@ -238,10 +238,10 @@ export function acceptConnect(client: WebSocket, buf: ByteBuffer) {
 export function acceptInfo(client: WebSocket, buf: ByteBuffer) {
 	const chatRooms: ChatRoomWithLastMessageUUID[] = readChatRoomsWithLastMessageUUID(buf);
 	const chatMembersList: ChatMembers[] = readChatMembersList(buf);
-	// const chatMessagesList: ChatMessages[] = readChatMessagesList(buf);
+	const chatMessagesList: ChatMessages[] = readChatMessagesList(buf);
 	window.localStorage.setItem('chatRooms', JSON.stringify(chatRooms));
 	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
-
+	messageDB = new MessagesDB(chatMessagesList, chatRooms);
 	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS);
 	client.send(sendBuf.toArray());
 	window.localStorage.removeItem('nowChatRoom');
