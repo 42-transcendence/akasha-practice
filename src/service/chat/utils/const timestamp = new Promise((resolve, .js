@@ -1,3 +1,8 @@
+const customerData = [
+	{ ssn: "444-44-4444", name: "Bill", age: 35, email: "bill@company.com" },
+	{ ssn: "555-55-5555", name: "Donna", age: 32, email: "donna@home.org" },
+];
+
 const dbName = "the_name";
 var db;
 
@@ -8,17 +13,17 @@ request.onerror = function (event) {
 request.onupgradeneeded = function (event) {
 	db = event.target.result;
 
-	var objectStore = db.createObjectStore("customers", { keyPath: "ssn" });
-
+	const objectStore = db.createObjectStore("customers", { keyPath: "ssn" });
+	console.log(objectStore);
 	objectStore.createIndex("name", "name", { unique: false });
 
 	objectStore.createIndex("email", "email", { unique: true });
 
 	objectStore.createIndex("ssn", "ssn", { unique: true });
 
-	objectStore.transaction.oncomplete = function (event) {
+	objectStore.transaction.oncomplete = (event) => {
 		console.log(event.target.result);
-		var customerObjectStore = db
+		const customerObjectStore = db
 			.transaction("customers", "readwrite")
 			.objectStore("customers");
 		customerData.forEach(function (customer) {
@@ -26,6 +31,29 @@ request.onupgradeneeded = function (event) {
 		});
 	};
 };
+
+request.onsuccess = function (event) {
+	db = event.target.result;
+	db.onversionchange = (event) => {
+		db = event.target.result;
+		const objectStore = db.createObjectStore("test", { keyPath: "ssn" });
+
+		objectStore.createIndex("name", "name", { unique: false });
+
+		objectStore.createIndex("email", "email", { unique: true });
+
+		objectStore.createIndex("ssn", "ssn", { unique: true });
+		objectStore.transaction.oncomplete = (event) => {
+			console.log(event.target.result);
+			const customerObjectStore = db
+				.transaction("customers", "readwrite")
+				.objectStore("customers");
+			customerData.forEach(function (customer) {
+				customerObjectStore.add(customer);
+			});
+		};
+	}
+}
 
 var objectStore = db
 	.transaction(["customers"], "readwrite")

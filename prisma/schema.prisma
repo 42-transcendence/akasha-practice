@@ -246,7 +246,7 @@ model ChatMessage {
   content        String
   modeFlags      Int
   timestamp      DateTime     @default(now())
-  reachedMembers ChatMember[] @ignore
+  reachedMembers ChatMember[]
 
   @@index([timestamp(ops: TimestampMinMaxOps)], type: Brin)
   @@map("chat_messages")

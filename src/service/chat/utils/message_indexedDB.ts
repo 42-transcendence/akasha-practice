@@ -1,120 +1,121 @@
-import { NULL_UUID } from "@libs/uuid";
+import { NULL_UUID } from "./libs/uuid";
 import { ChatMessages, ChatRoomWithLastMessageUUID, Message } from "./utils";
 
 export class MessagesDB {
 
 	private IndxDb: IDBFactory;
-	private req: IDBOpenDBRequest;
-	private db: IDBDatabase;
-	private tables: Map<string, IDBObjectStore>;
+	private req!: IDBOpenDBRequest;
+	private chatDB: Map<string, IDBDatabase>;
 	private chatCursor: Map<string, string>;
 
 	constructor(private chatMessagesList: ChatMessages[], chatRooms: ChatRoomWithLastMessageUUID[]) {
 		this.IndxDb = window.indexedDB;
 		this.chatCursor = new Map<string, string>;
+		this.chatDB = new Map<string, IDBDatabase>;
 		for (const chatRoom of chatRooms) {
 			this.chatCursor.set(chatRoom.info.uuid, chatRoom.lastMessageId);
 		}
-		this.openInitDB();
+		for (const chatMessage of this.chatMessagesList) {
+			this.openInitDB(chatMessage);
+		}
 	}
 
-	private openInitDB() {
-		this.req = this.IndxDb.open("messagesDB");
-		this.tables = new Map<string, IDBObjectStore>;
-		this.req.onupgradeneeded = this.addTables;
+	private openInitDB(chatMessages: ChatMessages) {
+		this.req = this.IndxDb.open("chat_" + chatMessages.chatUUID);
+		this.req.onupgradeneeded = (e: any) => {
+			const db = e.target.result;
+			const parms: IDBObjectStoreParameters = { keyPath: 'uuid' };
+			const table: IDBObjectStore = db.createObjectStore("chat_" + chatMessages.chatUUID, parms);
+			table.createIndex('timestamp', 'timestamp', { unique: true });
+			table.createIndex('uuid', 'uuid', { unique: true });
+			table.transaction.oncomplete = (_event: any) => {
+				const objectStore: IDBObjectStore = db.transaction(["chat_" + chatMessages.chatUUID], 'readwrite').objectStore("chat_" + chatMessages.chatUUID);
+				chatMessages.messages.forEach(function (message: Message) {
+					objectStore.add(message);
+				})
+			};
+		};
 		this.req.onsuccess = async (event: any) => {
-			this.db = event.target.result;
-			for (let i = 0; i < this.chatMessagesList.length; i++) {
-				const lastMessage = await this.retMostLowerMessageUUID(this.chatMessagesList[i].chatUUID);
-				if (lastMessage !== null) {
-					const lastTimestamp = await this.readRow(this.chatMessagesList[i].chatUUID, lastMessage);
+			const db = event.target.result;
+			const lastMessage = await this.retMostLowerMessageUUID(chatMessages.chatUUID);
+			// 기존 메세지들이 존재하고, 새로운 메세지를 추가하는 경우!
+			if (lastMessage !== null) {
+				if (lastMessage != NULL_UUID) {
+					const lastTimestamp = await this.readRow(chatMessages.chatUUID, lastMessage);
 					if (lastTimestamp !== null) {
-						for (const message of this.chatMessagesList[i].messages) {
+						for (const message of chatMessages.messages) {
 							if (lastTimestamp.timestamp < message.timestamp) {
-								this.addMessage(this.chatMessagesList[i].chatUUID, message)
+								this.addMessage(chatMessages.chatUUID, message)
 							}
 						}
 					}
-					else {
-						continue; // lastMessage가 존재하지만, 그 열을 찾지 못한 경우는 오류이다.
-					}
 				}
 				else {
-					this.addMessages(this.chatMessagesList[i].chatUUID, this.chatMessagesList[i].messages) // lastMessage가 없다면, 새로온 메시지들을 업데이트한다.
+					this.addMessages(chatMessages.chatUUID, chatMessages.messages) // lastMessage가 없다면, 새로온 메시지들을 업데이트한다.
 				}
 			}
-		};
+			else {
+				// TODO - DB안에 테이블이 생성되지 않은 경우
+			}
+			this.chatDB.set("chat_" + chatMessages.chatUUID, db);
+		}
 		this.req.onerror = function (_evt) {
 			alert("Why didn't you allow my web app to use IndexedDB?!");
 		}
 	}
 
-	private addTables(e: any) {
-		this.db = e.target.result;
-		for (let i = 0; i < this.chatMessagesList.length; i++) {
-			const parms: IDBObjectStoreParameters = { keyPath: 'uuid' };
-			const table: IDBObjectStore = this.db.createObjectStore("chat_" + this.chatMessagesList[i].chatUUID, parms);
-			// table.createIndex('uuid', 'uuid', { unique: true });
-			table.createIndex('timestamp', 'timestamp', { unique: true });
-			table.transaction.oncomplete = (_event: any) => {
-				const objectStore: IDBObjectStore = this.getObjectStore(this.chatMessagesList[i].chatUUID, "readwrite");
-				this.chatMessagesList[i].messages.forEach(function (message) {
-					objectStore.add(message);
-				})
-			};
-			this.tables.set(this.chatMessagesList[i].chatUUID, table);
+	addTable(chatMessages: ChatMessages) {
+		this.openInitDB(chatMessages);
+	}
+
+
+	private getObjectStore(chatUUID: string, mode: IDBTransactionMode): IDBObjectStore | null {
+		const db: IDBDatabase | undefined = this.chatDB.get('chat_' + chatUUID);
+		if (db !== undefined)
+			return db.transaction(['chat_' + chatUUID], mode).objectStore('chat_' + chatUUID);
+		return null
+	}
+
+	clearObjectStore(chatUUID: string) {
+		const store = this.getObjectStore(chatUUID, "readwrite");
+		if (store !== null)
+			store.clear();
+	}
+
+	deleteDB(chatUUID: string) {
+		const db = this.chatDB.get("chat_" + chatUUID);
+		if (db !== undefined) {
+			db.close();
+			this.IndxDb.deleteDatabase("chat_" + chatUUID);
 		}
 	}
 
-	addTable(newChatMessages: ChatMessages) {
-		const parms: IDBObjectStoreParameters = { keyPath: 'uuid' };
-		const table: IDBObjectStore = this.db.createObjectStore("chat_" + newChatMessages.chatUUID, parms);
-		// table.createIndex('uuid', 'uuid', { unique: true });
-		table.createIndex('timestamp', 'timestamp', { unique: true });
-		table.transaction.oncomplete = (_event: any) => {
-			const objectStore: IDBObjectStore = this.getObjectStore(newChatMessages.chatUUID, "readwrite");
-			newChatMessages.messages.forEach(function (message) {
-				objectStore.add(message);
-			})
-		};
-		this.tables.set(newChatMessages.chatUUID, table);
-	}
-
-	private getObjectStore(store_name: string, mode: IDBTransactionMode): IDBObjectStore {
-		const tx = this.db.transaction([store_name], mode);
-		return tx.objectStore(store_name);
-	}
-
-	clearObjectStore(store_name: string) {
-		const store = this.getObjectStore(store_name, "readwrite");
-		store.clear();
-	}
-
-	resetDB() {
-		this.db.close();
-		this.IndxDb.deleteDatabase("messagesDB");
-		this.openInitDB();
-	}
-
 	addMessages(chatUUID: string, messages: Message[]) {
-		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
-		for (const message of messages)
-			tbl.add(message);
+		const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readwrite");
+		if (tbl !== null) {
+			for (const message of messages)
+				tbl.add(message);
+		}
 	}
 
 	addMessage(chatUUID: string, message: Message) {
-		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
-		tbl.add(message);
+		const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readwrite");
+		if (tbl !== null)
+			tbl.add(message);
 	}
 
 	deleteMessage(chatUUID: string, messageUUID: string) {
-		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
-		tbl.delete(messageUUID)
+		const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readwrite");
+		if (tbl !== null)
+			tbl.delete(messageUUID)
 	}
 
 	async updateRow(chatUUID: string, message: Message) {
 		const updateMessage: Message = message;
-		const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readwrite");
+		const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readwrite");
+		if (tbl === null) {
+			return;
+		}
 		const idx: IDBIndex = tbl.index('uuid');
 		const update = new Promise((resolve, reject) => {
 			const req: IDBRequest = idx.get(message.uuid);
@@ -136,14 +137,21 @@ export class MessagesDB {
 
 	async readRow(chatUUID: string, messageUUID: string): Promise<Message | null> {
 		const message = new Promise((resolve, reject) => {
-			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+			if (tbl === null) {
+				return null;
+			}
 			const idx: IDBIndex = tbl.index('uuid');
 			const req: IDBRequest = idx.get(messageUUID);
 
 			req.onsuccess = resolve;
 			req.onerror = reject;
 		})
-		return await message.then((event: any) => event.target.result).catch((_event: any) => null);
+		return await message.then((event: any) => {
+			return event.target.result;
+		}).catch((_event: any) => {
+			return null;
+		});
 	}
 
 
@@ -155,7 +163,10 @@ export class MessagesDB {
 			if (messageTime !== null) {
 				const timestamp = new Promise((resolve, reject) => {
 					const range = IDBKeyRange.upperBound(messageTime.timestamp);
-					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+					if (tbl === null) {
+						return [];
+					}
 					const index = tbl.index('timestamp');
 					const req = index.openCursor(range, 'prev');
 					let count = 0
@@ -184,7 +195,10 @@ export class MessagesDB {
 			}
 			else {
 				const timestamp = new Promise((resolve, reject) => {
-					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+					if (tbl === null) {
+						return [];
+					}
 					const index = tbl.index('timestamp');
 					const req = index.openCursor(undefined, 'next');
 
@@ -212,7 +226,10 @@ export class MessagesDB {
 		}
 		else if (messageUUID !== undefined && messageUUID === NULL_UUID) {
 			const timestamp = new Promise((resolve, reject) => {
-				const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+				const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+				if (tbl === null) {
+					return [];
+				}
 				const index = tbl.index('timestamp');
 				const req = index.openCursor(undefined, 'prev');
 				let count = 0
@@ -250,7 +267,10 @@ export class MessagesDB {
 			if (messageTime !== null) {
 				const timestamp = new Promise((resolve, reject) => {
 					const range = IDBKeyRange.lowerBound(messageTime.timestamp);
-					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+					if (tbl === null) {
+						return [];
+					}
 					const index = tbl.index('timestamp');
 					const req = index.openCursor(range, 'prev');
 
@@ -296,7 +316,10 @@ export class MessagesDB {
 
 	private async retMostUpperMessageUUID(chatUUID: string): Promise<string | null> {
 		const timestamp = new Promise((resolve, reject) => {
-			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+			if (tbl === null) {
+				return null;
+			}
 			const index = tbl.index('timestamp');
 			const req = index.openCursor(undefined, 'next');
 
@@ -319,7 +342,10 @@ export class MessagesDB {
 
 	private async retMostLowerMessageUUID(chatUUID: string): Promise<string | null> {
 		const timestamp = new Promise((resolve, reject) => {
-			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+			if (tbl === null) {
+				return null;
+			}
 			const index = tbl.index('timestamp');
 			const req = index.openCursor(undefined, 'prev');
 
@@ -357,7 +383,10 @@ export class MessagesDB {
 			if (messageTime !== null) {
 				const timestamp = new Promise((resolve, reject) => {
 					const range = IDBKeyRange.lowerBound(messageTime.timestamp);
-					const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+					const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+					if (tbl === null) {
+						return null;
+					}
 					const index = tbl.index('timestamp');
 					const req = index.count(range);
 
@@ -376,7 +405,10 @@ export class MessagesDB {
 
 	async retMostLowerMessage(chatUUID: string): Promise<Message | null> {
 		const timestamp = new Promise((resolve, reject) => {
-			const tbl: IDBObjectStore = this.getObjectStore(chatUUID, "readonly");
+			const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
+			if (tbl === null) {
+				return null;
+			}
 			const index = tbl.index('timestamp');
 			const req = index.openCursor(undefined, 'next');
 
