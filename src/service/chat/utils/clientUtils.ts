@@ -167,7 +167,7 @@ function deleteChatMember(chatUUID: string, accountUUID: string) {
 }
 
 function addChatMessages(newChatMessages: ChatMessages) {
-	messageDB.addTable(newChatMessages);
+	messageDB.addDB(newChatMessages, NULL_UUID);
 }
 
 function addChatMessage(chatUUID: string, message: Message) {
@@ -175,7 +175,7 @@ function addChatMessage(chatUUID: string, message: Message) {
 }
 
 function deleteChatMessages(chatUUID: string) {
-	messageDB.clearObjectStore("chat_" + chatUUID);
+	messageDB.deleteDB("chat_" + chatUUID);
 }
 
 export async function updateLastMessageId(client: WebSocket, chatUUID: string) {
@@ -235,16 +235,17 @@ export function acceptConnect(client: WebSocket, buf: ByteBuffer) {
 		throw new Error('올바르지 않은 접근입니다.')
 }
 
-export function acceptInfo(client: WebSocket, buf: ByteBuffer) {
+export function acceptInfo(client: WebSocket, buf: ByteBuffer): { chatMessagesList: ChatMessages[], chatRooms: ChatRoomWithLastMessageUUID[] } {
 	const chatRooms: ChatRoomWithLastMessageUUID[] = readChatRoomsWithLastMessageUUID(buf);
 	const chatMembersList: ChatMembers[] = readChatMembersList(buf);
 	const chatMessagesList: ChatMessages[] = readChatMessagesList(buf);
 	window.localStorage.setItem('chatRooms', JSON.stringify(chatRooms));
 	window.localStorage.setItem('chatMembersList', JSON.stringify(chatMembersList));
-	messageDB = new MessagesDB(chatMessagesList, chatRooms);
+	// messageDB = new MessagesDB(chatMessagesList, chatRooms);
 	const sendBuf: ByteBuffer = ByteBuffer.createWithOpcode(ChatOpCode.FRIENDS);
 	client.send(sendBuf.toArray());
 	window.localStorage.removeItem('nowChatRoom');
+	return { chatMessagesList, chatRooms };
 }
 
 export function acceptFriends(buf: ByteBuffer) {
@@ -372,13 +373,14 @@ export async function acceptChat(client: WebSocket, buf: ByteBuffer) {
 	}
 }
 
-export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
+export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket, messagesDB: MessagesDB): { chatMessagesList: ChatMessages[], chatRooms: ChatRoomWithLastMessageUUID[] } | null {
 	const code: ChatOpCode = buf.readOpcode();
+	messageDB = messagesDB;
 
 	if (code === ChatOpCode.CONNECT)
 		acceptConnect(client, buf);
 	else if (code === ChatOpCode.INFO)
-		acceptInfo(client, buf);
+		return acceptInfo(client, buf);
 	else if (code === ChatOpCode.FRIENDS)
 		acceptFriends(buf);
 	else if (code === ChatOpCode.CREATE)
@@ -395,4 +397,5 @@ export function acceptChatOpCode(buf: ByteBuffer, client: WebSocket) {
 		acceptKick(buf);
 	else if (code === ChatOpCode.CHAT)
 		acceptChat(client, buf);
+	return null;
 }

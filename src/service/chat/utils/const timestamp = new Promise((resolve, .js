@@ -32,29 +32,6 @@ request.onupgradeneeded = function (event) {
 	};
 };
 
-request.onsuccess = function (event) {
-	db = event.target.result;
-	db.onversionchange = (event) => {
-		db = event.target.result;
-		const objectStore = db.createObjectStore("test", { keyPath: "ssn" });
-
-		objectStore.createIndex("name", "name", { unique: false });
-
-		objectStore.createIndex("email", "email", { unique: true });
-
-		objectStore.createIndex("ssn", "ssn", { unique: true });
-		objectStore.transaction.oncomplete = (event) => {
-			console.log(event.target.result);
-			const customerObjectStore = db
-				.transaction("customers", "readwrite")
-				.objectStore("customers");
-			customerData.forEach(function (customer) {
-				customerObjectStore.add(customer);
-			});
-		};
-	}
-}
-
 var objectStore = db
 	.transaction(["customers"], "readwrite")
 	.objectStore("customers");

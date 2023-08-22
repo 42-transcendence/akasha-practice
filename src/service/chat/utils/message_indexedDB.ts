@@ -1,4 +1,4 @@
-import { NULL_UUID } from "./libs/uuid";
+import { NULL_UUID } from "@libs/uuid";
 import { ChatMessages, ChatRoomWithLastMessageUUID, Message } from "./utils";
 
 export class MessagesDB {
@@ -42,11 +42,19 @@ export class MessagesDB {
 			if (lastMessage !== null) {
 				if (lastMessage != NULL_UUID) {
 					const lastTimestamp = await this.readRow(chatMessages.chatUUID, lastMessage);
-					if (lastTimestamp !== null) {
-						for (const message of chatMessages.messages) {
-							if (lastTimestamp.timestamp < message.timestamp) {
-								this.addMessage(chatMessages.chatUUID, message)
-							}
+					if (lastTimestamp === null) {
+						return;
+					}
+					const lastReadMessageUUID = this.chatCursor.get(chatMessages.chatUUID);
+					if (lastReadMessageUUID !== undefined) {
+						const lastReadMessag = await this.readRow(chatMessages.chatUUID, lastReadMessageUUID);
+						if (lastReadMessag === null) {
+							this.chatCursor.set(chatMessages.chatUUID, lastMessage);
+						}
+					}
+					for (const message of chatMessages.messages) {
+						if (lastTimestamp.timestamp < message.timestamp) {
+							this.addMessage(chatMessages.chatUUID, message)
 						}
 					}
 				}
@@ -64,7 +72,8 @@ export class MessagesDB {
 		}
 	}
 
-	addTable(chatMessages: ChatMessages) {
+	addDB(chatMessages: ChatMessages, lastMessageUUID: string) {
+		this.chatCursor.set(chatMessages.chatUUID, lastMessageUUID);
 		this.openInitDB(chatMessages);
 	}
 
@@ -76,13 +85,14 @@ export class MessagesDB {
 		return null
 	}
 
-	clearObjectStore(chatUUID: string) {
+	private clearObjectStore(chatUUID: string) {
 		const store = this.getObjectStore(chatUUID, "readwrite");
 		if (store !== null)
 			store.clear();
 	}
 
 	deleteDB(chatUUID: string) {
+		this.clearObjectStore(chatUUID);
 		const db = this.chatDB.get("chat_" + chatUUID);
 		if (db !== undefined) {
 			db.close();
@@ -158,8 +168,10 @@ export class MessagesDB {
 	private async readUpper20Messages(chatUUID: string): Promise<Message[]> {
 		const messageUUID = this.chatCursor.get(chatUUID);
 		let cur: Message[] = [];
+		//chat cursor != null-uuid
 		if (messageUUID !== undefined && messageUUID !== NULL_UUID) {
 			const messageTime = await this.readRow(chatUUID, messageUUID);
+			//chat cursor in DB -> 커서로부터 이전 메세지 20개 & 커서 갱신
 			if (messageTime !== null) {
 				const timestamp = new Promise((resolve, reject) => {
 					const range = IDBKeyRange.upperBound(messageTime.timestamp);
@@ -193,37 +205,16 @@ export class MessagesDB {
 				}).catch((_event: any) => [])
 				return (promise);
 			}
+			//chat cursor out DB  -> 커서를 가장 오래된 메세지로 갱신 및 그 이전 메시지 반환
 			else {
-				const timestamp = new Promise((resolve, reject) => {
-					const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
-					if (tbl === null) {
-						return [];
-					}
-					const index = tbl.index('timestamp');
-					const req = index.openCursor(undefined, 'next');
-
-					req.onsuccess = (event: any) => {
-						const cursor = event.target.result;
-						if (cursor) {
-							cursor.continue();
-							cur.push(cursor.value);
-						}
-						else {
-							const firstMessage = cur.at(0);
-							if (firstMessage !== undefined) {
-								this.chatCursor.set(chatUUID, firstMessage.uuid);
-							}
-							resolve(cur);
-						}
-					};
-					req.onerror = reject;
-				})
-				const promise = await timestamp.then((cursor: any) => {
-					return (cursor);
-				}).catch((_event: any) => []);
-				return (promise);
+				const lastMessageUUID = await this.retMostUpperMessageUUID(chatUUID);
+				if (lastMessageUUID !== null) {
+					this.chatCursor.set(chatUUID, lastMessageUUID);
+				}
+				await this.readBelowCursorMessages(chatUUID);
 			}
 		}
+		//chat cursor == null-uuid -> 최신 메세지부터 20개 메세지 로드
 		else if (messageUUID !== undefined && messageUUID === NULL_UUID) {
 			const timestamp = new Promise((resolve, reject) => {
 				const tbl: IDBObjectStore | null = this.getObjectStore(chatUUID, "readonly");
@@ -272,7 +263,7 @@ export class MessagesDB {
 						return [];
 					}
 					const index = tbl.index('timestamp');
-					const req = index.openCursor(range, 'prev');
+					const req = index.openCursor(range, 'next');
 
 					req.onsuccess = (event: any) => {
 						const cursor = event.target.result;
