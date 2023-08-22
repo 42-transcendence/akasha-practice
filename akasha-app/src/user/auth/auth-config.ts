@@ -1,4 +1,4 @@
-import { JWTOptions } from "akasha-lib";
+import { JWTOptions, assert } from "akasha-lib";
 import { OAuth } from "akasha-lib";
 import { Transform, Type, plainToClass } from "class-transformer";
 import {
@@ -33,7 +33,12 @@ export class AuthSource {
   @IsUrl() @IsOptional() subject_url?: string | undefined;
   @IsString() @IsOptional() subject_key?: string | undefined;
 
-  @Equals(undefined) _oauth: OAuth = undefined!;
+  @Equals(undefined) _oauth: OAuth | undefined = undefined;
+
+  get oauth(): OAuth {
+    assert(this._oauth !== undefined);
+    return this._oauth;
+  }
 }
 
 export class AuthJWTOptions implements JWTOptions {

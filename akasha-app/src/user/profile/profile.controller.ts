@@ -1,20 +1,23 @@
 import { Request } from "express";
-import { Controller, Get, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Query, Req, UseGuards } from "@nestjs/common";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
-import { AuthPayload } from "@/user/auth/auth-payload";
+import { AuthPayload } from "@/user/auth/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { ProfileService } from "./profile.service";
-import { Account } from "@prisma/client";
+import { AccountProfilePublicModel } from "./profile-payloads";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
-  @Get("me")
-  async me(@Req() req: Request): Promise<Account> {
+  @Get("public")
+  async me(
+    @Req() req: Request,
+    @Query("uuid") uuid: string,
+  ): Promise<AccountProfilePublicModel> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
-    return await this.profileService.getMyRecord(auth);
+    return await this.profileService.getPublic(auth, uuid);
   }
 
   @Get("otp")

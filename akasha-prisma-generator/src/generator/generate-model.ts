@@ -13,7 +13,7 @@ export default async function (options: GeneratorOptions, outFilePath: string) {
 
 function toTypeScript(model: DMMF.Model): string {
   const fields = model.fields
-    .filter((v) => v.kind === "scalar")
+    .filter((v) => v.kind === "scalar" || v.kind === "enum")
     .map((v) => new Field(v));
   const fieldsFull = model.fields.map((v) => new Field(v));
   return `

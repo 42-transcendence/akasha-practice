@@ -1,7 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { Account, Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { SocialPayload } from "./account-payload";
+import { SocialPayload } from "@/user/profile/profile-payloads";
 
 const accountWithBans = Prisma.validator<Prisma.AccountDefaultArgs>()({
   include: { bans: true },

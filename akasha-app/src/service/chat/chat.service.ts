@@ -28,9 +28,9 @@ export class ChatService {
   }
 
   trackClient(client: ChatWebSocket): void {
-    assert(client.record !== undefined);
+    assert(client.account !== undefined);
 
-    const { id, uuid } = client.record;
+    const { id, uuid } = client.account;
     if (this.temporaryClients.delete(client)) {
       const clientSet = this.clients.get(id);
       if (clientSet !== undefined) {
@@ -43,14 +43,14 @@ export class ChatService {
   }
 
   untrackClient(client: ChatWebSocket): void {
-    if (client.record !== undefined) {
-      const { id, uuid } = client.record;
+    if (client.account !== undefined) {
+      const { id, uuid } = client.account;
       const clientSet = this.clients.get(id);
 
       assert(clientSet !== undefined);
       assert(clientSet.delete(client));
 
-      if (clientSet.size == 0) {
+      if (clientSet.size === 0) {
         this.memberUUIDToId.delete(uuid);
         this.clients.delete(id);
       }
@@ -59,9 +59,9 @@ export class ChatService {
     }
   }
 
-  unicast(
+  sharedAction(
     id: number,
-    buf: ByteBuffer,
+    action: (client: ChatWebSocket) => void,
     except?: ChatWebSocket | undefined,
   ): boolean {
     const clientSet = this.clients.get(id);
@@ -71,10 +71,18 @@ export class ChatService {
 
     for (const client of clientSet) {
       if (client !== except) {
-        client.sendPayload(buf);
+        action(client);
       }
     }
     return true;
+  }
+
+  unicast(
+    id: number,
+    buf: ByteBuffer,
+    except?: ChatWebSocket | undefined,
+  ): boolean {
+    return this.sharedAction(id, (client) => client.sendPayload(buf), except);
   }
 
   unicastByAccountUUID(
@@ -231,7 +239,7 @@ export class ChatService {
   async insertChatMember(
     roomUUID: string,
     accountId: number,
-    modeFlags: number,
+    modeFlags: number = 0,
   ): Promise<boolean> {
     try {
       const data = await this.prisma.chatMember.create({
@@ -277,7 +285,7 @@ export class ChatService {
       cache.delete(accountId);
     }
 
-    const data = await this.prisma.chatMember.deleteMany({
+    const batch = await this.prisma.chatMember.deleteMany({
       where: {
         chat: {
           uuid: roomUUID,
@@ -286,7 +294,7 @@ export class ChatService {
       },
     });
 
-    if (data.count === 0) {
+    if (batch.count === 0) {
       return false;
     }
 
@@ -297,7 +305,7 @@ export class ChatService {
     roomUUID: string,
     accountId: number,
     content: string,
-    modeFlags: number,
+    modeFlags: number = 0,
   ): Promise<ChatMessageEntry> {
     const data = await this.prisma.chatMessage.create({
       data: {
@@ -321,5 +329,30 @@ export class ChatService {
     });
 
     return { ...data, roomUUID: data.chat.uuid, memberUUID: data.account.uuid };
+  }
+
+  async updateLastMessageCursor(
+    accountId: number,
+    lastMessageId: string,
+  ): Promise<boolean> {
+    const batch = await this.prisma.chatMember.updateMany({
+      data: {
+        lastMessageId,
+      },
+      where: {
+        account: {
+          id: accountId,
+        },
+        chat: {
+          messages: {
+            some: {
+              uuid: lastMessageId,
+            },
+          },
+        },
+      },
+    });
+
+    return batch.count !== 0;
   }
 }

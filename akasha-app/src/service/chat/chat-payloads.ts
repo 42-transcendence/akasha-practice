@@ -3,7 +3,7 @@ import {
   ChatMemberEntity,
   ChatMessageEntity,
 } from "@/generated/types";
-import { AccountUUID } from "@/user/accounts/account-payload";
+import { AccountUUID } from "@/user/profile/profile-payloads";
 import { ByteBuffer, NULL_UUID } from "akasha-lib";
 
 /// ChatRoomModeFlags

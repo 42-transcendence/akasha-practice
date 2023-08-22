@@ -39,9 +39,8 @@ import {
   AuthPayload,
   TokenSet,
   isAuthPayload,
-} from "./auth-payload";
-import { getRoleNumber } from "@/generated/types";
-import { banToSummaryPayload } from "@/user/accounts/account-payload";
+} from "./auth-payloads";
+import { getBanTypeNumber, getRoleNumber } from "@/generated/types";
 
 @Injectable()
 export class AuthService {
@@ -95,7 +94,7 @@ export class AuthService {
     });
 
     const url: string = OAuth.beginAuthorizationCodeURL(
-      source._oauth,
+      source.oauth,
       state.redirectURI,
       source.scope,
       state.id,
@@ -128,7 +127,7 @@ export class AuthService {
 
       const param: AuthorizationCodeRequest =
         OAuth.makeAuthorizationCodeRequest(
-          source._oauth,
+          source.oauth,
           authorizationCode,
           state.redirectURI,
         );
@@ -310,7 +309,11 @@ export class AuthService {
     const payload: AuthPayload = {
       auth_level: AuthLevel.BLOCKED,
       user_id: account.uuid,
-      bans: banToSummaryPayload(account.bans),
+      bans: account.bans.map((e) => ({
+        type: getBanTypeNumber(e.type),
+        reason: e.reason,
+        expireTimestamp: e.expireTimestamp,
+      })),
     };
 
     const accessToken: string = await jwtSignatureHMAC(
@@ -352,7 +355,7 @@ export class AuthService {
   ): Promise<string> {
     try {
       const token: TokenSuccessfulResponse = await OAuth.fetchToken(
-        source._oauth,
+        source.oauth,
         param,
       );
 

@@ -2,7 +2,7 @@ import { assert } from "akasha-lib";
 import { ServiceWebSocketBase } from "@/service/service-socket";
 import { ChatService } from "./chat.service";
 
-type ChatWebSocketRecord = {
+type AccountLink = {
   uuid: string;
   id: number;
 };
@@ -24,5 +24,5 @@ export class ChatWebSocket extends ServiceWebSocketBase {
     this.chatService = chatService;
   }
 
-  record: ChatWebSocketRecord | undefined = undefined;
+  account: AccountLink | undefined = undefined;
 }

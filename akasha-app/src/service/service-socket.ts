@@ -1,7 +1,7 @@
 import { IncomingMessage } from "http";
 import { WebSocket } from "ws";
 import { ByteBuffer, assert } from "akasha-lib";
-import { AuthPayload } from "@/user/auth/auth-payload";
+import { AuthPayload } from "@/user/auth/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 
 const pingDelayInMillis = 30 * 1000;

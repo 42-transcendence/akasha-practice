@@ -1,7 +1,8 @@
 import { RoleNumber } from "@/generated/types";
 import { hasProperty } from "akasha-lib";
-import { BanSummaryPayload } from "@/user/accounts/account-payload";
+import { BanSummaryPayload } from "@/user/profile/profile-payloads";
 
+/// AuthLevel
 export const enum AuthLevel {
   NONE = 0,
   TEMPORARY = 1,
@@ -10,6 +11,7 @@ export const enum AuthLevel {
   COMPLETED = 101,
 }
 
+/// AuthPayload
 type AuthPayloadBase = {
   auth_level: AuthLevel;
 };
@@ -41,11 +43,6 @@ export type AuthPayload =
   | BlockedAuthPayload
   | CompletedAuthPayload;
 
-export type TokenSet = {
-  access_token: string;
-  refresh_token?: string | undefined;
-};
-
 export function isAuthPayload(value: unknown): value is AuthPayload {
   if (
     typeof value === "object" &&
@@ -74,3 +71,9 @@ export function isAuthPayload(value: unknown): value is AuthPayload {
   }
   return false;
 }
+
+/// TokenSet
+export type TokenSet = {
+  access_token: string;
+  refresh_token?: string | undefined;
+};

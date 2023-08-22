@@ -1,5 +1,5 @@
 import { AkashaGlobal } from "@/global";
-import { AuthLevel, AuthPayload } from "@/user/auth/auth-payload";
+import { AuthLevel, AuthPayload } from "@/user/auth/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { AuthService } from "@/user/auth/auth.service";
 import { HttpException, Logger } from "@nestjs/common";

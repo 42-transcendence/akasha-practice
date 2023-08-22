@@ -15,8 +15,8 @@ import {
   writeChatRoom,
 } from "./chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
-import { AuthLevel } from "@/user/auth/auth-payload";
-import { PacketHackException } from "../packet-hack-exception";
+import { AuthLevel } from "@/user/auth/auth-payloads";
+import { PacketHackException } from "@/service/packet-hack-exception";
 
 export const MAX_MEMBER_CAPACITY = 50000;
 
@@ -50,14 +50,20 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.chatService.untrackClient(client);
   }
 
+  private assertClient(value: unknown, message: string): asserts value {
+    if (!value) {
+      throw new PacketHackException(message);
+    }
+  }
+
   @SubscribeMessage(ChatServerOpcode.HANDSHAKE)
   async handleHandshake(client: ChatWebSocket) {
-    assert(client.record === undefined);
     assert(client.auth.auth_level === AuthLevel.COMPLETED);
+    this.assertClient(client.account === undefined, "Duplicate handshake");
 
     const uuid = client.auth.user_id;
     const id = await this.accounts.loadAccountIdByUUID(uuid);
-    client.record = { uuid, id };
+    client.account = { uuid, id };
     this.chatService.trackClient(client);
 
     const chatRoomList: ChatRoomEntry[] =
@@ -71,7 +77,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)
   async handleAddFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const viaUUID: boolean = payload.readBoolean();
     if (viaUUID) {
@@ -86,7 +92,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.MODIFY_FRIEND)
   async handleModifyFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const targetUUID: string = payload.readUUID();
     void targetUUID; //FIXME: service
@@ -103,7 +109,40 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.DELETE_FRIEND)
   async handleDeleteFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
+
+    const targetUUID: string = payload.readUUID();
+    void targetUUID; //FIXME: service
+  }
+
+  @SubscribeMessage(ChatServerOpcode.ADD_ENEMY)
+  async handleAddEnemy(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.account !== undefined, "Invalid state");
+
+    const viaUUID: boolean = payload.readBoolean();
+    if (viaUUID) {
+      const targetUUID: string = payload.readUUID();
+      void targetUUID; //FIXME: service
+    } else {
+      const targetNickName: string = payload.readString();
+      const targetNickTag: number = payload.read4Unsigned();
+      void targetNickName, targetNickTag; //FIXME: service
+    }
+  }
+
+  @SubscribeMessage(ChatServerOpcode.MODIFY_ENEMY)
+  async handleModifyEnemy(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.account !== undefined, "Invalid state");
+
+    const targetUUID: string = payload.readUUID();
+    void targetUUID; //FIXME: service
+    const memo: string = payload.readString();
+    void memo; //FIXME: service
+  }
+
+  @SubscribeMessage(ChatServerOpcode.DELETE_ENEMY)
+  async handleDeleteEnemy(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const targetUUID: string = payload.readUUID();
     void targetUUID; //FIXME: service
@@ -111,14 +150,14 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.PUBLIC_ROOM_LIST_REQUEST)
   async handlePublicRoomListRequest(client: ChatWebSocket) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     void 0; //FIXME: service
   }
 
   @SubscribeMessage(ChatServerOpcode.CREATE_ROOM)
   async handleCreateRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const title = payload.readString();
     const modeFlagsClient = payload.read1();
@@ -146,7 +185,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         `${ChatGateway.name}: ${this.handleCreateRoom.name}: Exceed limit [${limit}], member count [${memberUUIDs.length}]`,
       );
     }
-    const ownerUUID = client.record.uuid;
+    const ownerUUID = client.account.uuid;
     if (!memberUUIDs.includes(ownerUUID)) {
       throw new PacketHackException(
         `${ChatGateway.name}: ${this.handleCreateRoom.name}: Member without owner`,
@@ -174,7 +213,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ENTER_ROOM)
   async handleEnterRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
     //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
@@ -182,22 +221,24 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     //FIXME: password 검사
     void password;
     //FIXME: 이미 꽉 찬 채팅방
-    this.chatService.insertChatMember(roomUUID, client.record.id, 0);
+    this.chatService.insertChatMember(roomUUID, client.account.id);
+    //FIXME: unicast
   }
 
   @SubscribeMessage(ChatServerOpcode.LEAVE_ROOM)
   async handleLeaveRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
     //FIXME: 입장하지 않은 채팅방
     //FIXME: 방장은 나갈 수 없게 혹은 자동으로 양도
-    this.chatService.deleteChatMember(roomUUID, client.record.id);
+    this.chatService.deleteChatMember(roomUUID, client.account.id);
+    //FIXME: unicast
   }
 
   @SubscribeMessage(ChatServerOpcode.INVITE_USER)
   async handleInviteUser(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     //FIXME: 상대가 차단하여 초대할 수 없음
     void payload; //FIXME: service
@@ -205,7 +246,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.CHAT_MESSAGE)
   async handleChatMessage(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
     //FIXME: 없는 방, 채팅금지 상태
@@ -214,9 +255,8 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const message = await this.chatService.createNewChatMessage(
       roomUUID,
-      client.record.id,
+      client.account.id,
       content,
-      0,
     );
 
     const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_MESSAGE);
@@ -227,16 +267,20 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
   async handleSyncCursor(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
-    const roomUUID = payload.readUUID();
     const lastMessageId = payload.readUUID();
-    void roomUUID, lastMessageId; //FIXME: service
+    this.chatService.updateLastMessageCursor(client.account.id, lastMessageId);
+
+    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SYNC_CURSOR);
+    buf.writeUUID(lastMessageId);
+
+    this.chatService.unicast(client.account.id, buf, client);
   }
 
   @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
   async handleMuteMember(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
     void roomUUID; //FIXME: service
@@ -244,7 +288,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.KICK_MEMBER)
   async handleKickMember(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.record !== undefined);
+    this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
     void roomUUID; //FIXME: service
