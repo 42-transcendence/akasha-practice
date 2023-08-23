@@ -1,5 +1,6 @@
 import {
   AccountEntity,
+  ActiveStatusNumber,
   BanTypeNumber,
   EnemyEntity,
   FriendEntity,
@@ -27,10 +28,43 @@ export class AccountProfilePublicModel implements AccountProfilePublicPayload {
 }
 
 /// AccountProfileProtectedPayload
-export type AccountProfileProtectedPayload = Pick<
-  AccountEntity,
-  "uuid" | "activeStatus" | "activeTimestamp" | "statusMessage"
->;
+export type AccountProfileProtectedPayload = AccountProfilePublicPayload &
+  Pick<AccountEntity, "activeStatus" | "activeTimestamp" | "statusMessage">;
+
+export class AccountProfileProtectedModel
+  implements AccountProfileProtectedPayload
+{
+  uuid: string = undefined!;
+  nickName: string | null = undefined!;
+  nickTag: number = undefined!;
+  avatarKey: string | null = undefined!;
+  activeStatus: ActiveStatusNumber = undefined!;
+  activeTimestamp: Date = undefined!;
+  statusMessage: string = undefined!;
+
+  constructor(payload: AccountProfileProtectedPayload) {
+    initProperties<AccountProfileProtectedModel>(this, payload);
+  }
+}
+
+/// AccountProfilePrivatePayload
+export type AccountProfilePrivatePayload = AccountProfileProtectedPayload;
+
+export class AccountProfilePrivateModel
+  implements AccountProfilePrivatePayload
+{
+  uuid: string = undefined!;
+  nickName: string | null = undefined!;
+  nickTag: number = undefined!;
+  avatarKey: string | null = undefined!;
+  activeStatus: ActiveStatusNumber = undefined!;
+  activeTimestamp: Date = undefined!;
+  statusMessage: string = undefined!;
+
+  constructor(payload: AccountProfilePrivatePayload) {
+    initProperties<AccountProfilePrivateModel>(this, payload);
+  }
+}
 
 /// BanSummaryPayload
 export type BanSummaryPayload = {

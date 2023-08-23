@@ -134,7 +134,7 @@ export class AuthService {
       const subject: string = await AuthService.fetchSubject(source, param);
 
       const account: AccountWithBans =
-        await this.accounts.getOrCreateAccountForAuth(source.key, subject);
+        await this.accounts.findOrCreateAccountForAuth(source.key, subject);
 
       if (account.otpSecret !== null) {
         // Issue temporary token that require promotion using OTP.
@@ -169,7 +169,7 @@ export class AuthService {
       }
 
       const account: AccountWithBans | null =
-        await this.accounts.getAccountForAuth(session.accountId);
+        await this.accounts.findAccountForAuth(session.accountId);
       if (account === null) {
         this.sessions.invalidateSession(session.id);
         throw new ForbiddenException("Gone account");
@@ -208,12 +208,12 @@ export class AuthService {
         throw new BadRequestException("Not found state");
       }
 
-      const accountId: number = await this.accounts.loadAccountIdByUUID(
+      const accountId: number = await this.accounts.findAccountIdByUUID(
         //XXX: Hack
         state.redirectURI,
       );
       const account: AccountWithBans | null =
-        await this.accounts.getAccountForAuth(accountId);
+        await this.accounts.findAccountForAuth(accountId);
       if (account === null) {
         throw new BadRequestException("Not found account");
       }

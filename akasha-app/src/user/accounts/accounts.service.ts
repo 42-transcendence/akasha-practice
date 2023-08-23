@@ -3,6 +3,7 @@ import { Account, Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 import { SocialPayload } from "@/user/profile/profile-payloads";
 
+/// AccountWithBans
 const accountWithBans = Prisma.validator<Prisma.AccountDefaultArgs>()({
   include: { bans: true },
 });
@@ -17,6 +18,14 @@ const activeBanCondition = (): Prisma.BanWhereInput => ({
   ],
 });
 
+/// AccountIdAndUUID
+const accountIdAndUUID = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  select: { id: true, uuid: true },
+});
+export type AccountIdAndUUID = Prisma.AccountGetPayload<
+  typeof accountIdAndUUID
+>;
+
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -29,7 +38,7 @@ export class AccountsService {
     return await this.prisma.account.findUnique({ where: { uuid } });
   }
 
-  async loadAccountIdByUUID(uuid: string): Promise<number> {
+  async findAccountIdByUUID(uuid: string): Promise<number> {
     const account = await this.prisma.account.findUniqueOrThrow({
       where: { uuid },
       select: { id: true },
@@ -37,20 +46,27 @@ export class AccountsService {
     return account.id;
   }
 
-  async loadAccountIdByUUIDMany(
+  async findAccountIdByUUIDMany(
     uuidArray: string[],
-  ): Promise<Map<string, number>> {
-    const accounts = await this.prisma.account.findMany({
+  ): Promise<AccountIdAndUUID[]> {
+    const pairs = await this.prisma.account.findMany({
       where: { uuid: { in: uuidArray } },
       select: { id: true, uuid: true },
     });
-    return accounts.reduce(
+    return pairs;
+  }
+
+  async makeAccountIdToUUIDDictionary(
+    uuidArray: string[],
+  ): Promise<Map<string, number>> {
+    const pairs = await this.findAccountIdByUUIDMany(uuidArray);
+    return pairs.reduce(
       (map, e) => map.set(e.uuid, e.id),
       new Map<string, number>(),
     );
   }
 
-  async getOrCreateAccountForAuth(
+  async findOrCreateAccountForAuth(
     authIssuer: number,
     authSubject: string,
   ): Promise<AccountWithBans> {
@@ -73,7 +89,7 @@ export class AccountsService {
     });
   }
 
-  async getAccountForAuth(id: number): Promise<AccountWithBans | null> {
+  async findAccountForAuth(id: number): Promise<AccountWithBans | null> {
     return await this.prisma.account.findUnique({
       where: { id },
       include: {

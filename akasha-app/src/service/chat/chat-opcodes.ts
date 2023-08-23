@@ -18,7 +18,7 @@ export const enum ChatServerOpcode {
 }
 
 export const enum ChatClientOpcode {
-  OWN_ROOM_LIST,
+  INITIALIZE,
   ADD_FRIEND_RESULT,
   FRIEND_REQUEST,
   MODIFY_FRIEND_RESULT,

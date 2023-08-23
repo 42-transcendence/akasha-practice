@@ -170,9 +170,10 @@ export class ChatService {
   }
 
   async createNewRoom(req: NewChatRoomRequest): Promise<ChatRoomEntry> {
-    const localMemberUUIDToId = await this.accounts.loadAccountIdByUUIDMany(
-      req.members.map((e) => e.uuid),
-    );
+    const localMemberUUIDToId =
+      await this.accounts.makeAccountIdToUUIDDictionary(
+        req.members.map((e) => e.uuid),
+      );
 
     const data = await this.prisma.chat.create({
       data: {
@@ -183,7 +184,7 @@ export class ChatService {
               const accountId = localMemberUUIDToId.get(e.uuid);
               if (accountId !== undefined) {
                 array.push({
-                  accountId: accountId,
+                  accountId,
                   modeFlags: e.modeFlags,
                 });
               }

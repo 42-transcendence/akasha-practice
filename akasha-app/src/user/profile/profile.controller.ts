@@ -1,27 +1,48 @@
 import { Request } from "express";
-import { Controller, Get, Query, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Req, UseGuards } from "@nestjs/common";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@/user/auth/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { ProfileService } from "./profile.service";
-import { AccountProfilePublicModel } from "./profile-payloads";
+import {
+  AccountProfilePrivateModel,
+  AccountProfileProtectedModel,
+  AccountProfilePublicModel,
+} from "./profile-payloads";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
-  @Get("public")
-  async me(
+  @Get("public/:uuid")
+  async getPublicProfile(
     @Req() req: Request,
-    @Query("uuid") uuid: string,
+    @Param("uuid") uuid: string,
   ): Promise<AccountProfilePublicModel> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
-    return await this.profileService.getPublic(auth, uuid);
+    return await this.profileService.getPublicProfile(auth, uuid);
   }
 
-  @Get("otp")
-  async otp(): Promise<{
+  @Get("protected/:uuid")
+  async getProtectedProfile(
+    @Req() req: Request,
+    @Param("uuid") uuid: string,
+  ): Promise<AccountProfileProtectedModel> {
+    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
+    return await this.profileService.getProtectedProfile(auth, uuid);
+  }
+
+  @Get("private")
+  async getPrivateProfile(
+    @Req() req: Request,
+  ): Promise<AccountProfilePrivateModel> {
+    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
+    return await this.profileService.getPrivateProfile(auth);
+  }
+
+  @Get("setup-otp")
+  async setupOTP(): Promise<{
     algorithm: string;
     key: string;
     digits: number;

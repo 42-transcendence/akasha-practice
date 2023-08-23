@@ -57,20 +57,22 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   }
 
   @SubscribeMessage(ChatServerOpcode.HANDSHAKE)
-  async handleHandshake(client: ChatWebSocket) {
+  async handleHandshake(client: ChatWebSocket, payload: ByteBuffer) {
     assert(client.auth.auth_level === AuthLevel.COMPLETED);
     this.assertClient(client.account === undefined, "Duplicate handshake");
 
     const uuid = client.auth.user_id;
-    const id = await this.accounts.loadAccountIdByUUID(uuid);
+    const id = await this.accounts.findAccountIdByUUID(uuid);
     client.account = { uuid, id };
     this.chatService.trackClient(client);
 
     const chatRoomList: ChatRoomEntry[] =
       await this.chatService.loadOwnRoomListByAccountId(id);
 
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.OWN_ROOM_LIST);
-    buf.writeUUID(uuid);
+    //TODO: 채팅방들의 fetch cursor를 payload에서 읽고, 필요한 채팅 목록을 쓰기.
+    void payload;
+
+    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INITIALIZE);
     buf.writeArray(chatRoomList, writeChatRoom);
     return buf;
   }
