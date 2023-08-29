@@ -1,13 +1,3 @@
-export function initProperties<T extends object>(
-  model: T,
-  payload: Record<keyof T, any>
-) {
-  Object.keys(model).forEach((e) => {
-    const key = e as keyof T;
-    model[key] = payload[key];
-  });
-}
-
 export function hasProperty<T extends object, K extends keyof any>(
   type: "string",
   value: T,

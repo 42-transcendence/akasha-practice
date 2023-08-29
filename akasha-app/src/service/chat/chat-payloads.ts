@@ -2,9 +2,62 @@ import {
   ChatEntity,
   ChatMemberEntity,
   ChatMessageEntity,
+  EnemyEntity,
+  FriendEntity,
 } from "@/generated/types";
 import { AccountUUID } from "@/user/profile/profile-payloads";
 import { ByteBuffer, NULL_UUID } from "akasha-lib";
+
+/// FriendEntry
+export type FriendEntry = AccountUUID &
+  Pick<FriendEntity, "groupName" | "activeFlags">;
+
+export function readFriend(buf: ByteBuffer): FriendEntry {
+  const uuid = buf.readUUID();
+  const groupName = buf.readString();
+  const activeFlags = buf.read1();
+  return { uuid, groupName, activeFlags };
+}
+
+export function writeFriend(obj: FriendEntry, buf: ByteBuffer) {
+  buf.writeUUID(obj.uuid);
+  buf.writeString(obj.groupName);
+  buf.write1(obj.activeFlags);
+}
+
+/// EnemyEntry
+export type EnemyEntry = AccountUUID & Pick<EnemyEntity, "memo">;
+
+export function readEnemy(buf: ByteBuffer): EnemyEntry {
+  const uuid = buf.readUUID();
+  const memo = buf.readString();
+  return { uuid, memo };
+}
+
+export function writeEnemy(obj: EnemyEntry, buf: ByteBuffer) {
+  buf.writeUUID(obj.uuid);
+  buf.writeString(obj.memo);
+}
+
+/// SocialPayload
+export type SocialPayload = {
+  friendList: FriendEntry[];
+  friendRequestList: string[];
+  enemyList: EnemyEntry[];
+};
+
+export function readSocialPayload(buf: ByteBuffer): SocialPayload {
+  const friendList = buf.readArray(readFriend);
+  const friendRequestList = buf.readArray(buf.readString);
+  const enemyList = buf.readArray(readEnemy);
+  return { friendList, friendRequestList, enemyList };
+}
+
+export function writeSocialPayload(obj: SocialPayload, buf: ByteBuffer) {
+  buf.writeArray(obj.friendList, writeFriend);
+  buf.writeArray(obj.friendRequestList, buf.writeString);
+  buf.writeArray(obj.enemyList, writeEnemy);
+}
 
 /// ChatRoomModeFlags
 export const enum ChatRoomModeFlags {
@@ -23,6 +76,27 @@ export type ChatRoomUUID = Pick<ChatEntity, "uuid">;
 
 /// ChatMessageUUID
 export type ChatMessageUUID = Pick<ChatMessageEntity, "uuid">;
+
+/// ChatRoomChatMessagePairEntry
+export type ChatRoomChatMessagePairEntry = ChatRoomUUID & {
+  messageUUID: ChatMessageUUID["uuid"];
+};
+
+export function readChatRoomChatMessagePair(
+  buf: ByteBuffer,
+): ChatRoomChatMessagePairEntry {
+  const uuid = buf.readUUID();
+  const messageUUID = buf.readUUID();
+  return { uuid, messageUUID };
+}
+
+export function writeChatRoomChatMessagePair(
+  obj: ChatRoomChatMessagePairEntry,
+  buf: ByteBuffer,
+) {
+  buf.writeUUID(obj.uuid);
+  buf.writeUUID(obj.messageUUID);
+}
 
 /// ChatRoomEntry
 export type ChatRoomEntry = ChatRoomUUID &

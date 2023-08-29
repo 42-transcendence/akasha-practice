@@ -1,7 +1,34 @@
 import { Injectable } from "@nestjs/common";
-import { Account, Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { SocialPayload } from "@/user/profile/profile-payloads";
+
+const MIN_TAG_NUMBER = 1000;
+const MAX_TAG_NUMBER = 9999;
+
+/// AccountPublic
+const accountPublic = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  select: { uuid: true, nickName: true, nickTag: true, avatarKey: true },
+});
+export type AccountPublic = Prisma.AccountGetPayload<typeof accountPublic>;
+
+/// AccountProtected
+const accountProtected = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  select: {
+    ...accountPublic.select,
+    activeStatus: true,
+    activeTimestamp: true,
+    statusMessage: true,
+  },
+});
+export type AccountProtected = Prisma.AccountGetPayload<
+  typeof accountProtected
+>;
+
+/// AccountPrivate
+const accountPrivate = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  select: { ...accountProtected.select },
+});
+export type AccountPrivate = Prisma.AccountGetPayload<typeof accountPrivate>;
 
 /// AccountWithBans
 const accountWithBans = Prisma.validator<Prisma.AccountDefaultArgs>()({
@@ -26,16 +53,48 @@ export type AccountIdAndUUID = Prisma.AccountGetPayload<
   typeof accountIdAndUUID
 >;
 
+/// AccountNickNameAndTag
+const accountNickNameAndTag = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  select: { nickName: true, nickTag: true },
+});
+export type AccountNickNameAndTag = Prisma.AccountGetPayload<
+  typeof accountNickNameAndTag
+>;
+
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAccountById(id: number): Promise<Account | null> {
-    return await this.prisma.account.findUnique({ where: { id } });
+  async isExistsAccountByUUID(uuid: string): Promise<boolean> {
+    return (
+      (await this.prisma.account.findUnique({
+        where: { uuid },
+        select: { uuid: true },
+      })) !== null
+    );
   }
 
-  async findAccountByUUID(uuid: string): Promise<Account | null> {
-    return await this.prisma.account.findUnique({ where: { uuid } });
+  async findAccountPublicByUUID(uuid: string): Promise<AccountPublic | null> {
+    return await this.prisma.account.findUnique({
+      where: { uuid },
+      ...accountPublic,
+    });
+  }
+
+  async findAccountProtectedByUUID(
+    uuid: string,
+  ): Promise<AccountProtected | null> {
+    return await this.prisma.account.findUnique({
+      where: { uuid },
+      ...accountProtected,
+    });
+  }
+
+  async findAccountPrivateByUUID(uuid: string): Promise<AccountPrivate | null> {
+    return await this.prisma.account.findUnique({
+      where: { uuid },
+      ...accountPrivate,
+    });
   }
 
   async findAccountIdByUUID(uuid: string): Promise<number> {
@@ -50,8 +109,8 @@ export class AccountsService {
     uuidArray: string[],
   ): Promise<AccountIdAndUUID[]> {
     const pairs = await this.prisma.account.findMany({
+      ...accountIdAndUUID,
       where: { uuid: { in: uuidArray } },
-      select: { id: true, uuid: true },
     });
     return pairs;
   }
@@ -100,49 +159,40 @@ export class AccountsService {
     });
   }
 
-  async loadSocialById(id: number): Promise<SocialPayload> {
-    const data = await this.prisma.account.findUniqueOrThrow({
-      where: { id },
+  async setNickByUUID(
+    uuid: string,
+    name: string,
+  ): Promise<AccountNickNameAndTag | undefined> {
+    const nickTag: number | undefined = await this.pickRandomTag(name);
+    if (nickTag === undefined) {
+      return undefined;
+    }
+    return await this.prisma.account.update({
+      where: { uuid },
+      data: {
+        nickName: name,
+        nickTag: nickTag,
+      },
       select: {
-        friends: {
-          select: {
-            friendAccount: { select: { uuid: true } },
-            groupName: true,
-            activeFlags: true,
-          },
-        },
-        friendReferences: {
-          select: {
-            account: { select: { uuid: true } },
-          },
-        },
-        enemies: {
-          select: {
-            enemyAccount: { select: { uuid: true } },
-            memo: true,
-          },
-        },
+        nickName: true,
+        nickTag: true,
       },
     });
+  }
 
-    const friendList = data.friends.map((e) => ({
-      uuid: e.friendAccount.uuid,
-      groupName: e.groupName,
-      activeFlags: e.activeFlags,
-    }));
+  async pickRandomTag(name: string): Promise<number | undefined> {
+    //XXX: 작성시 Prisma가 프로시저 호출을 지원하지 않았었음.
+    const result = (await this.prisma.$queryRaw`
+      SELECT "tagNumber"
+        FROM generate_series(${MIN_TAG_NUMBER}, ${MAX_TAG_NUMBER}) AS "tagNumber"
+        WHERE "tagNumber" NOT IN (
+          SELECT "nickTag" FROM services.accounts
+          WHERE "nickName" = ${name}
+        )
+        ORDER BY random()
+      LIMIT 1
+    `) as { tagNumber: number }[];
 
-    const friendUUIDSet = new Set<string>(
-      data.friends.map((e) => e.friendAccount.uuid),
-    );
-    const friendRequestList = data.friendReferences
-      .map((e) => e.account.uuid)
-      .filter((e) => friendUUIDSet.has(e));
-
-    const enemyList = data.enemies.map((e) => ({
-      uuid: e.enemyAccount.uuid,
-      memo: e.memo,
-    }));
-
-    return { friendList, friendRequestList, enemyList };
+    return result.at(0)?.tagNumber;
   }
 }

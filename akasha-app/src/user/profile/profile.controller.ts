@@ -1,14 +1,15 @@
 import { Request } from "express";
-import { Controller, Get, Param, Req, UseGuards } from "@nestjs/common";
+import { Controller, Get, Param, Query, Req, UseGuards } from "@nestjs/common";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@/user/auth/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { ProfileService } from "./profile.service";
 import {
-  AccountProfilePrivateModel,
-  AccountProfileProtectedModel,
-  AccountProfilePublicModel,
+  AccountProfilePrivatePayload,
+  AccountProfileProtectedPayload,
+  AccountProfilePublicPayload,
 } from "./profile-payloads";
+import { AccountNickNameAndTag } from "@/user/accounts/accounts.service";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -19,7 +20,7 @@ export class ProfileController {
   async getPublicProfile(
     @Req() req: Request,
     @Param("uuid") uuid: string,
-  ): Promise<AccountProfilePublicModel> {
+  ): Promise<AccountProfilePublicPayload> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getPublicProfile(auth, uuid);
   }
@@ -28,7 +29,7 @@ export class ProfileController {
   async getProtectedProfile(
     @Req() req: Request,
     @Param("uuid") uuid: string,
-  ): Promise<AccountProfileProtectedModel> {
+  ): Promise<AccountProfileProtectedPayload> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getProtectedProfile(auth, uuid);
   }
@@ -36,9 +37,18 @@ export class ProfileController {
   @Get("private")
   async getPrivateProfile(
     @Req() req: Request,
-  ): Promise<AccountProfilePrivateModel> {
+  ): Promise<AccountProfilePrivatePayload> {
     const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getPrivateProfile(auth);
+  }
+
+  @Get("register")
+  async register(
+    @Req() req: Request,
+    @Query("name") name: string,
+  ): Promise<AccountNickNameAndTag> {
+    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
+    return this.profileService.setNick(auth, name);
   }
 
   @Get("setup-otp")

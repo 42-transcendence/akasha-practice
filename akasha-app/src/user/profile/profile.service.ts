@@ -1,18 +1,24 @@
 import {
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   UnauthorizedException,
 } from "@nestjs/common";
-import { AccountsService } from "@/user/accounts/accounts.service";
-import { AuthLevel, AuthPayload } from "@/user/auth/auth-payloads";
-import { Account } from "@prisma/client";
 import {
-  AccountProfilePrivateModel,
-  AccountProfileProtectedModel,
-  AccountProfilePublicModel,
-} from "./profile-payloads";
+  AccountNickNameAndTag,
+  AccountPrivate,
+  AccountProtected,
+  AccountPublic,
+  AccountsService,
+} from "@/user/accounts/accounts.service";
+import { AuthLevel, AuthPayload } from "@/user/auth/auth-payloads";
 import { getActiveStatusNumber } from "@/generated/types";
+import {
+  AccountProfilePrivatePayload,
+  AccountProfileProtectedPayload,
+  AccountProfilePublicPayload,
+} from "./profile-payloads";
 
 @Injectable()
 export class ProfileService {
@@ -21,22 +27,19 @@ export class ProfileService {
   async getPublicProfile(
     payload: AuthPayload,
     targetUUID: string,
-  ): Promise<AccountProfilePublicModel> {
+  ): Promise<AccountProfilePublicPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      const account: Account | null = await this.accounts.findAccountByUUID(
-        payload.user_id,
-      );
-      if (account === null) {
+      if (!(await this.accounts.isExistsAccountByUUID(payload.user_id))) {
         throw new UnauthorizedException();
       }
 
-      const targetAccount: Account | null =
-        await this.accounts.findAccountByUUID(targetUUID);
+      const targetAccount: AccountPublic | null =
+        await this.accounts.findAccountPublicByUUID(targetUUID);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
 
-      return new AccountProfilePublicModel(targetAccount);
+      return { ...targetAccount };
     }
     throw new ForbiddenException();
   }
@@ -44,45 +47,58 @@ export class ProfileService {
   async getProtectedProfile(
     payload: AuthPayload,
     targetUUID: string,
-  ): Promise<AccountProfileProtectedModel> {
+  ): Promise<AccountProfileProtectedPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      const account: Account | null = await this.accounts.findAccountByUUID(
-        payload.user_id,
-      );
-      if (account === null) {
+      if (!(await this.accounts.isExistsAccountByUUID(payload.user_id))) {
         throw new UnauthorizedException();
       }
       //FIXME: 친구인지, 블랙인지 검사
 
-      const targetAccount: Account | null =
-        await this.accounts.findAccountByUUID(targetUUID);
+      const targetAccount: AccountProtected | null =
+        await this.accounts.findAccountProtectedByUUID(targetUUID);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
 
-      return new AccountProfileProtectedModel({
+      return {
         ...targetAccount,
         activeStatus: getActiveStatusNumber(targetAccount.activeStatus),
-      });
+      };
     }
     throw new ForbiddenException();
   }
 
   async getPrivateProfile(
     payload: AuthPayload,
-  ): Promise<AccountProfilePrivateModel> {
+  ): Promise<AccountProfilePrivatePayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      const account: Account | null = await this.accounts.findAccountByUUID(
-        payload.user_id,
-      );
-      if (account === null) {
-        throw new UnauthorizedException();
+      const targetAccount: AccountPrivate | null =
+        await this.accounts.findAccountPrivateByUUID(payload.user_id);
+      if (targetAccount === null) {
+        throw new NotFoundException();
       }
 
-      return new AccountProfilePrivateModel({
-        ...account,
-        activeStatus: getActiveStatusNumber(account.activeStatus),
-      });
+      return {
+        ...targetAccount,
+        activeStatus: getActiveStatusNumber(targetAccount.activeStatus),
+      };
+    }
+    throw new ForbiddenException();
+  }
+
+  async setNick(
+    payload: AuthPayload,
+    name: string,
+  ): Promise<AccountNickNameAndTag> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      const nickNameTag: AccountNickNameAndTag | undefined =
+        await this.accounts.setNickByUUID(payload.user_id, name);
+
+      if (nickNameTag === undefined) {
+        throw new ConflictException();
+      }
+
+      return nickNameTag;
     }
     throw new ForbiddenException();
   }

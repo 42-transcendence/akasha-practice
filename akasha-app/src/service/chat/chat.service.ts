@@ -3,13 +3,60 @@ import { Injectable } from "@nestjs/common";
 import {
   ChatMessageEntry,
   ChatRoomEntry,
+  ChatRoomMemberEntry,
   ChatRoomViewEntry,
   NewChatRoomRequest,
+  SocialPayload,
 } from "./chat-payloads";
 import { ChatWebSocket } from "./chat-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import { Prisma } from "@prisma/client";
+
+/// ChatRoom
+const chatRoomWithMembers = Prisma.validator<Prisma.ChatDefaultArgs>()({
+  include: {
+    members: {
+      include: {
+        account: { select: { uuid: true } },
+      },
+    },
+  },
+});
+export type ChatRoomWithMembers = Prisma.ChatGetPayload<
+  typeof chatRoomWithMembers
+>;
+
+export function toChatRoomEntry(chat: ChatRoomWithMembers): ChatRoomEntry {
+  return {
+    ...chat,
+    members: chat.members.map((e) => ({
+      ...e,
+      uuid: e.account.uuid,
+    })),
+    lastMessageId: null,
+  };
+}
+
+/// ChatMemberWithRoom
+const chatMemberWithRoom = Prisma.validator<Prisma.ChatMemberDefaultArgs>()({
+  include: {
+    chat: { ...chatRoomWithMembers },
+    account: { select: { uuid: true } },
+  },
+});
+export type ChatMemberWithRoom = Prisma.ChatMemberGetPayload<
+  typeof chatMemberWithRoom
+>;
+
+export function toChatMemberEntry(
+  member: ChatMemberWithRoom,
+): ChatRoomMemberEntry {
+  return {
+    ...member,
+    uuid: member.account.uuid,
+  };
+}
 
 @Injectable()
 export class ChatService {
@@ -153,6 +200,87 @@ export class ChatService {
     }));
   }
 
+  async loadMessagesAfter(
+    roomUUID: string,
+    lastMessageId: string | undefined,
+  ): Promise<ChatMessageEntry[]> {
+    const data = await this.prisma.chatMessage.findMany({
+      where: {
+        uuid: roomUUID,
+      },
+      include: {
+        chat: {
+          select: { uuid: true },
+        },
+        account: {
+          select: { uuid: true },
+        },
+      },
+      orderBy: {
+        timestamp: Prisma.SortOrder.asc,
+      },
+      ...(lastMessageId !== undefined
+        ? {
+            cursor: {
+              uuid: lastMessageId,
+            },
+          }
+        : {}),
+    });
+
+    return data.map((e) => ({
+      ...e,
+      roomUUID: e.chat.uuid,
+      memberUUID: e.account.uuid,
+    }));
+  }
+
+  async loadSocialByAccountId(id: number): Promise<SocialPayload> {
+    const data = await this.prisma.account.findUniqueOrThrow({
+      where: { id },
+      select: {
+        friends: {
+          select: {
+            friendAccount: { select: { uuid: true } },
+            groupName: true,
+            activeFlags: true,
+          },
+        },
+        friendReferences: {
+          select: {
+            account: { select: { uuid: true } },
+          },
+        },
+        enemies: {
+          select: {
+            enemyAccount: { select: { uuid: true } },
+            memo: true,
+          },
+        },
+      },
+    });
+
+    const friendList = data.friends.map((e) => ({
+      uuid: e.friendAccount.uuid,
+      groupName: e.groupName,
+      activeFlags: e.activeFlags,
+    }));
+
+    const friendUUIDSet = new Set<string>(
+      data.friends.map((e) => e.friendAccount.uuid),
+    );
+    const friendRequestList = data.friendReferences
+      .map((e) => e.account.uuid)
+      .filter((e) => friendUUIDSet.has(e));
+
+    const enemyList = data.enemies.map((e) => ({
+      uuid: e.enemyAccount.uuid,
+      memo: e.memo,
+    }));
+
+    return { friendList, friendRequestList, enemyList };
+  }
+
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
     const data = await this.prisma.x.chat.findMany({
       include: { members: { select: {} } },
@@ -169,7 +297,7 @@ export class ChatService {
     );
   }
 
-  async createNewRoom(req: NewChatRoomRequest): Promise<ChatRoomEntry> {
+  async createNewRoom(req: NewChatRoomRequest): Promise<ChatRoomWithMembers> {
     const localMemberUUIDToId =
       await this.accounts.makeAccountIdToUUIDDictionary(
         req.members.map((e) => e.uuid),
@@ -194,7 +322,7 @@ export class ChatService {
         },
       },
       include: {
-        members: { include: { account: { select: { uuid: true } } } },
+        ...chatRoomWithMembers.include,
         messages: true,
       },
     });
@@ -202,14 +330,7 @@ export class ChatService {
     const memberSet = new Set<number>(data.members.map((e) => e.accountId));
     this.memberCache.set(data.uuid, memberSet);
 
-    return {
-      ...data,
-      members: data.members.map((e) => ({
-        ...e,
-        uuid: e.account.uuid,
-      })),
-      lastMessageId: null,
-    };
+    return data;
   }
 
   async getChatMemberSet(roomUUID: string): Promise<Set<number>> {
@@ -237,13 +358,31 @@ export class ChatService {
     return memberSet;
   }
 
+  async insertChatMemberByUUID(
+    roomUUID: string,
+    accountUUID: string,
+    modeFlags: number = 0,
+  ): Promise<ChatMemberWithRoom | null> {
+    try {
+      const accountId: number = await this.accounts.findAccountIdByUUID(
+        accountUUID,
+      );
+
+      return await this.insertChatMember(roomUUID, accountId, modeFlags);
+    } catch {
+      //FIXME: 임시
+      return null;
+    }
+  }
+
   async insertChatMember(
     roomUUID: string,
     accountId: number,
     modeFlags: number = 0,
-  ): Promise<boolean> {
+  ): Promise<ChatMemberWithRoom | null> {
     try {
       const data = await this.prisma.chatMember.create({
+        ...chatMemberWithRoom,
         data: {
           account: {
             connect: {
@@ -258,19 +397,18 @@ export class ChatService {
           modeFlags,
         },
       });
-      void data;
 
       const cache = this.memberCache.get(roomUUID);
       if (cache !== undefined) {
         cache.add(accountId);
       }
 
-      return true;
+      return data;
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
           // An operation failed because it depends on one or more records that were required but not found. {cause}
-          return false;
+          return null;
         }
       }
       throw e;
