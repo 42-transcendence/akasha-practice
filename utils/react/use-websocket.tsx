@@ -1,6 +1,6 @@
 "use client";
 
-import { ByteBuffer } from "../library/byte-buffer";
+import { ByteBuffer } from "@akasha-lib";
 import {
   createContext,
   useCallback,
@@ -11,12 +11,11 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
-import {
+import { WebSocketRegistry, SocketStateNumber } from "./websocket-registry";
+import type {
   SocketState,
-  SocketStateNumber,
   WebSocketListenProps,
   WebSocketRegisterProps,
-  WebSocketRegistry,
 } from "./websocket-registry";
 
 const RegistryContext = createContext(WebSocketRegistry.DEFAULT);
@@ -24,9 +23,7 @@ const RegistryContext = createContext(WebSocketRegistry.DEFAULT);
 export function WebSocketRegistryContainer({
   children,
 }: React.PropsWithChildren) {
-  const registry = useMemo(() => {
-    return new WebSocketRegistry();
-  }, []);
+  const registry = useMemo(() => new WebSocketRegistry(), []);
   return (
     <RegistryContext.Provider value={registry}>
       {children}
@@ -34,16 +31,12 @@ export function WebSocketRegistryContainer({
   );
 }
 
-export function WebSocketContainer({
-  children,
-  ...rest
-}: React.PropsWithChildren<WebSocketRegisterProps>) {
+export function useWebSocketConnector(props: WebSocketRegisterProps) {
   const registry: WebSocketRegistry = useContext(RegistryContext);
-  useEffect(() => {
-    return registry.register(rest);
-  }, [registry, rest]);
-  return children;
+  useEffect(() => registry.register(props), [registry, props]);
 }
+
+type ResponsePayload = ByteBuffer | ByteBuffer[] | undefined | void;
 
 export function useWebSocket(
   name: string,
@@ -52,7 +45,7 @@ export function useWebSocket(
     | ((
         opcode: number,
         buffer: ByteBuffer
-      ) => ByteBuffer | ByteBuffer[] | undefined | void)
+      ) => ResponsePayload | Promise<ResponsePayload>)
     | undefined
 ): {
   dangerouslyGetWebSocketRef: React.MutableRefObject<WebSocket | undefined>;
@@ -116,14 +109,23 @@ export function useWebSocket(
     const payload = ByteBuffer.from(lastMessage);
     const opcode = payload.readOpcode();
     const response = once(opcode, payload);
-    if (response !== undefined) {
-      if (Array.isArray(response)) {
-        for (const buffer of response) {
-          webSocketRef.current?.send(buffer.toArray());
+    const sendResponse = (response: ResponsePayload) => {
+      if (response !== undefined) {
+        if (Array.isArray(response)) {
+          for (const buffer of response) {
+            webSocketRef.current?.send(buffer.toArray());
+          }
+        } else {
+          webSocketRef.current?.send(response.toArray());
         }
-      } else {
-        webSocketRef.current?.send(response.toArray());
       }
+    };
+    if (response instanceof Promise) {
+      response.then(sendResponse).catch(() => {
+        //NOTE: do not handle error
+      });
+    } else {
+      sendResponse(response);
     }
   }, [lastMessage]);
 

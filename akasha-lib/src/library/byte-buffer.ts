@@ -373,7 +373,7 @@ export class ByteBuffer {
   }
 
   writeDate(value: Date): this {
-    const time: bigint = BigInt(value.getTime());
+    const time: bigint = BigInt(value.valueOf());
     this.write8(time);
     return this;
   }
