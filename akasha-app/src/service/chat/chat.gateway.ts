@@ -250,6 +250,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       ChatClientOpcode.CREATE_ROOM_FAILED,
     );
     buf.write1(success ? 0 : errorReason);
+    if (success) {
+      buf.writeUUID(result.uuid);
+    }
     return buf;
   }
 

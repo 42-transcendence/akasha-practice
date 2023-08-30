@@ -1,4 +1,5 @@
 import { HttpAdapterHost, NestFactory, Reflector } from "@nestjs/core";
+import type { NestExpressApplication } from "@nestjs/platform-express";
 import { AppModule } from "./app.module";
 import {
   ClassSerializerInterceptor,
@@ -58,11 +59,16 @@ function configCors(app: INestApplication<any>) {
 }
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, {
+    rawBody: true,
+    bodyParser: false,
+  });
   AkashaGlobal.setInstance(app);
   configCors(app);
 
   const { httpAdapter } = app.get(HttpAdapterHost);
+
+  app.useBodyParser("json", { limit: "8kb" });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true }));
   app.useGlobalFilters(new PrismaClientExceptionFilter(httpAdapter));

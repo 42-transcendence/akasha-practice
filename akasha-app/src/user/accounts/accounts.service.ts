@@ -159,6 +159,13 @@ export class AccountsService {
     });
   }
 
+  async getNickByUUID(uuid: string): Promise<AccountNickNameAndTag | null> {
+    return await this.prisma.account.findUnique({
+      where: { uuid },
+      ...accountNickNameAndTag,
+    });
+  }
+
   async setNickByUUID(
     uuid: string,
     name: string,
@@ -167,22 +174,20 @@ export class AccountsService {
     if (nickTag === undefined) {
       return undefined;
     }
+
     return await this.prisma.account.update({
       where: { uuid },
       data: {
         nickName: name,
         nickTag: nickTag,
       },
-      select: {
-        nickName: true,
-        nickTag: true,
-      },
+      ...accountNickNameAndTag,
     });
   }
 
   async pickRandomTag(name: string): Promise<number | undefined> {
     //XXX: 작성시 Prisma가 프로시저 호출을 지원하지 않았었음.
-    const result = (await this.prisma.$queryRaw`
+    const result = await this.prisma.$queryRaw`
       SELECT "tagNumber"
         FROM generate_series(${MIN_TAG_NUMBER}, ${MAX_TAG_NUMBER}) AS "tagNumber"
         WHERE "tagNumber" NOT IN (
@@ -191,8 +196,13 @@ export class AccountsService {
         )
         ORDER BY random()
       LIMIT 1
-    `) as { tagNumber: number }[];
+    `;
 
-    return result.at(0)?.tagNumber;
+    if (!Array.isArray(result) || result.length === 0) {
+      return undefined;
+    }
+
+    const [{ tagNumber }] = result;
+    return Number(tagNumber);
   }
 }

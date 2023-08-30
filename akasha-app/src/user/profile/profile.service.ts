@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -86,16 +87,26 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async setNick(
+  async registerNick(
     payload: AuthPayload,
     name: string,
   ): Promise<AccountNickNameAndTag> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
+      const prevNickNameTag: AccountNickNameAndTag | null =
+        await this.accounts.getNickByUUID(payload.user_id);
+      if (prevNickNameTag === null) {
+        throw new NotFoundException();
+      }
+
+      if (prevNickNameTag.nickName !== null) {
+        throw new BadRequestException("Duplicate register");
+      }
+
       const nickNameTag: AccountNickNameAndTag | undefined =
         await this.accounts.setNickByUUID(payload.user_id, name);
 
       if (nickNameTag === undefined) {
-        throw new ConflictException();
+        throw new ConflictException("Depleted nickName");
       }
 
       return nickNameTag;

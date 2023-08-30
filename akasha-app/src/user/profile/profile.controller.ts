@@ -1,8 +1,8 @@
-import { Request } from "express";
-import { Controller, Get, Param, Query, Req, UseGuards } from "@nestjs/common";
+import { Body, Controller, Get, Param, Post, UseGuards } from "@nestjs/common";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@common/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
+import { Auth } from "@/user/auth/auth.decorator";
 import { ProfileService } from "./profile.service";
 import {
   AccountProfilePrivatePayload,
@@ -10,6 +10,7 @@ import {
   AccountProfilePublicPayload,
 } from "@common/profile-payloads";
 import { AccountNickNameAndTag } from "@/user/accounts/accounts.service";
+import { NickNameModel } from "./profile-model";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -18,37 +19,33 @@ export class ProfileController {
 
   @Get("public/:uuid")
   async getPublicProfile(
-    @Req() req: Request,
+    @Auth() auth: AuthPayload,
     @Param("uuid") uuid: string,
   ): Promise<AccountProfilePublicPayload> {
-    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getPublicProfile(auth, uuid);
   }
 
   @Get("protected/:uuid")
   async getProtectedProfile(
-    @Req() req: Request,
+    @Auth() auth: AuthPayload,
     @Param("uuid") uuid: string,
   ): Promise<AccountProfileProtectedPayload> {
-    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getProtectedProfile(auth, uuid);
   }
 
   @Get("private")
   async getPrivateProfile(
-    @Req() req: Request,
+    @Auth() auth: AuthPayload,
   ): Promise<AccountProfilePrivatePayload> {
-    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
     return await this.profileService.getPrivateProfile(auth);
   }
 
-  @Get("register")
-  async register(
-    @Req() req: Request,
-    @Query("name") name: string,
+  @Post("nick")
+  async addNick(
+    @Auth() auth: AuthPayload,
+    @Body() body: NickNameModel,
   ): Promise<AccountNickNameAndTag> {
-    const auth: AuthPayload = AuthGuard.extractAuthPayload(req);
-    return this.profileService.setNick(auth, name);
+    return this.profileService.registerNick(auth, body.name);
   }
 
   @Get("setup-otp")
