@@ -308,7 +308,7 @@ export class ChatStore {
   ): Promise<Map<string, MemberSchema> | null> {
     const db = await getDB(roomUUID);
     return new Promise((resolve) => {
-      const tx = db.transaction(["rooms"], "readonly");
+      const tx = db.transaction(["members"], "readonly");
       tx.onerror = () => resolve(null);
 
       const members = tx.objectStore("members");
@@ -331,7 +331,7 @@ export class ChatStore {
   ): Promise<MemberSchema | null> {
     const db = await getDB(roomUUID);
     return new Promise((resolve) => {
-      const tx = db.transaction(["rooms"], "readonly");
+      const tx = db.transaction(["members"], "readonly");
       tx.onerror = () => resolve(null);
 
       const members = tx.objectStore("members");
@@ -369,6 +369,19 @@ export class ChatStore {
     return member;
   }
 
+  static async truncateMember(roomUUID: string): Promise<boolean> {
+    const db = await getDB(roomUUID);
+    return new Promise((resolve) => {
+      const tx = db.transaction(["members"], "readwrite");
+      tx.onerror = () => resolve(false);
+
+      const members = tx.objectStore("members");
+      const memberClear = members.clear();
+
+      memberClear.onsuccess = () => resolve(true);
+    });
+  }
+
   /// Manipulate Message List
   #MessageList: undefined;
 
@@ -388,7 +401,33 @@ export class ChatStore {
     });
   }
 
-  static async getLastMessage(roomUUID: string): Promise<MessageSchema | null> {
+  static async addMessageBulk(
+    roomUUID: string,
+    messageList: MessageSchema[]
+  ): Promise<boolean> {
+    const db = await getDB(roomUUID);
+    return new Promise((resolve) => {
+      const tx = db.transaction(["messages"], "readwrite");
+      tx.onerror = () => resolve(false);
+
+      const messages = tx.objectStore("messages");
+      const promiseList = new Array<Promise<boolean>>();
+      for (const message of messageList) {
+        promiseList.push(
+          new Promise((resolve) => {
+            const messageAdd = messages.add(message);
+
+            messageAdd.onsuccess = () => resolve(true);
+            messageAdd.onerror = () => resolve(false);
+          })
+        );
+      }
+
+      Promise.all(promiseList).then((e) => resolve(!e.includes(false)));
+    });
+  }
+
+  static async getLatestMessage(roomUUID: string): Promise<MessageSchema | null> {
     const db = await getDB(roomUUID);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
@@ -521,5 +560,32 @@ export class ChatStore {
     limit?: number | undefined
   ): Promise<MessageSchema[]> {
     return this.getContinueMessages(true, roomUUID, messageUUID, limit);
+  }
+
+  static async getAllMessages(roomUUID: string): Promise<MessageSchema[]> {
+    const db = await getDB(roomUUID);
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["messages"], "readonly");
+      tx.onerror = () => reject(new Error());
+
+      const messages = tx.objectStore("messages");
+
+      const messageByTimestampIndex = messages.index("timestamp");
+      const messageAllByTimestampCursor = messageByTimestampIndex.openCursor(
+        null,
+        "next"
+      );
+      const messageAllByTimestamp = new Array<MessageSchema>();
+      messageAllByTimestampCursor.onsuccess = () => {
+        const cursor = messageAllByTimestampCursor.result;
+        if (cursor !== null) {
+          const message = cursor.value as MessageSchema;
+          messageAllByTimestamp.push(message);
+          cursor.continue();
+        } else {
+          resolve(messageAllByTimestamp);
+        }
+      };
+    });
   }
 }

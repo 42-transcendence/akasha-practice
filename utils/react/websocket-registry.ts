@@ -212,7 +212,11 @@ export class WebSocketRegistry {
     if (entry !== undefined) {
       props.webSocketRef.current = entry.webSocket;
       props.setSocketState(entry.lastState);
-      props.setLastMessage(entry.lastMessage);
+
+      const message = entry.lastMessage;
+      if (message !== undefined && (props.filter?.(message) ?? true)) {
+        props.setLastMessage(message);
+      }
     }
 
     value.add(props);
