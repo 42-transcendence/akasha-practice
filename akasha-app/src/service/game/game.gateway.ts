@@ -10,7 +10,7 @@ import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
-import { GameServerOpcode, GameClientOpcode } from "./game-opcodes";
+import { GameServerOpcode, GameClientOpcode } from "@common/game-opcodes";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",

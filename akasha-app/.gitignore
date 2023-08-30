@@ -150,7 +150,7 @@ dist
 
 # Auto generated files
 /prisma/migrations/
-/src/generated
+/src/_common/generated
 
 # Configuration files
 /.config.d

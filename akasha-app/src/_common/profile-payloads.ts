@@ -1,4 +1,4 @@
-import { AccountEntity, BanTypeNumber } from "@/generated/types";
+import { AccountEntity, BanTypeNumber } from "./generated/types";
 
 /// AccountUUID
 export type AccountUUID = Pick<AccountEntity, "uuid">;

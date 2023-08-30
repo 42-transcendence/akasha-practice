@@ -1,6 +1,6 @@
-import { RoleNumber } from "@/generated/types";
+import { RoleNumber } from "./generated/types";
 import { hasProperty } from "akasha-lib";
-import { BanSummaryPayload } from "@/user/profile/profile-payloads";
+import { BanSummaryPayload } from "./profile-payloads";
 
 /// AuthLevel
 export const enum AuthLevel {

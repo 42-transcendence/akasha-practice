@@ -1,4 +1,4 @@
-import { ChatRoomModeFlags } from "@/service/chat/chat-payloads";
+import { ChatRoomModeFlags } from "@common/chat-payloads";
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 

@@ -11,7 +11,7 @@ generator client {
 
 generator akasha_generator {
   provider = "akasha-prisma-generator"
-  output   = "../src/generated/types.ts"
+  output   = "../src/_common/generated/types.ts"
 }
 
 enum Role {

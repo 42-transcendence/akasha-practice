@@ -39,8 +39,8 @@ import {
   AuthPayload,
   TokenSet,
   isAuthPayload,
-} from "./auth-payloads";
-import { getBanTypeNumber, getRoleNumber } from "@/generated/types";
+} from "@common/auth-payloads";
+import { getBanTypeNumber, getRoleNumber } from "@common/generated/types";
 
 @Injectable()
 export class AuthService {

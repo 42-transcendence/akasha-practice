@@ -9,7 +9,7 @@ import {
 import { AuthService } from "./auth.service";
 import { AuthGuard } from "./auth.guard";
 import { Request } from "express";
-import { AuthLevel, AuthPayload, TokenSet } from "./auth-payloads";
+import { AuthLevel, AuthPayload, TokenSet } from "@common/auth-payloads";
 import { AuthLevelMin } from "./auth.decorator";
 
 @Controller("auth")

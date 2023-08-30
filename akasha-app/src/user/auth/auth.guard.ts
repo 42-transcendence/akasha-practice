@@ -8,7 +8,7 @@ import { AuthService } from "./auth.service";
 import { Request } from "express";
 import { IncomingMessage } from "http";
 import { HttpArgumentsHost } from "@nestjs/common/interfaces";
-import { AuthLevel, AuthPayload } from "./auth-payloads";
+import { AuthLevel, AuthPayload } from "@common/auth-payloads";
 import { Reflector } from "@nestjs/core";
 import { AUTH_LEVEL_MIN_KEY } from "./auth.decorator";
 

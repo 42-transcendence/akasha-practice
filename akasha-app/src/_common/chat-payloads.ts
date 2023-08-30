@@ -4,8 +4,8 @@ import {
   ChatMessageEntity,
   EnemyEntity,
   FriendEntity,
-} from "@/generated/types";
-import { AccountUUID } from "@/user/profile/profile-payloads";
+} from "./generated/types";
+import { AccountUUID } from "./profile-payloads";
 import { ByteBuffer, NULL_UUID } from "akasha-lib";
 
 /// FriendEntry

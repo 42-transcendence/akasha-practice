@@ -10,7 +10,7 @@ import {
   toChatRoomEntry,
 } from "./chat.service";
 import { ChatWebSocket } from "./chat-websocket";
-import { ChatServerOpcode, ChatClientOpcode } from "./chat-opcodes";
+import { ChatServerOpcode, ChatClientOpcode } from "@common/chat-opcodes";
 import {
   ChatMemberModeFlags,
   ChatMessageEntry,
@@ -24,9 +24,9 @@ import {
   writeChatRoomMember,
   writeChatRoomView,
   writeSocialPayload,
-} from "./chat-payloads";
+} from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
-import { AuthLevel } from "@/user/auth/auth-payloads";
+import { AuthLevel } from "@common/auth-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 
 export const MAX_MEMBER_CAPACITY = 50000;
@@ -255,7 +255,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const success = true;
     const errorReason = 1;
 
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CREATE_ROOM_FAILED);
+    const buf = ByteBuffer.createWithOpcode(
+      ChatClientOpcode.CREATE_ROOM_FAILED,
+    );
     buf.write1(success ? 0 : errorReason);
     return buf;
   }

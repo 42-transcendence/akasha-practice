@@ -12,13 +12,13 @@ import {
   AccountPublic,
   AccountsService,
 } from "@/user/accounts/accounts.service";
-import { AuthLevel, AuthPayload } from "@/user/auth/auth-payloads";
-import { getActiveStatusNumber } from "@/generated/types";
+import { AuthLevel, AuthPayload } from "@common/auth-payloads";
+import { getActiveStatusNumber } from "@common/generated/types";
 import {
   AccountProfilePrivatePayload,
   AccountProfileProtectedPayload,
   AccountProfilePublicPayload,
-} from "./profile-payloads";
+} from "@common/profile-payloads";
 
 @Injectable()
 export class ProfileService {

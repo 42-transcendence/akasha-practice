@@ -7,7 +7,7 @@ type HandshakeLike =
 
 export type WebSocketRegisterProps = {
   name: string;
-  url: string | URL;
+  url: string | URL | (() => string | URL);
   protocols?: string | string[] | undefined;
   handshake?:
     | ((evt: Event) => HandshakeLike | Promise<HandshakeLike>)
@@ -18,7 +18,7 @@ export type WebSocketRegisterProps = {
   onOpen?: ((evt: Event) => void) | undefined;
 };
 
-export enum SocketStateNumber {
+export const enum SocketStateNumber {
   INITIAL,
   OPEN,
   CLOSED,
@@ -79,110 +79,123 @@ export class WebSocketRegistry {
   private readonly listeners = new Map<string, Set<WebSocketListenProps>>();
 
   register(props: WebSocketRegisterProps): () => void {
+    const url = typeof props.url === "function" ? props.url() : props.url;
+    if (url === "") {
+      return () => {};
+    }
+
     const key = props.name;
     if (this.registry.has(key)) {
       throw new ReferenceError();
     }
     const value = new WebSocketEntry();
 
-    const webSocket = new WebSocket(props.url, props.protocols);
-    webSocket.binaryType = "arraybuffer";
+    const connect = () => {
+      const webSocket = new WebSocket(url, props.protocols);
+      webSocket.binaryType = "arraybuffer";
 
-    if (props.onClose !== undefined) {
-      webSocket.addEventListener("close", props.onClose);
-    }
-
-    if (props.onError !== undefined) {
-      webSocket.addEventListener("error", props.onError);
-    }
-
-    if (props.onMessage !== undefined) {
-      webSocket.addEventListener("message", props.onMessage);
-    }
-
-    if (props.onOpen !== undefined) {
-      webSocket.addEventListener("open", props.onOpen);
-    }
-
-    const listeners = this.ensureListenerSet(key);
-
-    webSocket.addEventListener("close", (ev) => {
-      const state: ClosedSocketState = {
-        number: SocketStateNumber.CLOSED,
-        ...ev,
-      };
-
-      value.webSocket = undefined;
-      value.lastState = state;
-      value.lastMessage = undefined;
-
-      for (const listener of listeners) {
-        listener.handleClose?.(ev);
-        listener.webSocketRef.current = undefined;
-        listener.setSocketState(state);
-        listener.setLastMessage(undefined);
+      if (props.onClose !== undefined) {
+        webSocket.addEventListener("close", props.onClose);
       }
-    });
 
-    webSocket.addEventListener("error", (ev) => {
-      for (const listener of listeners) {
-        listener.handleError?.(ev);
+      if (props.onError !== undefined) {
+        webSocket.addEventListener("error", props.onError);
       }
-    });
 
-    webSocket.addEventListener("message", (ev) => {
-      const message: ArrayBuffer = ev.data;
-
-      value.lastMessage = message;
-
-      for (const listener of listeners) {
-        if (listener.filter?.(message) ?? true) {
-          listener.setLastMessageSync(message);
-        }
+      if (props.onMessage !== undefined) {
+        webSocket.addEventListener("message", props.onMessage);
       }
-    });
 
-    webSocket.addEventListener("open", (ev) => {
-      if (props.handshake !== undefined) {
-        const data: HandshakeLike | Promise<HandshakeLike> =
-          props.handshake(ev);
-        const sendHandshake = (data: HandshakeLike) => {
-          if (data !== undefined) {
-            if (Array.isArray(data)) {
-              for (const buffer of data) {
-                webSocket.send(buffer);
-              }
-            } else {
-              webSocket.send(data);
-            }
-          }
+      if (props.onOpen !== undefined) {
+        webSocket.addEventListener("open", props.onOpen);
+      }
+
+      const listeners = this.ensureListenerSet(key);
+
+      webSocket.addEventListener("close", (ev) => {
+        const state: ClosedSocketState = {
+          number: SocketStateNumber.CLOSED,
+          ...ev,
         };
-        if (data instanceof Promise) {
-          data.then(sendHandshake).catch(() => {
-            //NOTE: do not handle error
-          });
-        } else {
-          sendHandshake(data);
+
+        value.webSocket = undefined;
+        value.lastState = state;
+        value.lastMessage = undefined;
+
+        for (const listener of listeners) {
+          listener.handleClose?.(ev);
+          listener.webSocketRef.current = undefined;
+          listener.setSocketState(state);
+          listener.setLastMessage(undefined);
         }
-      }
 
-      const state: OpenSocketState = { number: SocketStateNumber.OPEN };
+        //TODO: reconnect
+        // connect();
+      });
 
-      value.webSocket = webSocket;
-      value.lastState = state;
-      value.lastMessage = undefined;
+      webSocket.addEventListener("error", (ev) => {
+        for (const listener of listeners) {
+          listener.handleError?.(ev);
+        }
+      });
 
-      for (const listener of listeners) {
-        listener.webSocketRef.current = webSocket;
-        listener.setSocketState(state);
-        listener.setLastMessage(undefined);
-      }
-    });
+      webSocket.addEventListener("message", (ev) => {
+        const message: ArrayBuffer = ev.data;
+
+        value.lastMessage = message;
+
+        for (const listener of listeners) {
+          if (listener.filter?.(message) ?? true) {
+            listener.setLastMessageSync(message);
+          }
+        }
+      });
+
+      webSocket.addEventListener("open", (ev) => {
+        if (props.handshake !== undefined) {
+          const data: HandshakeLike | Promise<HandshakeLike> =
+            props.handshake(ev);
+          const sendHandshake = (data: HandshakeLike) => {
+            if (data !== undefined) {
+              if (Array.isArray(data)) {
+                for (const buffer of data) {
+                  webSocket.send(buffer);
+                }
+              } else {
+                webSocket.send(data);
+              }
+            }
+          };
+          if (data instanceof Promise) {
+            data.then(sendHandshake).catch(() => {
+              //NOTE: do not handle error
+            });
+          } else {
+            sendHandshake(data);
+          }
+        }
+
+        const state: OpenSocketState = {
+          number: SocketStateNumber.OPEN,
+        };
+
+        value.webSocket = webSocket;
+        value.lastState = state;
+        value.lastMessage = undefined;
+
+        for (const listener of listeners) {
+          listener.webSocketRef.current = webSocket;
+          listener.setSocketState(state);
+          listener.setLastMessage(undefined);
+        }
+      });
+    };
+    connect();
 
     this.registry.set(key, value);
     return () => {
       this.registry.delete(key);
-      webSocket.close();
+      value.webSocket?.close();
     };
   }
 

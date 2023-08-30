@@ -7,7 +7,7 @@ import {
   ChatRoomViewEntry,
   NewChatRoomRequest,
   SocialPayload,
-} from "./chat-payloads";
+} from "@common/chat-payloads";
 import { ChatWebSocket } from "./chat-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
 import { AccountsService } from "@/user/accounts/accounts.service";

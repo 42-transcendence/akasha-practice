@@ -31,16 +31,23 @@ export function WebSocketRegistryContainer({
   );
 }
 
-export function useWebSocketConnector(props: WebSocketRegisterProps) {
+export function useWebSocketConnector(
+  name: WebSocketRegisterProps["name"],
+  url: WebSocketRegisterProps["url"],
+  props: Partial<WebSocketRegisterProps> = {}
+) {
   const registry: WebSocketRegistry = useContext(RegistryContext);
-  useEffect(() => registry.register(props), [registry, props]);
+  useEffect(
+    () => registry.register({ name, url, ...props }),
+    [registry, name, url, props]
+  );
 }
 
 type ResponsePayload = ByteBuffer | ByteBuffer[] | undefined | void;
 
 export function useWebSocket(
   name: string,
-  opcode?: number | number[] | undefined,
+  opcode: number | number[] | undefined = [],
   once?:
     | ((
         opcode: number,

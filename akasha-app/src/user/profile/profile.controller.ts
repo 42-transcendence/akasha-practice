@@ -1,14 +1,14 @@
 import { Request } from "express";
 import { Controller, Get, Param, Query, Req, UseGuards } from "@nestjs/common";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
-import { AuthPayload } from "@/user/auth/auth-payloads";
+import { AuthPayload } from "@common/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { ProfileService } from "./profile.service";
 import {
   AccountProfilePrivatePayload,
   AccountProfileProtectedPayload,
   AccountProfilePublicPayload,
-} from "./profile-payloads";
+} from "@common/profile-payloads";
 import { AccountNickNameAndTag } from "@/user/accounts/accounts.service";
 
 @Controller("profile")
