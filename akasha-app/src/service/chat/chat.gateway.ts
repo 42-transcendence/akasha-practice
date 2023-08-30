@@ -1,7 +1,6 @@
 import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
 import { ByteBuffer, assert } from "akasha-lib";
 import { ServerOptions } from "ws";
-import { Logger } from "@nestjs/common";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import {
@@ -45,19 +44,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   }
 
   override handleServiceConnection(client: ChatWebSocket): void {
-    Logger.debug(
-      `Connection ChatWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
-    );
-
     this.chatService.trackClientTemporary(client);
     client.injectChatService(this.chatService);
   }
 
   override handleServiceDisconnect(client: ChatWebSocket): void {
-    Logger.debug(
-      `Disconnect ChatWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
-    );
-
     this.chatService.untrackClient(client);
   }
 
