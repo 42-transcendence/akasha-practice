@@ -87,6 +87,7 @@ export class ChatService {
       } else {
         this.memberUUIDToId.set(uuid, id);
         this.clients.set(id, new Set<ChatWebSocket>([client]));
+        client.onFirstConnection();
       }
     }
   }
@@ -100,6 +101,7 @@ export class ChatService {
       assert(clientSet.delete(client));
 
       if (clientSet.size === 0) {
+        client.onLastDisconnect();
         this.memberUUIDToId.delete(uuid);
         this.clients.delete(id);
       }
@@ -150,12 +152,16 @@ export class ChatService {
   async multicastToRoom(
     roomUUID: string,
     buf: ByteBuffer,
-    except?: ChatWebSocket | undefined,
+    exceptAccountId?: number | undefined,
   ): Promise<number> {
     let counter: number = 0;
     const memberSet = await this.getChatMemberSet(roomUUID);
     for (const memberAccountId of memberSet) {
-      if (this.unicast(memberAccountId, buf, except)) {
+      if (memberAccountId === exceptAccountId) {
+        continue;
+      }
+
+      if (this.unicast(memberAccountId, buf, undefined)) {
         counter++;
       }
     }

@@ -66,6 +66,16 @@ export function writeSocialPayload(obj: SocialPayload, buf: ByteBuffer) {
   buf.writeArray(obj.enemyList, writeEnemy);
 }
 
+/// RoomErrorNumber
+export const enum RoomErrorNumber {
+  SUCCESS,
+  ERROR_ALREADY_MEMBER,
+  ERROR_NOT_MEMBER,
+  ERROR_OWNER,
+  ERROR_NOT_OWNER,
+  ERROR_NOT_MANAGER,
+}
+
 /// ChatRoomModeFlags
 export const enum ChatRoomModeFlags {
   PRIVATE = 1 << 0,

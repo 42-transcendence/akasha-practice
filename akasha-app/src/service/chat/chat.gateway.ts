@@ -3,28 +3,16 @@ import { ByteBuffer, assert } from "akasha-lib";
 import { ServerOptions } from "ws";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
-import {
-  ChatService,
-  toChatMemberEntry,
-  toChatRoomEntry,
-} from "./chat.service";
+import { ChatService } from "./chat.service";
 import { ChatWebSocket } from "./chat-websocket";
-import { ChatServerOpcode, ChatClientOpcode } from "@common/chat-opcodes";
+import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatMemberModeFlags,
-  ChatMessageEntry,
   ChatRoomChatMessagePairEntry,
-  ChatRoomEntry,
   ChatRoomModeFlags,
   FriendErrorNumber,
-  SocialPayload,
+  RoomErrorNumber,
   readChatRoomChatMessagePair,
-  writeChatMessage,
-  writeChatRoom,
-  writeChatRoomMember,
-  writeChatRoomView,
-  writeFriend,
-  writeSocialPayload,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import { AuthLevel } from "@common/auth-payloads";
@@ -34,6 +22,7 @@ import {
   MAX_CHAT_MEMBER_CAPACITY,
 } from "@common/chat-constants";
 import { Prisma } from "@prisma/client";
+import * as builder from "./chat-payload-builder";
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -76,36 +65,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[] =
       payload.readArray(readChatRoomChatMessagePair);
 
-    const fetchedMessageIdMap = fetchedMessageIdPairs.reduce(
-      (map, e) => map.set(e.uuid, e.messageUUID),
-      new Map<string, string>(),
+    const init = await client.initialize(fetchedMessageIdPairs);
+    return builder.makeInitializePayload(
+      init.chatRoomList,
+      init.chatMessageMap,
+      init.socialPayload,
     );
-
-    const chatRoomList: ChatRoomEntry[] =
-      await this.chatService.loadOwnRoomListByAccountId(id);
-    const chatMessageMap = new Map<string, ChatMessageEntry[]>();
-    for (const chatRoom of chatRoomList) {
-      const roomUUID = chatRoom.uuid;
-      chatMessageMap.set(
-        roomUUID,
-        await this.chatService.loadMessagesAfter(
-          roomUUID,
-          fetchedMessageIdMap.get(roomUUID),
-        ),
-      );
-    }
-    const socialPayload: SocialPayload =
-      await this.chatService.loadSocialByAccountId(id);
-
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INITIALIZE);
-    buf.writeArray(chatRoomList, writeChatRoom);
-    buf.writeLength(chatMessageMap.size);
-    for (const [key, val] of chatMessageMap) {
-      buf.writeUUID(key);
-      buf.writeArray(val, writeChatMessage);
-    }
-    writeSocialPayload(socialPayload, buf);
-    return buf;
   }
 
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)
@@ -115,6 +80,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const targetUUID = payload.readUUID();
     const groupName = payload.readString();
     const activeFlags = payload.read1();
+
     const entry = await this.chatService.addFriend(
       client.account.id,
       targetUUID,
@@ -123,23 +89,18 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
 
     if (entry === null) {
-      const buf = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.ADD_FRIEND_RESULT,
+      return builder.makeAddFriendFailedResult(
+        FriendErrorNumber.ERROR_ALREADY_FRIEND,
       );
-      buf.write1(FriendErrorNumber.ERROR_ALREADY_FRIEND);
-      return buf;
     }
-
-    const bufRequest = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.FRIEND_REQUEST,
+    void this.chatService.unicastByAccountUUID(
+      targetUUID,
+      builder.makeFriendRequest(client.account.uuid),
     );
-    bufRequest.writeUUID(client.account.uuid);
-    this.chatService.unicastByAccountUUID(targetUUID, bufRequest);
-
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ADD_FRIEND_RESULT);
-    buf.write1(FriendErrorNumber.SUCCESS);
-    writeFriend(entry, buf);
-    this.chatService.unicast(client.account.id, buf);
+    void this.chatService.unicast(
+      client.account.id,
+      builder.makeAddFriendSuccessResult(entry),
+    );
 
     return undefined;
   }
@@ -165,27 +126,20 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       targetUUID,
       mutate,
     );
+
     if (entry === null) {
-      const buf = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.MODIFY_FRIEND_RESULT,
+      return builder.makeModifyFriendFailedResult(
+        FriendErrorNumber.ERROR_NOT_FRIEND,
       );
-      buf.write1(FriendErrorNumber.ERROR_ALREADY_FRIEND);
-      return buf;
     }
-
-    const bufTarget = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.UPDATE_FRIEND_ACTIVE_STATUS,
+    void this.chatService.unicastByAccountUUID(
+      targetUUID,
+      builder.makeUpdateFriendActiveStatus(client.account.uuid),
     );
-    bufTarget.writeUUID(client.account.uuid);
-    this.chatService.unicastByAccountUUID(targetUUID, bufTarget);
-
-    const bufSelf = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.MODIFY_FRIEND_RESULT,
+    void this.chatService.unicast(
+      client.account.id,
+      builder.makeModifyFriendSuccessResult(targetUUID, entry),
     );
-    bufSelf.write1(FriendErrorNumber.SUCCESS);
-    bufSelf.writeUUID(targetUUID);
-    writeFriend(entry, bufSelf);
-    this.chatService.unicast(client.account.id, bufSelf);
 
     return undefined;
   }
@@ -195,23 +149,21 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const targetUUID = payload.readUUID();
+
     const success = await this.chatService.deleteFriend(
       client.account.id,
       targetUUID,
     );
     void success;
 
-    const bufTarget = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.DELETE_FRIEND_RESULT,
+    void this.chatService.unicastByAccountUUID(
+      targetUUID,
+      builder.makeDeleteFriendSuccessResult(client.account.uuid),
     );
-    bufTarget.writeUUID(client.account.uuid);
-    this.chatService.unicastByAccountUUID(targetUUID, bufTarget);
-
-    const bufSelf = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.DELETE_FRIEND_RESULT,
+    void this.chatService.unicast(
+      client.account.id,
+      builder.makeDeleteFriendSuccessResult(targetUUID),
     );
-    bufSelf.writeUUID(targetUUID);
-    this.chatService.unicast(client.account.id, bufSelf);
 
     return undefined;
   }
@@ -255,9 +207,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const chatRoomViewList = await this.chatService.loadPublicRoomList();
 
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.PUBLIC_ROOM_LIST);
-    buf.writeArray(chatRoomViewList, writeChatRoomView);
-    return buf;
+    return builder.makePublicRoomList(chatRoomViewList);
   }
 
   @SubscribeMessage(ChatServerOpcode.CREATE_ROOM)
@@ -295,6 +245,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         `${ChatGateway.name}: ${this.handleCreateRoom.name}: Exceed limit [${limit}], member count [${memberUUIDs.length}]`,
       );
     }
+
     const ownerUUID = client.account.uuid;
     if (!memberUUIDs.includes(ownerUUID)) {
       throw new PacketHackException(
@@ -308,40 +259,28 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           ? ChatMemberModeFlags.ADMIN | ChatMemberModeFlags.MANAGER
           : 0,
     }));
-    //FIXME: 차단한 상대가 유저를 채팅방을 만들 때 초대할 수 있음? 애초에 친구가 아니면 추가할 수 없음.
+    //FIXME: 쌍방향 친구만 필터링하기
 
-    const result = await this.chatService.createNewRoom({
+    const room = await this.chatService.createNewRoom({
       title,
       modeFlags,
       password,
       limit,
       members,
     });
-    const roomUUID = result.uuid;
-
+    //FIXME: try-catch해서 RoomErrorNumber 설정하기?
+    const roomUUID = room.uuid;
     const messages = await this.chatService.loadMessagesAfter(
       roomUUID,
       undefined,
     );
 
-    const bufRoom = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM);
-    writeChatRoom(toChatRoomEntry(result), bufRoom);
-    bufRoom.writeArray(messages, writeChatMessage);
-
-    this.chatService.multicastToRoom(roomUUID, bufRoom);
-
-    //FIXME: 실패한 이유
-    const success = true;
-    const errorReason = 1;
-
-    const buf = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.CREATE_ROOM_FAILED,
+    void this.chatService.multicastToRoom(
+      roomUUID,
+      builder.makeInsertRoom(room, messages),
     );
-    buf.write1(success ? 0 : errorReason);
-    if (success) {
-      buf.writeUUID(roomUUID);
-    }
-    return buf;
+
+    return builder.makeCreateRoomResult(RoomErrorNumber.SUCCESS, roomUUID);
   }
 
   @SubscribeMessage(ChatServerOpcode.ENTER_ROOM)
@@ -349,56 +288,54 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
-    //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
     const password = payload.readString();
+
+    //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
     //FIXME: password 검사
     void password;
     //FIXME: 이미 꽉 찬 채팅방
+    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
     const member = await this.chatService.insertChatMember(
       roomUUID,
       client.account.id,
     );
-    const success = member !== null;
-
-    if (success) {
+    //FIXME: 실패한 이유
+    let errno = RoomErrorNumber.SUCCESS;
+    if (member !== null) {
+      //NOTE: 공통 (InsertMember)
       const messages = await this.chatService.loadMessagesAfter(
         roomUUID,
         undefined,
       );
-
-      const bufSelf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM);
-      writeChatRoom(toChatRoomEntry(member.chat), bufSelf);
-      bufSelf.writeArray(messages, writeChatMessage);
-      this.chatService.unicast(client.account.id, bufSelf);
-
-      //FIXME: self 기준으로 self가 이미 포함된 채팅방을 받은 이후에 또 self를 추가하려고 할 수 있음.
-      const bufRoom = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.INSERT_ROOM_MEMBER,
+      void this.chatService.unicast(
+        member.accountId,
+        builder.makeInsertRoom(member.chat, messages),
       );
-      bufRoom.writeUUID(roomUUID);
-      writeChatRoomMember(toChatMemberEntry(member), bufRoom);
-      this.chatService.multicastToRoom(roomUUID, bufRoom);
-
-      //FIXME: 이런식으로 메시지를 만들면 안될거 같은데...
-      const bufRoomMessage = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.CHAT_MESSAGE,
-      );
-      const message = await this.chatService.createNewChatMessage(
+      void this.chatService.multicastToRoom(
         roomUUID,
-        client.account.id,
-        `${client.account.uuid}님이 입장했습니다.`,
-        1, //FIXME: 입장 메시지 타입
+        builder.makeInsertRoomMember(roomUUID, member),
+        member.accountId,
       );
-      writeChatMessage(message, bufRoomMessage);
-      this.chatService.multicastToRoom(roomUUID, bufRoomMessage);
+
+      {
+        //FIXME: Temporary: 입장 메시지
+        //NOTE: 공통 (SendChatMessage)
+        const message = await this.chatService.createNewChatMessage(
+          roomUUID,
+          client.account.id,
+          `${client.account.uuid}님이 입장했습니다.`,
+          1, //FIXME: 입장 메시지 타입
+        );
+        void this.chatService.multicastToRoom(
+          roomUUID,
+          builder.makeChatMessagePayload(message),
+        );
+      }
+    } else {
+      errno = RoomErrorNumber.ERROR_ALREADY_MEMBER;
     }
 
-    //FIXME: 실패한 이유
-    const errorReason = 1;
-
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ENTER_ROOM_FAILED);
-    buf.write1(success ? 0 : errorReason);
-    return buf;
+    return builder.makeEnterRoomResult(errno, roomUUID);
   }
 
   @SubscribeMessage(ChatServerOpcode.LEAVE_ROOM)
@@ -408,43 +345,42 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const roomUUID = payload.readUUID();
     //FIXME: 입장하지 않은 채팅방
     //FIXME: 방장은 나갈 수 없게 혹은 자동으로 양도
+    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
     const success = await this.chatService.deleteChatMember(
       roomUUID,
       client.account.id,
     );
-
+    //FIXME: 실패한 이유
+    let errno = RoomErrorNumber.SUCCESS;
     if (success) {
-      const bufSelf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM);
-      bufSelf.writeUUID(roomUUID);
-      this.chatService.unicast(client.account.id, bufSelf);
-
-      const bufRoom = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.INSERT_ROOM_MEMBER,
-      );
-      bufRoom.writeUUID(roomUUID);
-      bufRoom.writeUUID(client.account.uuid);
-      this.chatService.multicastToRoom(roomUUID, bufRoom);
-
-      //FIXME: 이런식으로 메시지를 만들면 안될거 같은데...
-      const bufRoomMessage = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.CHAT_MESSAGE,
-      );
-      const message = await this.chatService.createNewChatMessage(
-        roomUUID,
+      void this.chatService.unicast(
         client.account.id,
-        `${client.account.uuid}님이 퇴장했습니다.`,
-        2, //FIXME: 입장 메시지 타입
+        builder.makeRemoveRoom(roomUUID),
       );
-      writeChatMessage(message, bufRoomMessage);
-      this.chatService.multicastToRoom(roomUUID, bufRoomMessage);
+      void this.chatService.multicastToRoom(
+        roomUUID,
+        builder.makeRemoveRoomMember(roomUUID, client.account.uuid),
+      );
+
+      {
+        //FIXME: Temporary: 퇴장 메시지
+        //NOTE: 공통 (SendChatMessage)
+        const message = await this.chatService.createNewChatMessage(
+          roomUUID,
+          client.account.id,
+          `${client.account.uuid}님이 퇴장했습니다.`,
+          2, //FIXME: 퇴장 메시지 타입
+        );
+        void this.chatService.multicastToRoom(
+          roomUUID,
+          builder.makeChatMessagePayload(message),
+        );
+      }
+    } else {
+      errno = RoomErrorNumber.ERROR_NOT_MEMBER;
     }
 
-    //FIXME: 실패한 이유
-    const errorReason = 1;
-
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.LEAVE_ROOM_FAILED);
-    buf.write1(success ? 0 : errorReason);
-    return buf;
+    return builder.makeLeaveRoomResult(errno, roomUUID);
   }
 
   @SubscribeMessage(ChatServerOpcode.INVITE_USER)
@@ -452,58 +388,53 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID: string = payload.readUUID();
-    //FIXME: 없는 상대 혹은 상대가 차단하여 초대할 수 없음
     const targetUUID: string = payload.readUUID();
+
+    //FIXME: 없는 상대 혹은 상대가 차단하여 초대할 수 없음
     //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
     //FIXME: 이미 꽉 찬 채팅방
+    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
     const member = await this.chatService.insertChatMemberByUUID(
       roomUUID,
       targetUUID,
     );
-    const success = member !== null;
-
+    //FIXME: 실패한 이유
+    let errno = RoomErrorNumber.SUCCESS;
     if (member !== null) {
+      //NOTE: 공통 (InsertMember)
       const messages = await this.chatService.loadMessagesAfter(
         roomUUID,
         undefined,
       );
-
-      const bufTarget = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.INSERT_ROOM,
+      void this.chatService.unicast(
+        member.accountId,
+        builder.makeInsertRoom(member.chat, messages),
       );
-      writeChatRoom(toChatRoomEntry(member.chat), bufTarget);
-      bufTarget.writeArray(messages, writeChatMessage);
-      this.chatService.unicastByAccountUUID(targetUUID, bufTarget);
-
-      const bufRoom = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.INSERT_ROOM_MEMBER,
-      );
-      bufRoom.writeUUID(roomUUID);
-      writeChatRoomMember(toChatMemberEntry(member), bufRoom);
-      this.chatService.multicastToRoom(roomUUID, bufRoom);
-
-      //FIXME: 이런식으로 메시지를 만들면 안될거 같은데...
-      const bufRoomMessage = ByteBuffer.createWithOpcode(
-        ChatClientOpcode.CHAT_MESSAGE,
-      );
-      const message = await this.chatService.createNewChatMessage(
+      void this.chatService.multicastToRoom(
         roomUUID,
-        client.account.id,
-        `${targetUUID}님을 초대했습니다.`,
-        4, //FIXME: 입장 메시지 타입
+        builder.makeInsertRoomMember(roomUUID, member),
+        member.accountId,
       );
-      writeChatMessage(message, bufRoomMessage);
-      this.chatService.multicastToRoom(roomUUID, bufRoomMessage);
+
+      {
+        //FIXME: Temporary: 초대 메시지
+        //NOTE: 공통 (SendChatMessage)
+        const message = await this.chatService.createNewChatMessage(
+          roomUUID,
+          client.account.id,
+          `${targetUUID}님을 초대했습니다.`,
+          4, //FIXME: 초대 메시지 타입
+        );
+        void this.chatService.multicastToRoom(
+          roomUUID,
+          builder.makeChatMessagePayload(message),
+        );
+      }
+    } else {
+      errno = RoomErrorNumber.ERROR_ALREADY_MEMBER;
     }
 
-    //FIXME: 실패한 이유
-    const errorReason = 1;
-
-    const buf = ByteBuffer.createWithOpcode(
-      ChatClientOpcode.INVITE_USER_FAILED,
-    );
-    buf.write1(success ? 0 : errorReason);
-    return buf;
+    return builder.makeInviteRoomResult(errno, roomUUID, targetUUID);
   }
 
   @SubscribeMessage(ChatServerOpcode.CHAT_MESSAGE)
@@ -511,20 +442,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const roomUUID = payload.readUUID();
-    //FIXME: 없는 방, 채팅금지 상태
     const content = payload.readString();
-    //FIXME: 내용이 malicious
 
+    //FIXME: 없는 방, 채팅금지 상태
+    //FIXME: 내용이 malicious
     const message = await this.chatService.createNewChatMessage(
       roomUUID,
       client.account.id,
       content,
     );
-
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_MESSAGE);
-    writeChatMessage(message, buf);
-
-    this.chatService.multicastToRoom(roomUUID, buf);
+    this.chatService.multicastToRoom(
+      roomUUID,
+      builder.makeChatMessagePayload(message),
+    );
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
@@ -532,12 +462,17 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const lastMessageId = payload.readUUID();
-    this.chatService.updateLastMessageCursor(client.account.id, lastMessageId);
 
-    const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SYNC_CURSOR);
-    buf.writeUUID(lastMessageId);
-
-    this.chatService.unicast(client.account.id, buf, client);
+    const success: boolean = await this.chatService.updateLastMessageCursor(
+      client.account.id,
+      lastMessageId,
+    );
+    void success;
+    this.chatService.unicast(
+      client.account.id,
+      builder.makeSyncCursorPayload(lastMessageId),
+      client,
+    );
   }
 
   @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
