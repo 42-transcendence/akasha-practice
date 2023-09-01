@@ -204,4 +204,49 @@ export class AccountsService {
     const [{ tagNumber }] = result;
     return Number(tagNumber);
   }
+
+  async findAvatarKeyByUUID(uuid: string): Promise<string | null> {
+    const data = await this.prisma.account.findUniqueOrThrow({
+      where: { uuid },
+    });
+    return data.avatarKey;
+  }
+
+  async updateAvatarKeyByUUID(
+    uuid: string,
+    avatarKey: string | null,
+  ): Promise<void> {
+    const data = await this.prisma.account.update({
+      data: { avatarKey },
+      where: { uuid },
+    });
+    void data;
+  }
+
+  async findAvatar(key: string): Promise<Buffer> {
+    const data = await this.prisma.avatar.findUniqueOrThrow({
+      where: { id: key },
+    });
+    return data.data;
+  }
+
+  async createAvatar(avatarData: Buffer): Promise<string> {
+    const data = await this.prisma.avatar.create({
+      data: { data: avatarData },
+    });
+    return data.id;
+  }
+
+  async updateAvatar(key: string, avatarData: Buffer): Promise<void> {
+    const data = await this.prisma.avatar.update({
+      data: { data: avatarData },
+      where: { id: key },
+    });
+    void data;
+  }
+
+  async deleteAvatar(key: string): Promise<Buffer> {
+    const data = await this.prisma.avatar.delete({ where: { id: key } });
+    return data.data;
+  }
 }

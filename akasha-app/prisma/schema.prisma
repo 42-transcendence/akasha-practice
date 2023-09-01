@@ -67,6 +67,7 @@ model Account {
   // Profile
   nickName              String?
   nickTag               Int               @default(0)
+  avatar                Avatar?           @relation(fields: [avatarKey], references: [id], onDelete: SetNull)
   avatarKey             String?           @db.VarChar(512)
   role                  Role              @default(USER)
   record                Record?
@@ -140,6 +141,17 @@ model Device {
 
   @@index([updatedTimestamp])
   @@map("devices")
+  @@schema("services")
+}
+
+model Avatar {
+  id                String    @id @default(nanoid())
+  data              Bytes
+  createdTimestamp  DateTime  @default(now())
+  updatedTimestamp  DateTime  @updatedAt
+  accountReferences Account[]
+
+  @@map("avatars")
   @@schema("services")
 }
 

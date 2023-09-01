@@ -118,4 +118,76 @@ export class ProfileService {
     }
     throw new ForbiddenException();
   }
+
+  async getAvatarData(
+    payload: AuthPayload,
+    avatarKey: string,
+  ): Promise<Buffer> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      const data = await this.accounts.findAvatar(avatarKey);
+      return data;
+    }
+    throw new ForbiddenException();
+  }
+
+  async getAvatarDataByUUID(
+    payload: AuthPayload,
+    accountUUID: string | undefined,
+  ): Promise<Buffer | null> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      const key = await this.accounts.findAvatarKeyByUUID(
+        accountUUID ?? payload.user_id,
+      );
+      if (key === null) {
+        return null;
+      }
+
+      const data = await this.accounts.findAvatar(key);
+      return data;
+    }
+    throw new ForbiddenException();
+  }
+
+  async updateAvatar(
+    payload: AuthPayload,
+    avatarData: Buffer | null,
+  ): Promise<string | null> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      //TODO: Transaction
+
+      /// v1
+      // const prevKey = await this.accounts.findAvatarKeyByUUID(payload.user_id);
+      // if (prevKey !== null) {
+      //   if (avatarData === null) {
+      //     void (await this.accounts.deleteAvatar(prevKey));
+      //     return null;
+      //   } else {
+      //     await this.accounts.updateAvatar(prevKey, avatarData);
+      //     return prevKey;
+      //   }
+      // } else {
+      //   if (avatarData !== null) {
+      //     const key = await this.accounts.createAvatar(avatarData);
+      //     await this.accounts.updateAvatarKeyByUUID(payload.user_id, key);
+      //     return key;
+      //   } else {
+      //     return null;
+      //   }
+      // }
+
+      /// v2
+      const prevKey = await this.accounts.findAvatarKeyByUUID(payload.user_id);
+      if (prevKey !== null) {
+        void (await this.accounts.deleteAvatar(prevKey));
+      }
+
+      if (avatarData !== null) {
+        const key = await this.accounts.createAvatar(avatarData);
+        await this.accounts.updateAvatarKeyByUUID(payload.user_id, key);
+        return key;
+      }
+      return null;
+    }
+    throw new ForbiddenException();
+  }
 }
