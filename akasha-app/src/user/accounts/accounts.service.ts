@@ -1,5 +1,5 @@
 import { Injectable } from "@nestjs/common";
-import { Prisma } from "@prisma/client";
+import { BanType, Prisma, RegistrationState } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 
 const MIN_TAG_NUMBER = 1000;
@@ -38,7 +38,7 @@ export type AccountWithBans = Prisma.AccountGetPayload<typeof accountWithBans>;
 
 const activeBanCondition = (): Prisma.BanWhereInput => ({
   AND: [
-    { type: "ACCESS" },
+    { type: BanType.ACCESS },
     {
       OR: [{ expireTimestamp: null }, { expireTimestamp: { gte: new Date() } }],
     },
@@ -66,12 +66,11 @@ export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async isExistsAccountByUUID(uuid: string): Promise<boolean> {
-    return (
-      (await this.prisma.account.findUnique({
-        where: { uuid },
-        select: { uuid: true },
-      })) !== null
-    );
+    const account = await this.prisma.account.findUnique({
+      where: { uuid },
+      select: { uuid: true },
+    });
+    return account !== null;
   }
 
   async findAccountPublicByUUID(uuid: string): Promise<AccountPublic | null> {
@@ -136,7 +135,7 @@ export class AccountsService {
       update: {},
       create: {
         ...authIssuer_authSubject,
-        registrationState: "REGISTERED",
+        registrationState: RegistrationState.REGISTERED,
         changedTimestamp: new Date(),
         record: { create: {} },
       },
@@ -159,14 +158,14 @@ export class AccountsService {
     });
   }
 
-  async getNickByUUID(uuid: string): Promise<AccountNickNameAndTag | null> {
+  async findNickByUUID(uuid: string): Promise<AccountNickNameAndTag | null> {
     return await this.prisma.account.findUnique({
       where: { uuid },
       ...accountNickNameAndTag,
     });
   }
 
-  async setNickByUUID(
+  async updateNickByUUID(
     uuid: string,
     name: string,
   ): Promise<AccountNickNameAndTag | undefined> {

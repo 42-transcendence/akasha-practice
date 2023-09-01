@@ -20,6 +20,7 @@ import {
   AccountProfileProtectedPayload,
   AccountProfilePublicPayload,
 } from "@common/profile-payloads";
+import { NICK_NAME_REGEX } from "@common/profile-constants";
 
 @Injectable()
 export class ProfileService {
@@ -92,8 +93,12 @@ export class ProfileService {
     name: string,
   ): Promise<AccountNickNameAndTag> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
+      if (!NICK_NAME_REGEX.test(name)) {
+        throw new BadRequestException();
+      }
+
       const prevNickNameTag: AccountNickNameAndTag | null =
-        await this.accounts.getNickByUUID(payload.user_id);
+        await this.accounts.findNickByUUID(payload.user_id);
       if (prevNickNameTag === null) {
         throw new NotFoundException();
       }
@@ -103,7 +108,7 @@ export class ProfileService {
       }
 
       const nickNameTag: AccountNickNameAndTag | undefined =
-        await this.accounts.setNickByUUID(payload.user_id, name);
+        await this.accounts.updateNickByUUID(payload.user_id, name);
 
       if (nickNameTag === undefined) {
         throw new ConflictException("Depleted nickName");

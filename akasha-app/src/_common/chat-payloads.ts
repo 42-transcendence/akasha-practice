@@ -25,6 +25,13 @@ export function writeFriend(obj: FriendEntry, buf: ByteBuffer) {
   buf.write1(obj.activeFlags);
 }
 
+/// FriendErrorNumber
+export const enum FriendErrorNumber {
+  SUCCESS,
+  ERROR_ALREADY_FRIEND,
+  ERROR_NOT_FRIEND,
+}
+
 /// EnemyEntry
 export type EnemyEntry = AccountUUID & Pick<EnemyEntity, "memo">;
 

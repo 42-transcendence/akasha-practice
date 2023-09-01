@@ -5,13 +5,15 @@ import {
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
+  FriendEntry,
   NewChatRoomRequest,
   SocialPayload,
 } from "@common/chat-payloads";
 import { ChatWebSocket } from "./chat-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
 import { AccountsService } from "@/user/accounts/accounts.service";
-import { Prisma } from "@prisma/client";
+import { BanType, ChatBan, Prisma } from "@prisma/client";
+import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
 /// ChatRoom
 const chatRoomWithMembers = Prisma.validator<Prisma.ChatDefaultArgs>()({
@@ -206,26 +208,25 @@ export class ChatService {
   ): Promise<ChatMessageEntry[]> {
     const data = await this.prisma.chatMessage.findMany({
       where: {
-        uuid: roomUUID,
+        chat: { uuid: roomUUID },
       },
       include: {
-        chat: {
-          select: { uuid: true },
-        },
-        account: {
-          select: { uuid: true },
-        },
+        //XXX: 성능을 위하여 UUID를 ID에 커버해야 하지만, Prisma가 Index-Only Scan을 지원하지 않았음.
+        chat: { select: { uuid: true } },
+        account: { select: { uuid: true } },
       },
       orderBy: {
         timestamp: Prisma.SortOrder.asc,
       },
       ...(lastMessageId !== undefined
         ? {
+            skip: 1,
             cursor: {
               uuid: lastMessageId,
             },
           }
         : {}),
+      take: 1024, //FIXME: 무제한이어도 잘 되어야 함.
     });
 
     return data.map((e) => ({
@@ -271,7 +272,7 @@ export class ChatService {
     );
     const friendRequestList = data.friendReferences
       .map((e) => e.account.uuid)
-      .filter((e) => friendUUIDSet.has(e));
+      .filter((e) => !friendUUIDSet.has(e));
 
     const enemyList = data.enemies.map((e) => ({
       uuid: e.enemyAccount.uuid,
@@ -281,9 +282,83 @@ export class ChatService {
     return { friendList, friendRequestList, enemyList };
   }
 
+  async isFriendByUUID(
+    accountId: number,
+    targetUUID: string,
+  ): Promise<boolean> {
+    const data = await this.prisma.account.findUnique({
+      where: { uuid: targetUUID },
+      select: {
+        friends: { select: { accountId: true }, where: { accountId } },
+      },
+    });
+    return (data?.friends.length ?? 0) !== 0;
+  }
+
+  async addFriend(
+    accountId: number,
+    targetUUID: string,
+    groupName: string,
+    activeFlags: number,
+  ): Promise<FriendEntry | null> {
+    try {
+      const data = await this.prisma.friend.create({
+        data: {
+          account: { connect: { id: accountId } },
+          friendAccount: { connect: { uuid: targetUUID } },
+          groupName,
+          activeFlags,
+        },
+        include: {
+          account: { select: { uuid: true } },
+          friendAccount: { select: { uuid: true } },
+        },
+      });
+      return { ...data, uuid: data.friendAccount.uuid };
+    } catch (e) {
+      if (e instanceof PrismaClientKnownRequestError) {
+        if (e.code === "P2002") {
+          return null;
+        }
+      }
+      throw e;
+    }
+  }
+
+  async modifyFriend(
+    accountId: number,
+    targetUUID: string,
+    mutationInput: Prisma.FriendUpdateManyMutationInput,
+  ): Promise<FriendEntry | null> {
+    const targetId = await this.accounts.findAccountIdByUUID(targetUUID);
+    const data = await this.prisma.friend.update({
+      data: mutationInput,
+      where: {
+        accountId_friendAccountId: { accountId, friendAccountId: targetId },
+      },
+      include: {
+        account: { select: { uuid: true } },
+        friendAccount: { select: { uuid: true } },
+      },
+    });
+    return { ...data, uuid: data.friendAccount.uuid };
+  }
+
+  async deleteFriend(accountId: number, targetUUID: string): Promise<boolean> {
+    const batch = await this.prisma.friend.deleteMany({
+      where: {
+        OR: [
+          { account: { id: accountId }, friendAccount: { uuid: targetUUID } },
+          { friendAccount: { id: accountId }, account: { uuid: targetUUID } },
+        ],
+      },
+    });
+    return batch.count !== 0;
+  }
+
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
     const data = await this.prisma.x.chat.findMany({
-      include: { members: { select: {} } },
+      include: { members: { select: { chatId: true, accountId: true } } },
     });
 
     return (
@@ -358,23 +433,6 @@ export class ChatService {
     return memberSet;
   }
 
-  async insertChatMemberByUUID(
-    roomUUID: string,
-    accountUUID: string,
-    modeFlags: number = 0,
-  ): Promise<ChatMemberWithRoom | null> {
-    try {
-      const accountId: number = await this.accounts.findAccountIdByUUID(
-        accountUUID,
-      );
-
-      return await this.insertChatMember(roomUUID, accountId, modeFlags);
-    } catch {
-      //FIXME: 임시
-      return null;
-    }
-  }
-
   async insertChatMember(
     roomUUID: string,
     accountId: number,
@@ -415,6 +473,23 @@ export class ChatService {
     }
   }
 
+  async insertChatMemberByUUID(
+    roomUUID: string,
+    accountUUID: string,
+    modeFlags: number = 0,
+  ): Promise<ChatMemberWithRoom | null> {
+    try {
+      const accountId: number = await this.accounts.findAccountIdByUUID(
+        accountUUID,
+      );
+
+      return await this.insertChatMember(roomUUID, accountId, modeFlags);
+    } catch {
+      //FIXME: 임시
+      return null;
+    }
+  }
+
   async deleteChatMember(
     roomUUID: string,
     accountId: number,
@@ -433,11 +508,7 @@ export class ChatService {
       },
     });
 
-    if (batch.count === 0) {
-      return false;
-    }
-
-    return true;
+    return batch.count !== 0;
   }
 
   async createNewChatMessage(
@@ -493,5 +564,74 @@ export class ChatService {
     });
 
     return batch.count !== 0;
+  }
+
+  async getChatBanned(
+    roomUUID: string,
+    accountId: number,
+    type: BanType,
+  ): Promise<ChatBan[]> {
+    const data = await this.prisma.chat.findUnique({
+      where: { uuid: roomUUID },
+      select: { bans: { where: { accountId, type } } },
+    });
+
+    return data?.bans ?? [];
+  }
+
+  async createChatBan(
+    roomUUID: string,
+    targetUUID: string,
+    managerAccountId: number,
+    type: BanType,
+    reason: string,
+    memo: string,
+    expireTimestamp: Date | null,
+  ): Promise<ChatBan> {
+    const data = await this.prisma.chatBan.create({
+      data: {
+        chat: { connect: { uuid: roomUUID } },
+        account: { connect: { uuid: targetUUID } },
+        managerAccount: { connect: { id: managerAccountId } },
+        type,
+        reason,
+        memo,
+        expireTimestamp,
+      },
+    });
+
+    return data;
+  }
+
+  async deleteChatBan(chatBanId: number): Promise<ChatBan> {
+    const data = await this.prisma.chatBan.delete({
+      where: { id: chatBanId },
+    });
+
+    return data;
+  }
+
+  async isChatBanned(roomUUID: string, accountId: number, type: BanType) {
+    const data = await this.getChatBanned(roomUUID, accountId, type);
+
+    //FIXME: 임시
+    return data.length !== 0;
+  }
+
+  async isChatBannedByUUID(
+    roomUUID: string,
+    accountUUID: string,
+    type: BanType,
+  ) {
+    try {
+      const accountId: number = await this.accounts.findAccountIdByUUID(
+        accountUUID,
+      );
+
+      return await this.isChatBanned(roomUUID, accountId, type);
+    } catch {
+      //FIXME: 임시
+      return null;
+    }
   }
 }

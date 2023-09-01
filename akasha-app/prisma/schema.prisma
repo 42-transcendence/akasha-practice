@@ -96,6 +96,7 @@ model Account {
   currentGameDeviceId   Int?              @unique
 
   @@unique([authIssuer, authSubject])
+  @@index(nickName)
   @@index([nickName, nickTag])
   @@map("accounts")
   @@schema("services")
@@ -219,6 +220,7 @@ model Chat {
   limit     Int
   members   ChatMember[]
   messages  ChatMessage[]
+  bans      ChatBan[]
 
   @@map("chats")
   @@schema("services")
@@ -256,6 +258,8 @@ model ChatMessage {
 
 model ChatBan {
   id               Int       @id @default(autoincrement())
+  chat             Chat      @relation(fields: [chatId], references: [id])
+  chatId           Int
   account          Account   @relation("ChatBanList", fields: [accountId], references: [id])
   accountId        Int
   managerAccount   Account   @relation("ManagedChatBanTarget", fields: [managerAccountId], references: [id])

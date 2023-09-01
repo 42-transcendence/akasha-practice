@@ -34,7 +34,7 @@ export function WebSocketRegistryContainer({
 export function useWebSocketConnector(
   name: WebSocketRegisterProps["name"],
   url: WebSocketRegisterProps["url"],
-  props: Partial<WebSocketRegisterProps> = {}
+  props?: Partial<WebSocketRegisterProps> | undefined
 ) {
   const registry: WebSocketRegistry = useContext(RegistryContext);
   useEffect(
@@ -47,7 +47,7 @@ type ResponsePayload = ByteBuffer | ByteBuffer[] | undefined | void;
 
 export function useWebSocket(
   name: string,
-  opcode: number | number[] | undefined = [],
+  opcode: number | number[] | undefined,
   once?:
     | ((
         opcode: number,

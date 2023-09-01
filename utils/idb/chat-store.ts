@@ -13,6 +13,11 @@ function getMetadataDB(): Promise<IDBDatabase> {
       });
       // fetchedMessageUUID
     },
+    onClose() {
+      alert(
+        "새로운 버전의 애플리케이션이 준비되었습니다. 페이지를 닫고 다시 연결을 진행해 주세요."
+      );
+    },
   });
 }
 
@@ -305,11 +310,11 @@ export class ChatStore {
 
   static async getMemberDictionary(
     roomUUID: string
-  ): Promise<Map<string, MemberSchema> | null> {
+  ): Promise<Map<string, MemberSchema>> {
     const db = await getDB(roomUUID);
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const tx = db.transaction(["members"], "readonly");
-      tx.onerror = () => resolve(null);
+      tx.onerror = () => reject(new Error());
 
       const members = tx.objectStore("members");
       const memberAllGet = members.getAll();
@@ -423,11 +428,15 @@ export class ChatStore {
         );
       }
 
-      Promise.all(promiseList).then((e) => resolve(!e.includes(false)));
+      Promise.all(promiseList)
+        .then((e) => resolve(!e.includes(false)))
+        .catch(() => resolve(false));
     });
   }
 
-  static async getLatestMessage(roomUUID: string): Promise<MessageSchema | null> {
+  static async getLatestMessage(
+    roomUUID: string
+  ): Promise<MessageSchema | null> {
     const db = await getDB(roomUUID);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
