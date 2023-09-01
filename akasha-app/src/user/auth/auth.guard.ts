@@ -14,7 +14,6 @@ import { Reflector } from "@nestjs/core";
 @Injectable()
 export class AuthGuard implements CanActivate {
   static AUTH_PAYLOAD_KEY: string = "_auth";
-  static AUTH_SKIP_KEY = "auth_skip";
   static AUTH_LEVEL_MIN_KEY = "auth_level_min";
 
   static extractAuthPayload(req: Request): AuthPayload;
@@ -32,16 +31,6 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
-    const authSkip =
-      this.reflector.get<boolean>(
-        AuthGuard.AUTH_SKIP_KEY,
-        context.getHandler(),
-      ) ?? false;
-
-    if (authSkip) {
-      return true;
-    }
-
     const authLevelMin =
       this.reflector.get<AuthLevel>(
         AuthGuard.AUTH_LEVEL_MIN_KEY,
@@ -50,7 +39,7 @@ export class AuthGuard implements CanActivate {
 
     const http: HttpArgumentsHost = context.switchToHttp();
     const req = http.getRequest<Request>();
-    const token: string | undefined = this.extractTokenFromHeader(req);
+    const token: string | undefined = AuthGuard.extractTokenFromHeader(req);
     if (token === undefined) {
       throw new BadRequestException("Missing token");
     }
@@ -66,7 +55,7 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 
-  private extractTokenFromHeader(req: Request): string | undefined {
+  private static extractTokenFromHeader(req: Request): string | undefined {
     const [type, token] = req.headers.authorization?.split(" ") ?? [];
     return type === "Bearer" ? token : undefined;
   }

@@ -119,29 +119,6 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async getAvatarData(avatarKey: string): Promise<Buffer> {
-    const data = await this.accounts.findAvatar(avatarKey);
-    return data;
-  }
-
-  async getAvatarDataByUUID(
-    payload: AuthPayload,
-    accountUUID: string | undefined,
-  ): Promise<Buffer | null> {
-    if (payload.auth_level === AuthLevel.COMPLETED) {
-      const key = await this.accounts.findAvatarKeyByUUID(
-        accountUUID ?? payload.user_id,
-      );
-      if (key === null) {
-        return null;
-      }
-
-      const data = await this.accounts.findAvatar(key);
-      return data;
-    }
-    throw new ForbiddenException();
-  }
-
   async updateAvatar(
     payload: AuthPayload,
     avatarData: Buffer | null,

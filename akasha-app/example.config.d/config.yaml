@@ -46,3 +46,5 @@ auth:
 
   jwt_options:
     issuer: Akasha
+
+internal_token: AKASHA

@@ -3,12 +3,10 @@ import {
   Controller,
   Delete,
   Get,
-  Header,
   HttpStatus,
   Param,
   ParseFilePipeBuilder,
   Post,
-  StreamableFile,
   UploadedFile,
   UseGuards,
   UseInterceptors,
@@ -16,7 +14,7 @@ import {
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@common/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
-import { Auth, AuthSkip } from "@/user/auth/auth.decorator";
+import { Auth } from "@/user/auth/auth.decorator";
 import { ProfileService } from "./profile.service";
 import {
   AccountProfilePrivatePayload,
@@ -30,7 +28,6 @@ import {
   AVATAR_FORM_DATA_KEY,
   AVATAR_LIMIT,
   AVATAR_MIME_REGEX,
-  AVATAR_MIME_TYPE,
 } from "@common/profile-constants";
 
 @Controller("profile")
@@ -67,42 +64,6 @@ export class ProfileController {
     @Body() body: NickNameModel,
   ): Promise<AccountNickNameAndTag> {
     return this.profileService.registerNick(auth, body.name);
-  }
-
-  @Get("avatar")
-  @Header("Content-Type", AVATAR_MIME_TYPE)
-  @Header("Content-Disposition", "inline")
-  //TODO: Cache-Control
-  async getSelfAvatar(@Auth() auth: AuthPayload) {
-    const data = await this.profileService.getAvatarDataByUUID(auth, undefined);
-    if (data === null) {
-      return null;
-    }
-
-    return new StreamableFile(data);
-  }
-
-  @Get("avatar/:uuid")
-  @Header("Content-Type", AVATAR_MIME_TYPE)
-  @Header("Content-Disposition", "inline")
-  //TODO: Cache-Control
-  async getAvatar(@Auth() auth: AuthPayload, @Param("uuid") uuid: string) {
-    const data = await this.profileService.getAvatarDataByUUID(auth, uuid);
-    if (data === null) {
-      return null;
-    }
-
-    return new StreamableFile(data);
-  }
-
-  @AuthSkip()
-  @Get("raw-avatar/:key")
-  @Header("Content-Type", AVATAR_MIME_TYPE)
-  @Header("Content-Disposition", "inline")
-  //TODO: Cache-Control
-  async getAvatarByKey(@Param("key") key: string) {
-    const data = await this.profileService.getAvatarData(key);
-    return new StreamableFile(data);
   }
 
   @Post("avatar")
