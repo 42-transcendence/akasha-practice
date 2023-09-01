@@ -14,6 +14,7 @@ import { Reflector } from "@nestjs/core";
 @Injectable()
 export class AuthGuard implements CanActivate {
   static AUTH_PAYLOAD_KEY: string = "_auth";
+  static AUTH_SKIP_KEY = "auth_skip";
   static AUTH_LEVEL_MIN_KEY = "auth_level_min";
 
   static extractAuthPayload(req: Request): AuthPayload;
@@ -31,6 +32,16 @@ export class AuthGuard implements CanActivate {
   ) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
+    const authSkip =
+      this.reflector.get<boolean>(
+        AuthGuard.AUTH_SKIP_KEY,
+        context.getHandler(),
+      ) ?? false;
+
+    if (authSkip) {
+      return true;
+    }
+
     const authLevelMin =
       this.reflector.get<AuthLevel>(
         AuthGuard.AUTH_LEVEL_MIN_KEY,

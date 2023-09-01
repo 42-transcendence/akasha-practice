@@ -119,15 +119,9 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async getAvatarData(
-    payload: AuthPayload,
-    avatarKey: string,
-  ): Promise<Buffer> {
-    if (payload.auth_level === AuthLevel.COMPLETED) {
-      const data = await this.accounts.findAvatar(avatarKey);
-      return data;
-    }
-    throw new ForbiddenException();
+  async getAvatarData(avatarKey: string): Promise<Buffer> {
+    const data = await this.accounts.findAvatar(avatarKey);
+    return data;
   }
 
   async getAvatarDataByUUID(

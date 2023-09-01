@@ -15,5 +15,7 @@ export const Auth = createParamDecorator(
   },
 );
 
+export const AuthSkip = () => SetMetadata(AuthGuard.AUTH_SKIP_KEY, true);
+
 export const AuthLevelMin = (level: AuthLevel) =>
   SetMetadata(AuthGuard.AUTH_LEVEL_MIN_KEY, level);

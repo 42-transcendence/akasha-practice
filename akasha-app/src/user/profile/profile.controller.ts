@@ -16,7 +16,7 @@ import {
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { AuthPayload } from "@common/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
-import { Auth } from "@/user/auth/auth.decorator";
+import { Auth, AuthSkip } from "@/user/auth/auth.decorator";
 import { ProfileService } from "./profile.service";
 import {
   AccountProfilePrivatePayload,
@@ -26,6 +26,12 @@ import {
 import { AccountNickNameAndTag } from "@/user/accounts/accounts.service";
 import { NickNameModel } from "./profile-model";
 import { FileInterceptor } from "@nestjs/platform-express";
+import {
+  AVATAR_FORM_DATA_KEY,
+  AVATAR_LIMIT,
+  AVATAR_MIME_REGEX,
+  AVATAR_MIME_TYPE,
+} from "@common/profile-constants";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -64,7 +70,7 @@ export class ProfileController {
   }
 
   @Get("avatar")
-  @Header("Content-Type", "image/webp")
+  @Header("Content-Type", AVATAR_MIME_TYPE)
   @Header("Content-Disposition", "inline")
   //TODO: Cache-Control
   async getSelfAvatar(@Auth() auth: AuthPayload) {
@@ -77,7 +83,7 @@ export class ProfileController {
   }
 
   @Get("avatar/:uuid")
-  @Header("Content-Type", "image/webp")
+  @Header("Content-Type", AVATAR_MIME_TYPE)
   @Header("Content-Disposition", "inline")
   //TODO: Cache-Control
   async getAvatar(@Auth() auth: AuthPayload, @Param("uuid") uuid: string) {
@@ -89,26 +95,27 @@ export class ProfileController {
     return new StreamableFile(data);
   }
 
+  @AuthSkip()
   @Get("raw-avatar/:key")
-  @Header("Content-Type", "image/webp")
+  @Header("Content-Type", AVATAR_MIME_TYPE)
   @Header("Content-Disposition", "inline")
   //TODO: Cache-Control
-  async getAvatarByKey(@Auth() auth: AuthPayload, @Param("key") key: string) {
-    const data = await this.profileService.getAvatarData(auth, key);
+  async getAvatarByKey(@Param("key") key: string) {
+    const data = await this.profileService.getAvatarData(key);
     return new StreamableFile(data);
   }
 
   @Post("avatar")
-  @UseInterceptors(FileInterceptor("avatar"))
+  @UseInterceptors(FileInterceptor(AVATAR_FORM_DATA_KEY))
   async addAvatar(
     @Auth() auth: AuthPayload,
     @UploadedFile(
       new ParseFilePipeBuilder()
         .addFileTypeValidator({
-          fileType: "webp",
+          fileType: AVATAR_MIME_REGEX,
         })
         .addMaxSizeValidator({
-          maxSize: 1 * 1024 * 1024,
+          maxSize: AVATAR_LIMIT,
         })
         .build({
           errorHttpStatusCode: HttpStatus.UNPROCESSABLE_ENTITY,
