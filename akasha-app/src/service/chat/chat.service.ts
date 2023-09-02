@@ -217,7 +217,7 @@ export class ChatService {
         chat: { uuid: roomUUID },
       },
       include: {
-        //XXX: 성능을 위하여 UUID를 ID에 커버해야 하지만, Prisma가 Index-Only Scan을 지원하지 않았음.
+        //XXX: UUID를 가져올 때 Index-Only Scan을 사용하는 것이 성능에 유리하지만, Prisma가 Covering Index를 지원하지 않았음.
         chat: { select: { uuid: true } },
         account: { select: { uuid: true } },
       },
