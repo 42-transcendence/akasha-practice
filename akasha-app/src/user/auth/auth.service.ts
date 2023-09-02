@@ -208,7 +208,7 @@ export class AuthService {
         throw new BadRequestException("Not found state");
       }
 
-      const accountId: number = await this.accounts.findAccountIdByUUID(
+      const accountId: number = await this.accounts.findAccountIdByUUIDOrThrow(
         //XXX: Hack
         state.redirectURI,
       );

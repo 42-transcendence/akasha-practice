@@ -13,7 +13,7 @@ export function verifyClientViaQueryParam(
 ): VerifyClient {
   return async function verifyClient({ req }, callback) {
     try {
-      const url = new URL(req.url ?? "", `ws://${req.headers.host}/`);
+      const url = new URL(req.url ?? "", "p://h");
       const values = url.searchParams.getAll(queryParamKey);
       if (values.length !== 1) {
         return callback(false, 400, "Missing or multiple authorization token");

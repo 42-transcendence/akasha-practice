@@ -337,6 +337,9 @@ export class ChatService {
     mutationInput: Prisma.FriendUpdateManyMutationInput,
   ): Promise<FriendEntry | null> {
     const targetId = await this.accounts.findAccountIdByUUID(targetUUID);
+    if (targetId === null) {
+      return null;
+    }
     const data = await this.prisma.friend.update({
       data: mutationInput,
       where: {
@@ -485,9 +488,11 @@ export class ChatService {
     modeFlags: number = 0,
   ): Promise<ChatMemberWithRoom | null> {
     try {
-      const accountId: number = await this.accounts.findAccountIdByUUID(
-        accountUUID,
-      );
+      const accountId = await this.accounts.findAccountIdByUUID(accountUUID);
+      if (accountId === null) {
+        //FIXME: 임시
+        return null;
+      }
 
       return await this.insertChatMember(roomUUID, accountId, modeFlags);
     } catch {
@@ -630,9 +635,11 @@ export class ChatService {
     type: BanType,
   ) {
     try {
-      const accountId: number = await this.accounts.findAccountIdByUUID(
-        accountUUID,
-      );
+      const accountId = await this.accounts.findAccountIdByUUID(accountUUID);
+      if (accountId === null) {
+        //FIXME: 임시
+        return null;
+      }
 
       return await this.isChatBanned(roomUUID, accountId, type);
     } catch {

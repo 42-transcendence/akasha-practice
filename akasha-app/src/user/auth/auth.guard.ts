@@ -13,7 +13,7 @@ import { Reflector } from "@nestjs/core";
 
 @Injectable()
 export class AuthGuard implements CanActivate {
-  static AUTH_PAYLOAD_KEY: string = "_auth";
+  static AUTH_PAYLOAD_KEY = "_auth";
   static AUTH_LEVEL_MIN_KEY = "auth_level_min";
 
   static extractAuthPayload(req: Request): AuthPayload;

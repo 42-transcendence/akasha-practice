@@ -1,10 +1,8 @@
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
-  UnauthorizedException,
 } from "@nestjs/common";
 import {
   AccountNickNameAndTag,
@@ -31,10 +29,6 @@ export class ProfileService {
     targetUUID: string,
   ): Promise<AccountProfilePublicPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      if (!(await this.accounts.isExistsAccountByUUID(payload.user_id))) {
-        throw new UnauthorizedException();
-      }
-
       const targetAccount: AccountPublic | null =
         await this.accounts.findAccountPublicByUUID(targetUUID);
       if (targetAccount === null) {
@@ -51,16 +45,19 @@ export class ProfileService {
     targetUUID: string,
   ): Promise<AccountProfileProtectedPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      if (!(await this.accounts.isExistsAccountByUUID(payload.user_id))) {
-        throw new UnauthorizedException();
-      }
+      const accountId = await this.accounts.findAccountIdByUUIDOrThrow(
+        payload.user_id,
+      );
       //FIXME: 친구인지, 블랙인지 검사
+      void accountId;
 
       const targetAccount: AccountProtected | null =
         await this.accounts.findAccountProtectedByUUID(targetUUID);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
+
+      //FIXME: activeStatus 변조
 
       return {
         ...targetAccount,
@@ -97,24 +94,12 @@ export class ProfileService {
         throw new BadRequestException();
       }
 
-      const prevNickNameTag: AccountNickNameAndTag | null =
-        await this.accounts.findNickByUUID(payload.user_id);
-      if (prevNickNameTag === null) {
-        throw new NotFoundException();
-      }
-
-      if (prevNickNameTag.nickName !== null) {
-        throw new BadRequestException("Duplicate register");
-      }
-
-      const nickNameTag: AccountNickNameAndTag | undefined =
-        await this.accounts.updateNickByUUID(payload.user_id, name);
-
-      if (nickNameTag === undefined) {
-        throw new ConflictException("Depleted nickName");
-      }
-
-      return nickNameTag;
+      return await this.accounts.updateNickByUUIDAtomic(
+        payload.user_id,
+        name,
+        undefined,
+        false,
+      );
     }
     throw new ForbiddenException();
   }
@@ -124,40 +109,11 @@ export class ProfileService {
     avatarData: Buffer | null,
   ): Promise<string | null> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      //TODO: Transaction
-
-      /// v1
-      // const prevKey = await this.accounts.findAvatarKeyByUUID(payload.user_id);
-      // if (prevKey !== null) {
-      //   if (avatarData === null) {
-      //     void (await this.accounts.deleteAvatar(prevKey));
-      //     return null;
-      //   } else {
-      //     await this.accounts.updateAvatar(prevKey, avatarData);
-      //     return prevKey;
-      //   }
-      // } else {
-      //   if (avatarData !== null) {
-      //     const key = await this.accounts.createAvatar(avatarData);
-      //     await this.accounts.updateAvatarKeyByUUID(payload.user_id, key);
-      //     return key;
-      //   } else {
-      //     return null;
-      //   }
-      // }
-
-      /// v2
-      const prevKey = await this.accounts.findAvatarKeyByUUID(payload.user_id);
-      if (prevKey !== null) {
-        void (await this.accounts.deleteAvatar(prevKey));
-      }
-
-      if (avatarData !== null) {
-        const key = await this.accounts.createAvatar(avatarData);
-        await this.accounts.updateAvatarKeyByUUID(payload.user_id, key);
-        return key;
-      }
-      return null;
+      const key = await this.accounts.updateAvatarByUUIDAtomic(
+        payload.user_id,
+        avatarData,
+      );
+      return key;
     }
     throw new ForbiddenException();
   }

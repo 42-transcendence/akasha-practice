@@ -58,7 +58,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account === undefined, "Duplicate handshake");
 
     const uuid = client.auth.user_id;
-    const id = await this.accounts.findAccountIdByUUID(uuid);
+    const id = await this.accounts.findAccountIdByUUIDOrThrow(uuid);
     client.account = { uuid, id };
     this.chatService.trackClient(client);
 
@@ -66,6 +66,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       payload.readArray(readChatRoomChatMessagePair);
 
     const init = await client.initialize(fetchedMessageIdPairs);
+
     return builder.makeInitializePayload(
       init.chatRoomList,
       init.chatMessageMap,

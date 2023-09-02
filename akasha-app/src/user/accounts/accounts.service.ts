@@ -1,4 +1,9 @@
-import { Injectable } from "@nestjs/common";
+import {
+  BadRequestException,
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { BanType, Prisma, RegistrationState } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 
@@ -73,6 +78,32 @@ export class AccountsService {
     return account !== null;
   }
 
+  async findAccountIdByUUID(uuid: string): Promise<number | null> {
+    const account = await this.prisma.account.findUnique({
+      where: { uuid },
+      select: { id: true },
+    });
+    return account?.id ?? null;
+  }
+
+  async findAccountIdByUUIDOrThrow(uuid: string): Promise<number> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { uuid },
+      select: { id: true },
+    });
+    return account.id;
+  }
+
+  async findAccountIdByUUIDMany(
+    uuidArray: string[],
+  ): Promise<AccountIdAndUUID[]> {
+    const pairs = await this.prisma.account.findMany({
+      ...accountIdAndUUID,
+      where: { uuid: { in: uuidArray } },
+    });
+    return pairs;
+  }
+
   async findAccountPublicByUUID(uuid: string): Promise<AccountPublic | null> {
     return await this.prisma.account.findUnique({
       where: { uuid },
@@ -94,24 +125,6 @@ export class AccountsService {
       where: { uuid },
       ...accountPrivate,
     });
-  }
-
-  async findAccountIdByUUID(uuid: string): Promise<number> {
-    const account = await this.prisma.account.findUniqueOrThrow({
-      where: { uuid },
-      select: { id: true },
-    });
-    return account.id;
-  }
-
-  async findAccountIdByUUIDMany(
-    uuidArray: string[],
-  ): Promise<AccountIdAndUUID[]> {
-    const pairs = await this.prisma.account.findMany({
-      ...accountIdAndUUID,
-      where: { uuid: { in: uuidArray } },
-    });
-    return pairs;
   }
 
   async makeAccountIdToUUIDDictionary(
@@ -158,95 +171,105 @@ export class AccountsService {
     });
   }
 
-  async findNickByUUID(uuid: string): Promise<AccountNickNameAndTag | null> {
-    return await this.prisma.account.findUnique({
-      where: { uuid },
-      ...accountNickNameAndTag,
-    });
-  }
-
-  async updateNickByUUID(
+  async updateNickByUUIDAtomic(
     uuid: string,
     name: string,
-  ): Promise<AccountNickNameAndTag | undefined> {
-    const nickTag: number | undefined = await this.pickRandomTag(name);
-    if (nickTag === undefined) {
-      return undefined;
-    }
+    tagHint: number | undefined,
+    overwrite: boolean,
+  ): Promise<AccountNickNameAndTag> {
+    const data = await this.prisma.$transaction(async (tx) => {
+      // 1. Check Exists Account
+      const prev = await tx.account.findUnique({
+        where: { uuid },
+        select: { nickName: true },
+      });
+      if (prev === null) {
+        throw new NotFoundException("account does not exists");
+      }
+      if (!overwrite && prev.nickName !== null) {
+        throw new BadRequestException("nickName already exists");
+      }
 
-    return await this.prisma.account.update({
-      where: { uuid },
-      data: {
-        nickName: name,
-        nickTag: nickTag,
-      },
-      ...accountNickNameAndTag,
-    });
-  }
-
-  async pickRandomTag(name: string): Promise<number | undefined> {
-    //XXX: 작성시 Prisma가 프로시저 호출을 지원하지 않았었음.
-    const result = await this.prisma.$queryRaw`
+      // 2. Pick Random Tag
+      //XXX: 작성시 Prisma가 프로시저 호출을 지원하지 않았었음.
+      const tagNumberQuery = await tx.$queryRaw`
       SELECT "tagNumber"
         FROM generate_series(${MIN_TAG_NUMBER}, ${MAX_TAG_NUMBER}) AS "tagNumber"
         WHERE "tagNumber" NOT IN (
           SELECT "nickTag" FROM services.accounts
           WHERE "nickName" = ${name}
         )
-        ORDER BY random()
+        ORDER BY "tagNumber" = ${tagHint} DESC, random()
       LIMIT 1
     `;
+      if (!Array.isArray(tagNumberQuery) || tagNumberQuery.length === 0) {
+        throw new ConflictException(
+          `No more tagNumber left for name [${name}]`,
+        );
+      }
+      const [{ tagNumber: tagNumberRaw }] = tagNumberQuery;
+      const tagNumber = Number(tagNumberRaw);
 
-    if (!Array.isArray(result) || result.length === 0) {
-      return undefined;
-    }
-
-    const [{ tagNumber }] = result;
-    return Number(tagNumber);
-  }
-
-  async findAvatarKeyByUUID(uuid: string): Promise<string | null> {
-    const data = await this.prisma.account.findUniqueOrThrow({
-      where: { uuid },
+      // 3. Update Nick
+      return await tx.account.update({
+        where: { uuid },
+        data: {
+          nickName: name,
+          nickTag: tagNumber,
+        },
+        ...accountNickNameAndTag,
+      });
     });
-    return data.avatarKey;
+
+    return data;
   }
 
-  async updateAvatarKeyByUUID(
+  async updateAvatarByUUIDAtomic(
     uuid: string,
-    avatarKey: string | null,
-  ): Promise<void> {
-    const data = await this.prisma.account.update({
-      data: { avatarKey },
-      where: { uuid },
+    avatarData: Buffer | null,
+  ): Promise<string | null> {
+    const data = await this.prisma.$transaction(async (tx) => {
+      // 1. Check Exists Account
+      const prev = await tx.account.findUnique({
+        where: { uuid },
+        select: { avatarKey: true },
+      });
+      if (prev === null) {
+        throw new NotFoundException("account does not exists");
+      }
+
+      // 2. Delete Avatar If Exists
+      if (prev.avatarKey !== null) {
+        const del = await this.prisma.avatar.delete({
+          where: { id: prev.avatarKey },
+        });
+        void del;
+      }
+
+      if (avatarData !== null) {
+        // 3-A. Insert Updated Avatar
+        const ins = await this.prisma.avatar.create({
+          data: { data: avatarData },
+        });
+        const data = await tx.account.update({
+          where: { uuid },
+          data: { avatarKey: ins.id },
+          select: { avatarKey: true },
+        });
+        return data.avatarKey;
+      } else {
+        // 3-B. Expect account to have been updated by `ON DELETE SET NULL`
+        return null;
+      }
     });
-    void data;
+
+    return data;
   }
 
   async findAvatar(key: string): Promise<Buffer> {
     const data = await this.prisma.avatar.findUniqueOrThrow({
       where: { id: key },
     });
-    return data.data;
-  }
-
-  async createAvatar(avatarData: Buffer): Promise<string> {
-    const data = await this.prisma.avatar.create({
-      data: { data: avatarData },
-    });
-    return data.id;
-  }
-
-  async updateAvatar(key: string, avatarData: Buffer): Promise<void> {
-    const data = await this.prisma.avatar.update({
-      data: { data: avatarData },
-      where: { id: key },
-    });
-    void data;
-  }
-
-  async deleteAvatar(key: string): Promise<Buffer> {
-    const data = await this.prisma.avatar.delete({ where: { id: key } });
     return data.data;
   }
 }
