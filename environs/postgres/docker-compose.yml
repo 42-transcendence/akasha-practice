@@ -1,0 +1,65 @@
+services:
+  database:
+    container_name: postgres
+    image: postgres
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER}"
+      POSTGRES_PASSWORD_FILE: "/run/secrets/postgres_password"
+      POSTGRES_DB: "${POSTGRES_DB}"
+      POSTGRES_MEMBER_USER: "${POSTGRES_MEMBER_USER}"
+      POSTGRES_MEMBER_PASSWORD_FILE: "/run/secrets/postgres_member_password"
+      POSTGRES_MEMBER_DB: "${POSTGRES_MEMBER_DB}"
+    restart: always
+    volumes:
+      - ./initdb.d:/docker-entrypoint-initdb.d
+      - database_volume:/var/lib/postgresql/data
+    networks:
+      - database_network
+    secrets:
+      - postgres_password
+      - postgres_member_password
+    hostname: postgreshost
+    expose:
+      - "5432"
+    ports:
+      - "5432:5432"
+
+  pgadmin:
+    container_name: pgadmin
+    image: dpage/pgadmin4
+    environment:
+      PGADMIN_DEFAULT_EMAIL: "${PGADMIN_EMAIL}"
+      PGADMIN_DEFAULT_PASSWORD_FILE: "/run/secrets/pgadmin_password"
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: "True"
+      PGADMIN_CONFIG_LOGIN_BANNER: "${PGADMIN_CONFIG_LOGIN_BANNER}"
+    depends_on:
+      - database
+    restart: always
+    volumes:
+      - ./.config.d/pgadmin4-servers.json:/pgadmin4/servers.json
+      - dbadmin_volume:/var/lib/pgadmin
+    networks:
+      - http_network
+      - database_network
+    secrets:
+      - pgadmin_password
+    expose:
+      - "80"
+    ports:
+      - "5050:80"
+
+networks:
+  http_network:
+  database_network:
+
+volumes:
+  database_volume:
+  dbadmin_volume:
+
+secrets:
+  postgres_password:
+    file: ./.secret.d/postgres_password.txt
+  postgres_member_password:
+    file: ./.secret.d/postgres_member_password.txt
+  pgadmin_password:
+    file: ./.secret.d/pgadmin_password.txt

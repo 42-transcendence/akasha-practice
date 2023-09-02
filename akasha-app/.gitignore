@@ -147,3 +147,10 @@ dist
 !.vscode/tasks.json
 !.vscode/launch.json
 !.vscode/extensions.json
+
+# Auto generated files
+/prisma/migrations/
+/src/_common/generated
+
+# Configuration files
+/.config.d

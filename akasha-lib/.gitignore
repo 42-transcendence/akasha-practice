@@ -89,7 +89,6 @@ out
 
 # Nuxt.js build / generate output
 .nuxt
-dist
 
 # Gatsby files
 .cache/
@@ -129,21 +128,6 @@ dist
 .yarn/install-state.gz
 .pnp.*
 
-# OS
-.DS_Store
-
-# IDEs and editors
-/.idea
-.project
-.classpath
-.c9/
-*.launch
-.settings/
-*.sublime-workspace
-
-# IDE - VSCode
-.vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
+# Compiled files
+dist
+types
