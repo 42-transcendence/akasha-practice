@@ -5,5 +5,6 @@ import { GameModule } from "./game/game.module";
 
 @Module({
   imports: [forwardRef(() => UserModule), ChatModule, GameModule],
+  exports: [ChatModule, GameModule],
 })
 export class ServiceModule {}

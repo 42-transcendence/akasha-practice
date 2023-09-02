@@ -9,11 +9,14 @@ import {
   NewChatRoomRequest,
   SocialPayload,
 } from "@common/chat-payloads";
-import { ChatWebSocket } from "./chat-websocket";
-import { ByteBuffer, assert } from "akasha-lib";
 import { AccountsService } from "@/user/accounts/accounts.service";
-import { BanType, ChatBan, Prisma } from "@prisma/client";
+import { ActiveStatus, BanType, ChatBan, Prisma } from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import {
+  ActiveStatusNumber,
+  getActiveStatusFromNumber,
+  getActiveStatusNumber,
+} from "@common/generated/types";
 
 /// ChatRoom
 const chatRoomWithMembers = Prisma.validator<Prisma.ChatDefaultArgs>()({
@@ -62,9 +65,6 @@ export function toChatMemberEntry(
 
 @Injectable()
 export class ChatService {
-  private readonly temporaryClients = new Set<ChatWebSocket>();
-  private readonly clients = new Map<number, Set<ChatWebSocket>>();
-  private readonly memberUUIDToId = new Map<string, number>();
   private readonly memberCache = new Map<string, Set<number>>();
 
   constructor(
@@ -72,110 +72,35 @@ export class ChatService {
     private readonly accounts: AccountsService,
   ) {}
 
-  trackClientTemporary(client: ChatWebSocket) {
-    this.temporaryClients.add(client);
+  // forward
+  async getAccountId(accountUUID: string) {
+    return this.accounts.findAccountIdByUUID(accountUUID);
   }
 
-  trackClient(client: ChatWebSocket): void {
-    assert(client.account !== undefined);
-
-    const { id, uuid } = client.account;
-    if (this.temporaryClients.delete(client)) {
-      const clientSet = this.clients.get(id);
-      if (clientSet !== undefined) {
-        clientSet.add(client);
-      } else {
-        this.memberUUIDToId.set(uuid, id);
-        this.clients.set(id, new Set<ChatWebSocket>([client]));
-        client.onFirstConnection();
-      }
-    }
+  // forward
+  async getActiveStatus(accountUUID: string) {
+    const activeStatusRaw = await this.accounts.findActiveStatusByUUID(
+      accountUUID,
+    );
+    return activeStatusRaw !== null
+      ? getActiveStatusNumber(activeStatusRaw)
+      : null;
   }
 
-  untrackClient(client: ChatWebSocket): void {
-    if (client.account !== undefined) {
-      const { id, uuid } = client.account;
-      const clientSet = this.clients.get(id);
-
-      assert(clientSet !== undefined);
-      assert(clientSet.delete(client));
-
-      if (clientSet.size === 0) {
-        client.onLastDisconnect();
-        this.memberUUIDToId.delete(uuid);
-        this.clients.delete(id);
-      }
-    } else {
-      assert(this.temporaryClients.delete(client));
-    }
+  // forward
+  async setActiveStatus(accountUUID: string, activeStatus: ActiveStatusNumber) {
+    return this.accounts.updateActiveStatusByUUID(
+      accountUUID,
+      getActiveStatusFromNumber(activeStatus),
+    );
   }
 
-  sharedAction(
-    id: number,
-    action: (client: ChatWebSocket) => void,
-    except?: ChatWebSocket | undefined,
-  ): boolean {
-    const clientSet = this.clients.get(id);
-    if (clientSet === undefined) {
-      return false;
-    }
-
-    for (const client of clientSet) {
-      if (client !== except) {
-        action(client);
-      }
-    }
-    return true;
-  }
-
-  unicast(
-    id: number,
-    buf: ByteBuffer,
-    except?: ChatWebSocket | undefined,
-  ): boolean {
-    return this.sharedAction(id, (client) => client.sendPayload(buf), except);
-  }
-
-  unicastByAccountUUID(
-    uuid: string,
-    buf: ByteBuffer,
-    except?: ChatWebSocket | undefined,
-  ): boolean {
-    const accountId = this.memberUUIDToId.get(uuid);
-    if (accountId === undefined) {
-      return false;
-    }
-
-    return this.unicast(accountId, buf, except);
-  }
-
-  async multicastToRoom(
-    roomUUID: string,
-    buf: ByteBuffer,
-    exceptAccountId?: number | undefined,
-  ): Promise<number> {
-    let counter: number = 0;
-    const memberSet = await this.getChatMemberSet(roomUUID);
-    for (const memberAccountId of memberSet) {
-      if (memberAccountId === exceptAccountId) {
-        continue;
-      }
-
-      if (this.unicast(memberAccountId, buf, undefined)) {
-        counter++;
-      }
-    }
-    return counter;
-  }
-
-  broadcast(buf: ByteBuffer, except?: ChatWebSocket | undefined): void {
-    for (const [, clientSet] of this.clients) {
-      for (const client of clientSet) {
-        if (client !== except) {
-          client.sendPayload(buf);
-        }
-      }
-    }
+  // forward
+  async setActiveTimestamp(accountUUID: string, force: boolean) {
+    return this.accounts.updateActiveTimestampByUUID(
+      accountUUID,
+      force ? undefined : ActiveStatus.INVISIBLE,
+    );
   }
 
   async loadOwnRoomListByAccountId(
@@ -288,19 +213,6 @@ export class ChatService {
     return { friendList, friendRequestList, enemyList };
   }
 
-  async isFriendByUUID(
-    accountId: number,
-    targetUUID: string,
-  ): Promise<boolean> {
-    const data = await this.prisma.account.findUnique({
-      where: { uuid: targetUUID },
-      select: {
-        friends: { select: { accountId: true }, where: { accountId } },
-      },
-    });
-    return (data?.friends.length ?? 0) !== 0;
-  }
-
   async addFriend(
     accountId: number,
     targetUUID: string,
@@ -336,7 +248,7 @@ export class ChatService {
     targetUUID: string,
     mutationInput: Prisma.FriendUpdateManyMutationInput,
   ): Promise<FriendEntry | null> {
-    const targetId = await this.accounts.findAccountIdByUUID(targetUUID);
+    const targetId = await this.getAccountId(targetUUID);
     if (targetId === null) {
       return null;
     }
@@ -363,6 +275,63 @@ export class ChatService {
       },
     });
     return batch.count !== 0;
+  }
+
+  async isDuplexFriendByUUID(
+    accountId: number,
+    targetUUID: string,
+  ): Promise<boolean> {
+    const data = await this.prisma.account.findUnique({
+      where: { id: accountId },
+      select: {
+        friends: {
+          select: { friendAccountId: true },
+          where: { friendAccount: { uuid: targetUUID } },
+        },
+        friendReferences: {
+          select: { accountId: true },
+          where: { account: { uuid: targetUUID } },
+        },
+      },
+    });
+    return (
+      data !== null &&
+      data.friends.length !== 0 &&
+      data.friendReferences.length !== 0
+    );
+  }
+
+  async getDuplexFriendsByUUID(uuid: string): Promise<FriendEntry[] | null> {
+    const data = await this.prisma.account.findUnique({
+      where: { uuid },
+      select: {
+        friends: { select: { friendAccount: { select: { uuid: true } } } },
+        friendReferences: { include: { account: { select: { uuid: true } } } },
+      },
+    });
+    if (data === null) {
+      return null;
+    }
+
+    const forward = data.friends.reduce(
+      (set, e) => set.add(e.friendAccount.uuid),
+      new Set<string>(),
+    );
+
+    return data.friendReferences
+      .filter((e) => forward.has(e.account.uuid))
+      .map((e) => ({ ...e, uuid: e.account.uuid }));
+  }
+
+  async getDuplexFriendUUIDSetByUUID(
+    uuid: string,
+  ): Promise<Set<string> | null> {
+    const friends = await this.getDuplexFriendsByUUID(uuid);
+    if (friends === null) {
+      return null;
+    }
+
+    return friends.reduce((set, e) => set.add(e.uuid), new Set<string>());
   }
 
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
@@ -488,7 +457,7 @@ export class ChatService {
     modeFlags: number = 0,
   ): Promise<ChatMemberWithRoom | null> {
     try {
-      const accountId = await this.accounts.findAccountIdByUUID(accountUUID);
+      const accountId = await this.getAccountId(accountUUID);
       if (accountId === null) {
         //FIXME: 임시
         return null;
@@ -635,7 +604,7 @@ export class ChatService {
     type: BanType,
   ) {
     try {
-      const accountId = await this.accounts.findAccountIdByUUID(accountUUID);
+      const accountId = await this.getAccountId(accountUUID);
       if (accountId === null) {
         //FIXME: 임시
         return null;

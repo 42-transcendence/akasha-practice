@@ -26,7 +26,7 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     void this.server;
   }
 
-  override handleServiceConnection(client: GameWebSocket): void {
+  override async handleServiceConnection(client: GameWebSocket): Promise<void> {
     Logger.debug(
       `Connection GameWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );
@@ -34,7 +34,7 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     client.injectGameService(this.gameService);
   }
 
-  override handleServiceDisconnect(client: GameWebSocket): void {
+  override async handleServiceDisconnect(client: GameWebSocket): Promise<void> {
     Logger.debug(
       `Disconnect GameWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );

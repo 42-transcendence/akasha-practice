@@ -4,7 +4,12 @@ import {
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
-import { BanType, Prisma, RegistrationState } from "@prisma/client";
+import {
+  ActiveStatus,
+  BanType,
+  Prisma,
+  RegistrationState,
+} from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
 
 const MIN_TAG_NUMBER = 1000;
@@ -150,7 +155,9 @@ export class AccountsService {
         ...authIssuer_authSubject,
         registrationState: RegistrationState.REGISTERED,
         changedTimestamp: new Date(),
-        record: { create: {} },
+        activeStatus: ActiveStatus.ONLINE,
+        activeTimestamp: new Date(),
+        record: { create: { skillRating: 500 } },
       },
       include: {
         bans: {
@@ -169,6 +176,70 @@ export class AccountsService {
         },
       },
     });
+  }
+
+  async findActiveStatusByUUID(uuid: string): Promise<ActiveStatus | null> {
+    const data = await this.prisma.account.findUnique({
+      where: { uuid },
+      select: { activeStatus: true },
+    });
+    return data?.activeStatus ?? null;
+  }
+
+  async updateActiveStatusByUUID(
+    uuid: string,
+    activeStatus: ActiveStatus,
+  ): Promise<void> {
+    const data = await this.prisma.account.update({
+      where: { uuid },
+      data: { activeStatus },
+    });
+    void data;
+  }
+
+  async updateActiveTimestampByUUID(
+    uuid: string,
+    except?: ActiveStatus | undefined,
+  ): Promise<void> {
+    const batch = await this.prisma.account.updateMany({
+      where: {
+        uuid,
+        activeStatus: { not: { equals: except } },
+      },
+      data: { activeTimestamp: new Date() },
+    });
+    void batch;
+  }
+
+  async findFriendActiveFlagsByUUID(
+    uuid: string,
+    friendUUID: string,
+  ): Promise<number | null> {
+    const accountId = await this.findAccountIdByUUIDOrThrow(uuid);
+    if (accountId === null) {
+      return null;
+    }
+    const friendAccountId = await this.findAccountIdByUUIDOrThrow(friendUUID);
+    if (friendAccountId === null) {
+      return null;
+    }
+
+    const reverse = await this.prisma.friend.findUnique({
+      where: {
+        accountId_friendAccountId: {
+          accountId: friendAccountId,
+          friendAccountId: accountId,
+        },
+      },
+      select: {
+        activeFlags: true,
+      },
+    });
+    if (reverse === null) {
+      return null;
+    }
+
+    return reverse.activeFlags;
   }
 
   async updateNickByUUIDAtomic(

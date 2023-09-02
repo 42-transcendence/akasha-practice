@@ -30,6 +30,7 @@ export const enum FriendErrorNumber {
   SUCCESS,
   ERROR_ALREADY_FRIEND,
   ERROR_NOT_FRIEND,
+  ERROR_SELF_FRIEND,
 }
 
 /// EnemyEntry

@@ -7,6 +7,8 @@ import {
   ChatRoomEntry,
   SocialPayload,
 } from "@common/chat-payloads";
+import { ChatServer } from "./chat.server";
+import { ActiveStatusNumber } from "@common/generated/types";
 
 type AccountLink = {
   uuid: string;
@@ -14,30 +16,47 @@ type AccountLink = {
 };
 
 export class ChatWebSocket extends ServiceWebSocketBase {
+  private _backing_server: ChatServer | undefined = undefined;
+  protected get server(): ChatServer {
+    return assert(this._backing_server !== undefined), this._backing_server;
+  }
+
   private _backing_chatService: ChatService | undefined = undefined;
   protected get chatService(): ChatService {
-    assert(this._backing_chatService !== undefined);
-
-    return this._backing_chatService;
-  }
-  private set chatService(value: ChatService) {
-    assert(this._backing_chatService === undefined);
-
-    this._backing_chatService = value;
+    return (
+      assert(this._backing_chatService !== undefined), this._backing_chatService
+    );
   }
 
-  injectChatService(chatService: ChatService): void {
-    this.chatService = chatService;
+  injectProviders(server: ChatServer, chatService: ChatService): void {
+    assert(
+      this._backing_server === undefined &&
+        this._backing_chatService === undefined,
+    );
+    this._backing_server = server;
+    this._backing_chatService = chatService;
   }
 
   account: AccountLink | undefined = undefined;
 
-  onFirstConnection() {}
+  socketActiveStatus = ActiveStatusNumber.ONLINE;
 
-  onLastDisconnect() {}
+  async onFirstConnection() {
+    assert(this.account !== undefined);
+
+    this.chatService.setActiveTimestamp(this.account.uuid, false);
+  }
+
+  async onLastDisconnect() {
+    assert(this.account !== undefined);
+
+    this.chatService.setActiveTimestamp(this.account.uuid, false);
+  }
 
   async initialize(fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[]) {
-    const id = this.account!.id;
+    assert(this.account !== undefined);
+
+    const id = this.account.id;
 
     const chatRoomList: ChatRoomEntry[] =
       await this.chatService.loadOwnRoomListByAccountId(id);

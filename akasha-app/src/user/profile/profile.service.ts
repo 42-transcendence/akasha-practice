@@ -12,17 +12,24 @@ import {
   AccountsService,
 } from "@/user/accounts/accounts.service";
 import { AuthLevel, AuthPayload } from "@common/auth-payloads";
-import { getActiveStatusNumber } from "@common/generated/types";
+import {
+  ActiveStatusNumber,
+  getActiveStatusNumber,
+} from "@common/generated/types";
 import {
   AccountProfilePrivatePayload,
   AccountProfileProtectedPayload,
   AccountProfilePublicPayload,
 } from "@common/profile-payloads";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
+import { ChatServer } from "@/service/chat/chat.server";
 
 @Injectable()
 export class ProfileService {
-  constructor(private readonly accounts: AccountsService) {}
+  constructor(
+    private readonly accounts: AccountsService,
+    private readonly chatServer: ChatServer,
+  ) {}
 
   async getPublicProfile(
     payload: AuthPayload,
@@ -45,11 +52,18 @@ export class ProfileService {
     targetUUID: string,
   ): Promise<AccountProfileProtectedPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      const accountId = await this.accounts.findAccountIdByUUIDOrThrow(
+      if (payload.user_id === targetUUID) {
+        return this.getPrivateProfile(payload);
+      }
+
+      const activeFlags = await this.accounts.findFriendActiveFlagsByUUID(
         payload.user_id,
+        targetUUID,
       );
-      //FIXME: 친구인지, 블랙인지 검사
-      void accountId;
+
+      if (activeFlags === null) {
+        throw new ForbiddenException("Not duplex friend");
+      }
 
       const targetAccount: AccountProtected | null =
         await this.accounts.findAccountProtectedByUUID(targetUUID);
@@ -57,11 +71,28 @@ export class ProfileService {
         throw new NotFoundException();
       }
 
-      //FIXME: activeStatus 변조
+      //FIXME: flags를 enum으로
+
+      let activeStatus: ActiveStatusNumber;
+      if ((activeFlags & 1) !== 0) {
+        activeStatus = await this.getActiveStatusByUUID(targetUUID);
+      } else {
+        // Blind activeStatus
+        activeStatus = ActiveStatusNumber.OFFLINE;
+      }
+
+      let activeTimestamp: Date;
+      if ((activeFlags & 2) !== 0) {
+        activeTimestamp = targetAccount.activeTimestamp;
+      } else {
+        // Blind activeTimestamp
+        activeTimestamp = new Date(0);
+      }
 
       return {
         ...targetAccount,
-        activeStatus: getActiveStatusNumber(targetAccount.activeStatus),
+        activeStatus,
+        activeTimestamp,
       };
     }
     throw new ForbiddenException();
@@ -83,6 +114,36 @@ export class ProfileService {
       };
     }
     throw new ForbiddenException();
+  }
+
+  async getActiveStatusByUUID(uuid: string): Promise<ActiveStatusNumber> {
+    const activeStatus = await this.accounts.findActiveStatusByUUID(uuid);
+    if (activeStatus === null) {
+      throw new NotFoundException();
+    }
+
+    const manualActiveStatus = getActiveStatusNumber(activeStatus);
+    if (manualActiveStatus === ActiveStatusNumber.INVISIBLE) {
+      return ActiveStatusNumber.OFFLINE;
+    }
+
+    // // ActiveStatusNumber.GAME ||| ActiveStatusNumber.MATCHING
+    // const gameActiveStatus = await LocalServer.Games.getActiveStatus(uuid);
+    // if (gameActiveStatus !== undefined) {
+    //   return gameActiveStatus;
+    // }
+
+    // // ActiveStatusNumber.ONLINE ||| ActiveStatusNumber.IDLE ||| ActiveStatusNumber.OFFLINE
+    // const chatActiveStatus = await LocalServer.Chats.getActiveStatus(uuid);
+    const chatActiveStatus = await this.chatServer.getActiveStatus(uuid);
+    if (
+      chatActiveStatus !== ActiveStatusNumber.OFFLINE &&
+      manualActiveStatus !== ActiveStatusNumber.ONLINE
+    ) {
+      return manualActiveStatus;
+    }
+
+    return chatActiveStatus;
   }
 
   async registerNick(

@@ -14,7 +14,6 @@ import {
   RoomErrorNumber,
   readChatRoomChatMessagePair,
 } from "@common/chat-payloads";
-import { AccountsService } from "@/user/accounts/accounts.service";
 import { AuthLevel } from "@common/auth-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
@@ -23,6 +22,8 @@ import {
 } from "@common/chat-constants";
 import { Prisma } from "@prisma/client";
 import * as builder from "./chat-payload-builder";
+import { ChatServer } from "./chat.server";
+import { ActiveStatusNumber } from "@common/generated/types";
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -31,19 +32,19 @@ import * as builder from "./chat-payload-builder";
 })
 export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   constructor(
+    private readonly server: ChatServer,
     private readonly chatService: ChatService,
-    private readonly accounts: AccountsService,
   ) {
     super();
   }
 
-  override handleServiceConnection(client: ChatWebSocket): void {
-    this.chatService.trackClientTemporary(client);
-    client.injectChatService(this.chatService);
+  override async handleServiceConnection(client: ChatWebSocket): Promise<void> {
+    await this.server.trackClientTemporary(client);
+    client.injectProviders(this.server, this.chatService);
   }
 
-  override handleServiceDisconnect(client: ChatWebSocket): void {
-    this.chatService.untrackClient(client);
+  override async handleServiceDisconnect(client: ChatWebSocket): Promise<void> {
+    await this.server.untrackClient(client);
   }
 
   private assertClient(value: unknown, message: string): asserts value {
@@ -58,9 +59,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account === undefined, "Duplicate handshake");
 
     const uuid = client.auth.user_id;
-    const id = await this.accounts.findAccountIdByUUIDOrThrow(uuid);
+    const id = await this.chatService.getAccountId(uuid);
+    this.assertClient(id !== null, "Deleted account");
+
     client.account = { uuid, id };
-    this.chatService.trackClient(client);
+    await this.server.trackClient(client);
 
     const fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[] =
       payload.readArray(readChatRoomChatMessagePair);
@@ -74,6 +77,57 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
   }
 
+  @SubscribeMessage(ChatServerOpcode.ACTIVE_STATUS_MANUAL)
+  async handleActiveStatus(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.account !== undefined, "Invalid state");
+
+    const activeStatus = payload.read1();
+    switch (activeStatus) {
+      case ActiveStatusNumber.ONLINE:
+      case ActiveStatusNumber.IDLE:
+      case ActiveStatusNumber.DO_NOT_DISTURB:
+      case ActiveStatusNumber.INVISIBLE:
+        break;
+      default:
+        throw new PacketHackException(
+          `${ChatGateway.name}: ${this.handleActiveStatus.name}: Illegal active status [${activeStatus}]`,
+        );
+    }
+
+    const prevActiveStatus = await this.chatService.getActiveStatus(
+      client.account.uuid,
+    );
+    if (prevActiveStatus !== activeStatus) {
+      this.chatService.setActiveStatus(client.account.uuid, activeStatus);
+      if (
+        (prevActiveStatus === ActiveStatusNumber.INVISIBLE) !==
+        (activeStatus === ActiveStatusNumber.INVISIBLE)
+      ) {
+        this.chatService.setActiveTimestamp(client.account.uuid, true);
+      }
+      this.server.multicastToFriend(
+        client.account.uuid,
+        builder.makeUpdateFriendActiveStatus(client.account.uuid),
+        1, //FIXME: flags를 enum으로
+      );
+    }
+  }
+
+  @SubscribeMessage(ChatServerOpcode.IDLE_AUTO)
+  async handleIdleAuto(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.account !== undefined, "Invalid state");
+
+    const idle = payload.readBoolean();
+    client.socketActiveStatus = idle
+      ? ActiveStatusNumber.IDLE
+      : ActiveStatusNumber.ONLINE;
+    this.server.multicastToFriend(
+      client.account.uuid,
+      builder.makeUpdateFriendActiveStatus(client.account.uuid),
+      1, //FIXME: flags를 enum으로
+    );
+  }
+
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)
   async handleAddFriend(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.account !== undefined, "Invalid state");
@@ -82,23 +136,36 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const groupName = payload.readString();
     const activeFlags = payload.read1();
 
+    if (targetUUID === client.account.uuid) {
+      return builder.makeAddFriendFailedResult(
+        FriendErrorNumber.ERROR_SELF_FRIEND,
+      );
+    }
     const entry = await this.chatService.addFriend(
       client.account.id,
       targetUUID,
       groupName,
       activeFlags,
     );
-
     if (entry === null) {
       return builder.makeAddFriendFailedResult(
         FriendErrorNumber.ERROR_ALREADY_FRIEND,
       );
     }
-    void this.chatService.unicastByAccountUUID(
-      targetUUID,
-      builder.makeFriendRequest(client.account.uuid),
-    );
-    void this.chatService.unicast(
+    if (
+      await this.chatService.isDuplexFriendByUUID(client.account.id, targetUUID)
+    ) {
+      void this.server.unicastByAccountUUID(
+        targetUUID,
+        builder.makeUpdateFriendActiveStatus(client.account.uuid),
+      );
+    } else {
+      void this.server.unicastByAccountUUID(
+        targetUUID,
+        builder.makeFriendRequest(client.account.uuid),
+      );
+    }
+    void this.server.unicast(
       client.account.id,
       builder.makeAddFriendSuccessResult(entry),
     );
@@ -111,13 +178,14 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.account !== undefined, "Invalid state");
 
     const targetUUID = payload.readUUID();
-    const modifyFlag = payload.read1();
+    //FIXME: flags를 enum으로
+    const modifyFlags = payload.read1();
     const mutate: Prisma.FriendUpdateManyMutationInput = {};
-    if ((modifyFlag & 1) !== 0) {
+    if ((modifyFlags & 1) !== 0) {
       const groupName = payload.readString();
       mutate.groupName = groupName;
     }
-    if ((modifyFlag & 2) !== 0) {
+    if ((modifyFlags & 2) !== 0) {
       const activeFlags = payload.read1();
       mutate.activeFlags = activeFlags;
     }
@@ -133,11 +201,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         FriendErrorNumber.ERROR_NOT_FRIEND,
       );
     }
-    void this.chatService.unicastByAccountUUID(
+    void this.server.unicastByAccountUUID(
       targetUUID,
       builder.makeUpdateFriendActiveStatus(client.account.uuid),
     );
-    void this.chatService.unicast(
+    void this.server.unicast(
       client.account.id,
       builder.makeModifyFriendSuccessResult(targetUUID, entry),
     );
@@ -157,11 +225,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
     void success;
 
-    void this.chatService.unicastByAccountUUID(
+    void this.server.unicastByAccountUUID(
       targetUUID,
       builder.makeDeleteFriendSuccessResult(client.account.uuid),
     );
-    void this.chatService.unicast(
+    void this.server.unicast(
       client.account.id,
       builder.makeDeleteFriendSuccessResult(targetUUID),
     );
@@ -276,7 +344,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       undefined,
     );
 
-    void this.chatService.multicastToRoom(
+    void this.server.multicastToRoom(
       roomUUID,
       builder.makeInsertRoom(room, messages),
     );
@@ -308,11 +376,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         roomUUID,
         undefined,
       );
-      void this.chatService.unicast(
+      void this.server.unicast(
         member.accountId,
         builder.makeInsertRoom(member.chat, messages),
       );
-      void this.chatService.multicastToRoom(
+      void this.server.multicastToRoom(
         roomUUID,
         builder.makeInsertRoomMember(roomUUID, member),
         member.accountId,
@@ -327,7 +395,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           `${client.account.uuid}님이 입장했습니다.`,
           1, //FIXME: 입장 메시지 타입
         );
-        void this.chatService.multicastToRoom(
+        void this.server.multicastToRoom(
           roomUUID,
           builder.makeChatMessagePayload(message),
         );
@@ -354,11 +422,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     //FIXME: 실패한 이유
     let errno = RoomErrorNumber.SUCCESS;
     if (success) {
-      void this.chatService.unicast(
+      void this.server.unicast(
         client.account.id,
         builder.makeRemoveRoom(roomUUID),
       );
-      void this.chatService.multicastToRoom(
+      void this.server.multicastToRoom(
         roomUUID,
         builder.makeRemoveRoomMember(roomUUID, client.account.uuid),
       );
@@ -372,7 +440,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           `${client.account.uuid}님이 퇴장했습니다.`,
           2, //FIXME: 퇴장 메시지 타입
         );
-        void this.chatService.multicastToRoom(
+        void this.server.multicastToRoom(
           roomUUID,
           builder.makeChatMessagePayload(message),
         );
@@ -407,11 +475,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         roomUUID,
         undefined,
       );
-      void this.chatService.unicast(
+      void this.server.unicast(
         member.accountId,
         builder.makeInsertRoom(member.chat, messages),
       );
-      void this.chatService.multicastToRoom(
+      void this.server.multicastToRoom(
         roomUUID,
         builder.makeInsertRoomMember(roomUUID, member),
         member.accountId,
@@ -426,7 +494,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           `${targetUUID}님을 초대했습니다.`,
           4, //FIXME: 초대 메시지 타입
         );
-        void this.chatService.multicastToRoom(
+        void this.server.multicastToRoom(
           roomUUID,
           builder.makeChatMessagePayload(message),
         );
@@ -452,7 +520,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.account.id,
       content,
     );
-    this.chatService.multicastToRoom(
+    this.server.multicastToRoom(
       roomUUID,
       builder.makeChatMessagePayload(message),
     );
@@ -469,7 +537,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       lastMessageId,
     );
     void success;
-    this.chatService.unicast(
+    this.server.unicast(
       client.account.id,
       builder.makeSyncCursorPayload(lastMessageId),
       client,
