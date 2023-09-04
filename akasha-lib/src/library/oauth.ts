@@ -555,7 +555,7 @@ export class OAuth {
     param: TokenRequest
   ): Promise<TokenSuccessfulResponse> {
     const method = "POST";
-    const headers = new URLSearchParams();
+    const headers = new Headers();
     const body = new URLSearchParams();
 
     headers.set(

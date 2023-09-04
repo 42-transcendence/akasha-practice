@@ -169,7 +169,8 @@ npm install -g \
 	npm \
 	pnpm \
 	@nestjs/cli \
-;
+&&
+pnpm config set store-dir "$SETUP_DIRECTORY/.pnpm-store"
 
 ## NextJS
 # pnpm create next-app
