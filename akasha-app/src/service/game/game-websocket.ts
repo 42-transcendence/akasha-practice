@@ -4,6 +4,7 @@ import { GameService } from "./game.service";
 
 export class GameWebSocket extends ServiceWebSocketBase {
   _backing_gameService: GameService | undefined = undefined;
+  uuid: string = '';
   protected get gameService(): GameService {
     assert(this._backing_gameService !== undefined);
 
