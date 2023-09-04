@@ -8,7 +8,9 @@ import { ChatWebSocket } from "./chat-websocket";
 import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatRoomChatMessagePairEntry,
+  FriendActiveFlags,
   FriendErrorNumber,
+  FriendModifyFlags,
   RoomErrorNumber,
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
@@ -103,7 +105,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       this.server.multicastToFriend(
         client.accountId,
         builder.makeUpdateFriendActiveStatus(client.accountId),
-        1, //FIXME: flags를 enum으로
+        FriendActiveFlags.SHOW_ACTIVE_STATUS,
       );
     }
   }
@@ -119,7 +121,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.server.multicastToFriend(
       client.accountId,
       builder.makeUpdateFriendActiveStatus(client.accountId),
-      1, //FIXME: flags를 enum으로
+      FriendActiveFlags.SHOW_ACTIVE_STATUS,
     );
   }
 
@@ -173,14 +175,13 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
-    //FIXME: flags를 enum으로
     const modifyFlags = payload.read1();
     let groupName: string | undefined;
-    if ((modifyFlags & 1) !== 0) {
+    if ((modifyFlags & FriendModifyFlags.MODIFY_GROUP_NAME) !== 0) {
       groupName = payload.readString();
     }
     let activeFlags: number | undefined;
-    if ((modifyFlags & 2) !== 0) {
+    if ((modifyFlags & FriendModifyFlags.MODIFY_ACTIVE_FLAGS) !== 0) {
       activeFlags = payload.read1();
     }
 

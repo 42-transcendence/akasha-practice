@@ -105,7 +105,7 @@ export class ChatServer {
   async multicastToFriend(
     id: string,
     buf: ByteBuffer,
-    activeFlags?: number | undefined, //FIXME: flags를 enum으로
+    activeFlags?: number | undefined,
   ): Promise<number> {
     let counter = 0;
     const duplexFriends = await this.service.getDuplexFriends(id);

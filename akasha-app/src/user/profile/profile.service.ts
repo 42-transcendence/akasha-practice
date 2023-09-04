@@ -23,6 +23,7 @@ import {
 } from "@common/profile-payloads";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
+import { FriendActiveFlags } from "@common/chat-payloads";
 
 @Injectable()
 export class ProfileService {
@@ -71,21 +72,19 @@ export class ProfileService {
         throw new NotFoundException();
       }
 
-      //FIXME: flags를 enum으로
-
       let activeStatus: ActiveStatusNumber;
-      if ((activeFlags & 1) !== 0) {
+      if ((activeFlags & FriendActiveFlags.SHOW_ACTIVE_STATUS) !== 0) {
         activeStatus = await this.getActiveStatus(targetAccountId);
       } else {
-        // Blind activeStatus
+        // Hide activeStatus
         activeStatus = ActiveStatusNumber.OFFLINE;
       }
 
       let activeTimestamp: Date;
-      if ((activeFlags & 2) !== 0) {
+      if ((activeFlags & FriendActiveFlags.SHOW_ACTIVE_TIMESTAMP) !== 0) {
         activeTimestamp = targetAccount.activeTimestamp;
       } else {
-        // Blind activeTimestamp
+        // Hide activeTimestamp
         activeTimestamp = new Date(0);
       }
 

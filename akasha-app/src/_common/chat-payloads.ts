@@ -10,8 +10,14 @@ import { ByteBuffer, NULL_UUID } from "akasha-lib";
 /// FriendActiveFlags
 export const FRIEND_ACTIVE_FLAGS_SIZE = 8;
 export const enum FriendActiveFlags {
-  HIDE_ACTIVE_STATUS = 1 << 0,
-  HIDE_ACTIVE_TIMESTAMP = 1 << 1,
+  SHOW_ACTIVE_STATUS = 1 << 0,
+  SHOW_ACTIVE_TIMESTAMP = 1 << 1,
+}
+
+/// FriendModifyFlags
+export const enum FriendModifyFlags {
+  MODIFY_GROUP_NAME = 1 << 0,
+  MODIFY_ACTIVE_FLAGS = 1 << 1,
 }
 
 /// FriendEntry
