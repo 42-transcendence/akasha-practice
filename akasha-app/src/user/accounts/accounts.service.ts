@@ -6,18 +6,20 @@ import {
 } from "@nestjs/common";
 import {
   ActiveStatus,
-  BanType,
+  BanCategory,
   Prisma,
   RegistrationState,
 } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
+import { fromBitsString } from "akasha-lib";
+import { FRIEND_ACTIVE_FLAGS_SIZE } from "@/_common/chat-payloads";
 
 const MIN_TAG_NUMBER = 1000;
 const MAX_TAG_NUMBER = 9999;
 
 /// AccountPublic
 const accountPublic = Prisma.validator<Prisma.AccountDefaultArgs>()({
-  select: { uuid: true, nickName: true, nickTag: true, avatarKey: true },
+  select: { id: true, nickName: true, nickTag: true, avatarKey: true },
 });
 export type AccountPublic = Prisma.AccountGetPayload<typeof accountPublic>;
 
@@ -40,28 +42,20 @@ const accountPrivate = Prisma.validator<Prisma.AccountDefaultArgs>()({
 });
 export type AccountPrivate = Prisma.AccountGetPayload<typeof accountPrivate>;
 
-/// AccountWithBans
-const accountWithBans = Prisma.validator<Prisma.AccountDefaultArgs>()({
-  include: { bans: true },
+/// AccountForAuth
+const accountForAuth = Prisma.validator<Prisma.AccountDefaultArgs>()({
+  include: { otpSecret: true, bans: true },
 });
-export type AccountWithBans = Prisma.AccountGetPayload<typeof accountWithBans>;
+export type AccountForAuth = Prisma.AccountGetPayload<typeof accountForAuth>;
 
 const activeBanCondition = (): Prisma.BanWhereInput => ({
   AND: [
-    { type: BanType.ACCESS },
+    { category: BanCategory.ACCESS },
     {
       OR: [{ expireTimestamp: null }, { expireTimestamp: { gte: new Date() } }],
     },
   ],
 });
-
-/// AccountIdAndUUID
-const accountIdAndUUID = Prisma.validator<Prisma.AccountDefaultArgs>()({
-  select: { id: true, uuid: true },
-});
-export type AccountIdAndUUID = Prisma.AccountGetPayload<
-  typeof accountIdAndUUID
->;
 
 /// AccountNickNameAndTag
 const accountNickNameAndTag = Prisma.validator<Prisma.AccountDefaultArgs>()({
@@ -75,77 +69,39 @@ export type AccountNickNameAndTag = Prisma.AccountGetPayload<
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async isExistsAccountByUUID(uuid: string): Promise<boolean> {
+  async isExistsAccount(id: string): Promise<boolean> {
     const account = await this.prisma.account.findUnique({
-      where: { uuid },
-      select: { uuid: true },
+      where: { id },
+      select: { id: true },
     });
     return account !== null;
   }
 
-  async findAccountIdByUUID(uuid: string): Promise<number | null> {
-    const account = await this.prisma.account.findUnique({
-      where: { uuid },
-      select: { id: true },
-    });
-    return account?.id ?? null;
-  }
-
-  async findAccountIdByUUIDOrThrow(uuid: string): Promise<number> {
-    const account = await this.prisma.account.findUniqueOrThrow({
-      where: { uuid },
-      select: { id: true },
-    });
-    return account.id;
-  }
-
-  async findAccountIdByUUIDMany(
-    uuidArray: string[],
-  ): Promise<AccountIdAndUUID[]> {
-    const pairs = await this.prisma.account.findMany({
-      ...accountIdAndUUID,
-      where: { uuid: { in: uuidArray } },
-    });
-    return pairs;
-  }
-
-  async findAccountPublicByUUID(uuid: string): Promise<AccountPublic | null> {
+  async findAccountPublic(id: string): Promise<AccountPublic | null> {
     return await this.prisma.account.findUnique({
-      where: { uuid },
+      where: { id },
       ...accountPublic,
     });
   }
 
-  async findAccountProtectedByUUID(
-    uuid: string,
-  ): Promise<AccountProtected | null> {
+  async findAccountProtected(id: string): Promise<AccountProtected | null> {
     return await this.prisma.account.findUnique({
-      where: { uuid },
+      where: { id },
       ...accountProtected,
     });
   }
 
-  async findAccountPrivateByUUID(uuid: string): Promise<AccountPrivate | null> {
+  async findAccountPrivate(id: string): Promise<AccountPrivate | null> {
     return await this.prisma.account.findUnique({
-      where: { uuid },
+      where: { id },
       ...accountPrivate,
     });
-  }
-
-  async makeAccountIdToUUIDDictionary(
-    uuidArray: string[],
-  ): Promise<Map<string, number>> {
-    const pairs = await this.findAccountIdByUUIDMany(uuidArray);
-    return pairs.reduce(
-      (map, e) => map.set(e.uuid, e.id),
-      new Map<string, number>(),
-    );
   }
 
   async findOrCreateAccountForAuth(
     authIssuer: number,
     authSubject: string,
-  ): Promise<AccountWithBans> {
+  ): Promise<AccountForAuth> {
     const authIssuer_authSubject: Prisma.AccountAuthIssuerAuthSubjectCompoundUniqueInput =
       { authIssuer, authSubject };
     return await this.prisma.account.upsert({
@@ -157,9 +113,10 @@ export class AccountsService {
         changedTimestamp: new Date(),
         activeStatus: ActiveStatus.ONLINE,
         activeTimestamp: new Date(),
-        record: { create: { skillRating: 500 } },
+        record: { create: { skillRating: 500 } }, //FIXME: Magic Number
       },
       include: {
+        otpSecret: true,
         bans: {
           where: activeBanCondition(),
         },
@@ -167,10 +124,11 @@ export class AccountsService {
     });
   }
 
-  async findAccountForAuth(id: number): Promise<AccountWithBans | null> {
+  async findAccountForAuth(id: string): Promise<AccountForAuth | null> {
     return await this.prisma.account.findUnique({
       where: { id },
       include: {
+        otpSecret: true,
         bans: {
           where: activeBanCondition(),
         },
@@ -178,32 +136,32 @@ export class AccountsService {
     });
   }
 
-  async findActiveStatusByUUID(uuid: string): Promise<ActiveStatus | null> {
+  async findActiveStatus(id: string): Promise<ActiveStatus | null> {
     const data = await this.prisma.account.findUnique({
-      where: { uuid },
+      where: { id },
       select: { activeStatus: true },
     });
     return data?.activeStatus ?? null;
   }
 
-  async updateActiveStatusByUUID(
-    uuid: string,
+  async updateActiveStatus(
+    id: string,
     activeStatus: ActiveStatus,
   ): Promise<void> {
     const data = await this.prisma.account.update({
-      where: { uuid },
+      where: { id },
       data: { activeStatus },
     });
     void data;
   }
 
-  async updateActiveTimestampByUUID(
-    uuid: string,
+  async updateActiveTimestamp(
+    id: string,
     except?: ActiveStatus | undefined,
   ): Promise<void> {
     const batch = await this.prisma.account.updateMany({
       where: {
-        uuid,
+        id,
         activeStatus: { not: { equals: except } },
       },
       data: { activeTimestamp: new Date() },
@@ -211,24 +169,15 @@ export class AccountsService {
     void batch;
   }
 
-  async findFriendActiveFlagsByUUID(
-    uuid: string,
-    friendUUID: string,
+  async findFriendActiveFlags(
+    id: string,
+    friendId: string,
   ): Promise<number | null> {
-    const accountId = await this.findAccountIdByUUIDOrThrow(uuid);
-    if (accountId === null) {
-      return null;
-    }
-    const friendAccountId = await this.findAccountIdByUUIDOrThrow(friendUUID);
-    if (friendAccountId === null) {
-      return null;
-    }
-
     const reverse = await this.prisma.friend.findUnique({
       where: {
         accountId_friendAccountId: {
-          accountId: friendAccountId,
-          friendAccountId: accountId,
+          accountId: friendId,
+          friendAccountId: id,
         },
       },
       select: {
@@ -239,11 +188,11 @@ export class AccountsService {
       return null;
     }
 
-    return reverse.activeFlags;
+    return fromBitsString(reverse.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE);
   }
 
-  async updateNickByUUIDAtomic(
-    uuid: string,
+  async updateNickAtomic(
+    id: string,
     name: string,
     tagHint: number | undefined,
     overwrite: boolean,
@@ -251,7 +200,7 @@ export class AccountsService {
     const data = await this.prisma.$transaction(async (tx) => {
       // 1. Check Exists Account
       const prev = await tx.account.findUnique({
-        where: { uuid },
+        where: { id },
         select: { nickName: true },
       });
       if (prev === null) {
@@ -283,7 +232,7 @@ export class AccountsService {
 
       // 3. Update Nick
       return await tx.account.update({
-        where: { uuid },
+        where: { id },
         data: {
           nickName: name,
           nickTag: tagNumber,
@@ -295,14 +244,14 @@ export class AccountsService {
     return data;
   }
 
-  async updateAvatarByUUIDAtomic(
-    uuid: string,
+  async updateAvatarAtomic(
+    id: string,
     avatarData: Buffer | null,
   ): Promise<string | null> {
     const data = await this.prisma.$transaction(async (tx) => {
       // 1. Check Exists Account
       const prev = await tx.account.findUnique({
-        where: { uuid },
+        where: { id },
         select: { avatarKey: true },
       });
       if (prev === null) {
@@ -323,7 +272,7 @@ export class AccountsService {
           data: { data: avatarData },
         });
         const data = await tx.account.update({
-          where: { uuid },
+          where: { id },
           data: { avatarKey: ins.id },
           select: { avatarKey: true },
         });

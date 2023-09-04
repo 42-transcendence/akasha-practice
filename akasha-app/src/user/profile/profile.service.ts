@@ -33,11 +33,11 @@ export class ProfileService {
 
   async getPublicProfile(
     payload: AuthPayload,
-    targetUUID: string,
+    targetAccountId: string,
   ): Promise<AccountProfilePublicPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
       const targetAccount: AccountPublic | null =
-        await this.accounts.findAccountPublicByUUID(targetUUID);
+        await this.accounts.findAccountPublic(targetAccountId);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
@@ -49,16 +49,16 @@ export class ProfileService {
 
   async getProtectedProfile(
     payload: AuthPayload,
-    targetUUID: string,
+    targetAccountId: string,
   ): Promise<AccountProfileProtectedPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      if (payload.user_id === targetUUID) {
+      if (payload.user_id === targetAccountId) {
         return this.getPrivateProfile(payload);
       }
 
-      const activeFlags = await this.accounts.findFriendActiveFlagsByUUID(
+      const activeFlags = await this.accounts.findFriendActiveFlags(
         payload.user_id,
-        targetUUID,
+        targetAccountId,
       );
 
       if (activeFlags === null) {
@@ -66,7 +66,7 @@ export class ProfileService {
       }
 
       const targetAccount: AccountProtected | null =
-        await this.accounts.findAccountProtectedByUUID(targetUUID);
+        await this.accounts.findAccountProtected(targetAccountId);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
@@ -75,7 +75,7 @@ export class ProfileService {
 
       let activeStatus: ActiveStatusNumber;
       if ((activeFlags & 1) !== 0) {
-        activeStatus = await this.getActiveStatusByUUID(targetUUID);
+        activeStatus = await this.getActiveStatus(targetAccountId);
       } else {
         // Blind activeStatus
         activeStatus = ActiveStatusNumber.OFFLINE;
@@ -103,7 +103,7 @@ export class ProfileService {
   ): Promise<AccountProfilePrivatePayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
       const targetAccount: AccountPrivate | null =
-        await this.accounts.findAccountPrivateByUUID(payload.user_id);
+        await this.accounts.findAccountPrivate(payload.user_id);
       if (targetAccount === null) {
         throw new NotFoundException();
       }
@@ -116,8 +116,8 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async getActiveStatusByUUID(uuid: string): Promise<ActiveStatusNumber> {
-    const activeStatus = await this.accounts.findActiveStatusByUUID(uuid);
+  async getActiveStatus(targetAccountId: string): Promise<ActiveStatusNumber> {
+    const activeStatus = await this.accounts.findActiveStatus(targetAccountId);
     if (activeStatus === null) {
       throw new NotFoundException();
     }
@@ -128,14 +128,15 @@ export class ProfileService {
     }
 
     // // ActiveStatusNumber.GAME ||| ActiveStatusNumber.MATCHING
-    // const gameActiveStatus = await LocalServer.Games.getActiveStatus(uuid);
+    // const gameActiveStatus = await LocalServer.Games.getActiveStatus(targetAccountId);
     // if (gameActiveStatus !== undefined) {
     //   return gameActiveStatus;
     // }
 
     // // ActiveStatusNumber.ONLINE ||| ActiveStatusNumber.IDLE ||| ActiveStatusNumber.OFFLINE
-    // const chatActiveStatus = await LocalServer.Chats.getActiveStatus(uuid);
-    const chatActiveStatus = await this.chatServer.getActiveStatus(uuid);
+    // const chatActiveStatus = await LocalServer.Chats.getActiveStatus(targetAccountId);
+    const chatActiveStatus =
+      await this.chatServer.getActiveStatus(targetAccountId);
     if (
       chatActiveStatus !== ActiveStatusNumber.OFFLINE &&
       manualActiveStatus !== ActiveStatusNumber.ONLINE
@@ -155,7 +156,7 @@ export class ProfileService {
         throw new BadRequestException();
       }
 
-      return await this.accounts.updateNickByUUIDAtomic(
+      return await this.accounts.updateNickAtomic(
         payload.user_id,
         name,
         undefined,
@@ -170,7 +171,7 @@ export class ProfileService {
     avatarData: Buffer | null,
   ): Promise<string | null> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      const key = await this.accounts.updateAvatarByUUIDAtomic(
+      const key = await this.accounts.updateAvatarAtomic(
         payload.user_id,
         avatarData,
       );

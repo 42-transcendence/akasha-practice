@@ -58,7 +58,7 @@ export class SessionsService {
     }
   }
 
-  async createNewSession(accountId: number): Promise<Session> {
+  async createNewSession(accountId: string): Promise<Session> {
     return await this.prisma.session.create({
       data: { accountId, isValid: true },
     });

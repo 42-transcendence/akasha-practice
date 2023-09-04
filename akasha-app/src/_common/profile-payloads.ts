@@ -1,12 +1,9 @@
-import { AccountEntity, BanTypeNumber } from "./generated/types";
-
-/// AccountUUID
-export type AccountUUID = Pick<AccountEntity, "uuid">;
+import { AccountEntity, BanCategoryNumber } from "./generated/types";
 
 /// AccountProfilePublicPayload
 export type AccountProfilePublicPayload = Pick<
   AccountEntity,
-  "uuid" | "nickName" | "nickTag" | "avatarKey"
+  "id" | "nickName" | "nickTag" | "avatarKey"
 >;
 
 /// AccountProfileProtectedPayload
@@ -18,7 +15,7 @@ export type AccountProfilePrivatePayload = AccountProfileProtectedPayload;
 
 /// BanSummaryPayload
 export type BanSummaryPayload = {
-  type: BanTypeNumber;
+  category: BanCategoryNumber;
   reason: string;
   expireTimestamp: Date | null;
 };

@@ -1,3 +1,4 @@
+import { assert } from "./assert";
 import { toHexString } from "./hex";
 import {
   InvalidUUIDError,
@@ -5,6 +6,18 @@ import {
   stringifyUUID,
   validateUUID,
 } from "./uuid";
+
+export function toBitsString(flags: number, size: number): string {
+  assert(Number.isSafeInteger(flags));
+  assert(flags >= 0 && flags < 2 ** size);
+  return flags.toString(2).padStart(size, "0");
+}
+
+export function fromBitsString(flags: string, size: number): number {
+  assert(/^[01]+$/.test(flags));
+  assert(flags.length <= size);
+  return parseInt(flags, 2);
+}
 
 export class ByteBufferUnderflowError extends Error {
   override get name() {
@@ -259,7 +272,7 @@ export class ByteBuffer {
     const this_reader = reader.bind(this);
     if (nullValue !== undefined) {
       const value = this_reader(this);
-	  return value !== nullValue ? value : null;
+      return value !== nullValue ? value : null;
     } else {
       if (this.readBoolean()) {
         const value = this_reader(this);

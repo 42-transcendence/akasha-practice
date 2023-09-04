@@ -7,8 +7,7 @@ import { ActiveStatusNumber } from "@common/generated/types";
 @Injectable()
 export class ChatServer {
   private readonly temporaryClients = new Set<ChatWebSocket>();
-  private readonly clients = new Map<number, Set<ChatWebSocket>>();
-  private readonly memberUUIDToId = new Map<string, number>();
+  private readonly clients = new Map<string, Set<ChatWebSocket>>();
 
   constructor(private readonly service: ChatService) {}
 
@@ -17,15 +16,14 @@ export class ChatServer {
   }
 
   async trackClient(client: ChatWebSocket): Promise<void> {
-    assert(client.account !== undefined);
+    assert(client.accountId !== undefined);
 
-    const { id, uuid } = client.account;
+    const id = client.accountId;
     if (this.temporaryClients.delete(client)) {
       const clientSet = this.clients.get(id);
       if (clientSet !== undefined) {
         clientSet.add(client);
       } else {
-        this.memberUUIDToId.set(uuid, id);
         this.clients.set(id, new Set<ChatWebSocket>([client]));
         await client.onFirstConnection();
       }
@@ -33,8 +31,8 @@ export class ChatServer {
   }
 
   async untrackClient(client: ChatWebSocket): Promise<void> {
-    if (client.account !== undefined) {
-      const { id, uuid } = client.account;
+    if (client.accountId !== undefined) {
+      const id = client.accountId;
       const clientSet = this.clients.get(id);
 
       assert(clientSet !== undefined);
@@ -42,7 +40,6 @@ export class ChatServer {
 
       if (clientSet.size === 0) {
         await client.onLastDisconnect();
-        this.memberUUIDToId.delete(uuid);
         this.clients.delete(id);
       }
     } else {
@@ -51,7 +48,7 @@ export class ChatServer {
   }
 
   sharedAction(
-    id: number,
+    id: string,
     action: (client: ChatWebSocket) => void,
     except?: ChatWebSocket | undefined,
   ): boolean {
@@ -69,24 +66,11 @@ export class ChatServer {
   }
 
   unicast(
-    id: number,
+    id: string,
     buf: ByteBuffer,
     except?: ChatWebSocket | undefined,
   ): boolean {
     return this.sharedAction(id, (client) => client.sendPayload(buf), except);
-  }
-
-  unicastByAccountUUID(
-    uuid: string,
-    buf: ByteBuffer,
-    except?: ChatWebSocket | undefined,
-  ): boolean {
-    const accountId = this.memberUUIDToId.get(uuid);
-    if (accountId === undefined) {
-      return false;
-    }
-
-    return this.unicast(accountId, buf, except);
   }
 
   broadcast(buf: ByteBuffer, except?: ChatWebSocket | undefined): void {
@@ -100,12 +84,12 @@ export class ChatServer {
   }
 
   async multicastToRoom(
-    roomUUID: string,
+    chatId: string,
     buf: ByteBuffer,
-    exceptAccountId?: number | undefined,
+    exceptAccountId?: string | undefined,
   ): Promise<number> {
     let counter = 0;
-    const memberSet = await this.service.getChatMemberSet(roomUUID);
+    const memberSet = await this.service.getChatMemberSet(chatId);
     for (const memberAccountId of memberSet) {
       if (memberAccountId === exceptAccountId) {
         continue;
@@ -119,38 +103,29 @@ export class ChatServer {
   }
 
   async multicastToFriend(
-    accountUUID: string,
+    id: string,
     buf: ByteBuffer,
     activeFlags?: number | undefined, //FIXME: flags를 enum으로
   ): Promise<number> {
     let counter = 0;
-    const duplexFriends = await this.service.getDuplexFriendsByUUID(
-      accountUUID,
-    );
-    if (duplexFriends !== null) {
-      for (const friend of duplexFriends) {
-        if (
-          activeFlags !== undefined &&
-          (friend.activeFlags & activeFlags) !== activeFlags
-        ) {
-          continue;
-        }
+    const duplexFriends = await this.service.getDuplexFriends(id);
+    for (const friend of duplexFriends) {
+      if (
+        activeFlags !== undefined &&
+        (friend.activeFlags & activeFlags) !== activeFlags
+      ) {
+        continue;
+      }
 
-        if (this.unicastByAccountUUID(friend.uuid, buf, undefined)) {
-          counter++;
-        }
+      if (this.unicast(friend.friendAccountId, buf, undefined)) {
+        counter++;
       }
     }
     return counter;
   }
 
-  async getActiveStatus(accountUUID: string): Promise<ActiveStatusNumber> {
-    const accountId = this.memberUUIDToId.get(accountUUID);
-    if (accountId === undefined) {
-      return ActiveStatusNumber.OFFLINE;
-    }
-
-    const clientSet = this.clients.get(accountId);
+  async getActiveStatus(id: string): Promise<ActiveStatusNumber> {
+    const clientSet = this.clients.get(id);
     if (clientSet === undefined) {
       return ActiveStatusNumber.OFFLINE;
     }

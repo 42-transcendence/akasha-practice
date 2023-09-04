@@ -16,6 +16,7 @@ generator akasha_generator {
 
 enum Role {
   USER
+  MANAGER
   ADMINISTRATOR
 
   @@map("role")
@@ -45,21 +46,29 @@ enum ActiveStatus {
   @@schema("services")
 }
 
-enum BanType {
+enum BanCategory {
   ACCESS
   COMMIT
 
-  @@map("ban_type")
+  @@map("ban_category")
+  @@schema("services")
+}
+
+enum MessageType {
+  REGULAR
+  NOTICE
+
+  @@map("message_type")
   @@schema("services")
 }
 
 model Account {
-  id                    Int               @id @default(autoincrement())
-  uuid                  String            @unique @default(uuid()) @db.Uuid
+  id                    String            @id @default(uuid()) @db.Uuid
   // Authentication
   authIssuer            Int
   authSubject           String            @db.VarChar(256)
-  otpSecret             String?           @db.VarChar(512)
+  otpSecret             Secret?           @relation(fields: [otpSecretKey], references: [id], onDelete: Restrict)
+  otpSecretKey          String?           @db.VarChar(21)
   // Register
   createdTimestamp      DateTime          @default(now())
   changedTimestamp      DateTime          @default(now())
@@ -68,7 +77,7 @@ model Account {
   nickName              String?
   nickTag               Int               @default(0)
   avatar                Avatar?           @relation(fields: [avatarKey], references: [id], onDelete: SetNull)
-  avatarKey             String?           @db.VarChar(512)
+  avatarKey             String?           @db.VarChar(21)
   role                  Role              @default(USER)
   record                Record?
   // Status
@@ -76,7 +85,6 @@ model Account {
   activeTimestamp       DateTime          @default(now())
   statusMessage         String            @default("")
   sessions              Session[]
-  devices               Device[]          @relation("AccountsDevices")
   // Social
   friends               Friend[]          @relation("FriendList")
   friendReferences      Friend[]          @relation("FriendReference")
@@ -93,8 +101,6 @@ model Account {
   gameQueue             GameQueue?
   gameMember            GameMember?
   gameHistory           GameHistory[]
-  currentGameDevice     Device?           @relation("CurrentGameDevice", fields: [currentGameDeviceId], references: [id])
-  currentGameDeviceId   Int?              @unique
 
   @@unique([authIssuer, authSubject])
   @@index(nickName)
@@ -104,7 +110,7 @@ model Account {
 }
 
 model Authorization {
-  id               String   @id @default(nanoid())
+  id               String   @id @default(nanoid()) @db.VarChar(21)
   endpointKey      String
   redirectURI      String
   createdTimestamp DateTime @default(now())
@@ -116,8 +122,8 @@ model Authorization {
 model Session {
   id               Int      @id @default(autoincrement())
   account          Account  @relation(fields: [accountId], references: [id])
-  accountId        Int
-  token            String   @unique @default(nanoid(128))
+  accountId        String   @db.Uuid
+  token            String   @unique @default(nanoid(128)) @db.VarChar(128)
   createdTimestamp DateTime @default(now())
   successor        Session? @relation("SessionHistory")
   predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
@@ -128,24 +134,20 @@ model Session {
   @@schema("services")
 }
 
-model Device {
-  id               Int       @id @default(autoincrement())
-  fingerprint      String    @unique @default(nanoid())
-  createdTimestamp DateTime  @default(now())
-  updatedTimestamp DateTime  @updatedAt
-  ipAddress        String
-  userAgent        String
-  accounts         Account[] @relation("AccountsDevices")
-  // Game
-  gameAccount      Account?  @relation("CurrentGameDevice")
+model Secret {
+  id                String    @id @default(nanoid()) @db.VarChar(21)
+  data              Bytes
+  params            Json
+  createdTimestamp  DateTime  @default(now())
+  updatedTimestamp  DateTime  @updatedAt
+  accountReferences Account[]
 
-  @@index([updatedTimestamp])
-  @@map("devices")
+  @@map("secrets")
   @@schema("services")
 }
 
 model Avatar {
-  id                String    @id @default(nanoid())
+  id                String    @id @default(nanoid()) @db.VarChar(21)
   data              Bytes
   createdTimestamp  DateTime  @default(now())
   updatedTimestamp  DateTime  @updatedAt
@@ -156,14 +158,15 @@ model Avatar {
 }
 
 model Record {
-  account        Account       @relation(fields: [accountId], references: [id])
-  accountId      Int           @id
-  achievements   Achievement[]
-  skillRating    Int           @default(0)
-  winCount       Int           @default(0)
-  loseCount      Int           @default(0)
-  tieCount       Int           @default(0)
-  gameStatistics Json          @default("{}")
+  account         Account       @relation(fields: [accountId], references: [id])
+  accountId       String        @id @db.Uuid
+  achievements    Achievement[]
+  skillRating     Int           @default(0)
+  experiencePoint BigInt        @default(0)
+  winCount        Int           @default(0)
+  loseCount       Int           @default(0)
+  tieCount        Int           @default(0)
+  gameStatistics  Json          @default("{}")
 
   @@index([skillRating(sort: Asc)])
   @@index([gameStatistics(ops: JsonbOps)], type: Gin)
@@ -173,7 +176,7 @@ model Record {
 
 model Achievement {
   record             Record   @relation(fields: [accountId], references: [accountId])
-  accountId          Int
+  accountId          String   @db.Uuid
   achievementId      Int
   completedTimestamp DateTime @default(now())
 
@@ -184,11 +187,11 @@ model Achievement {
 
 model Friend {
   account         Account @relation("FriendList", fields: [accountId], references: [id])
-  accountId       Int
+  accountId       String  @db.Uuid
   friendAccount   Account @relation("FriendReference", fields: [friendAccountId], references: [id])
-  friendAccountId Int
+  friendAccountId String  @db.Uuid
   groupName       String
-  activeFlags     Int
+  activeFlags     String  @db.Bit(8)
 
   @@id(fields: [accountId, friendAccountId])
   @@map("friends")
@@ -197,9 +200,9 @@ model Friend {
 
 model Enemy {
   account        Account @relation("EnemyList", fields: [accountId], references: [id])
-  accountId      Int
+  accountId      String  @db.Uuid
   enemyAccount   Account @relation("EnemyReference", fields: [enemyAccountId], references: [id])
-  enemyAccountId Int
+  enemyAccountId String  @db.Uuid
   memo           String
 
   @@id(fields: [accountId, enemyAccountId])
@@ -208,26 +211,26 @@ model Enemy {
 }
 
 model Ban {
-  id               Int       @id @default(autoincrement())
-  account          Account   @relation("BanList", fields: [accountId], references: [id])
-  accountId        Int
-  managerAccount   Account   @relation("ManagedBanTarget", fields: [managerAccountId], references: [id])
-  managerAccountId Int
-  type             BanType
+  id               String      @id @default(nanoid()) @db.VarChar(21)
+  account          Account     @relation("BanList", fields: [accountId], references: [id])
+  accountId        String      @db.Uuid
+  managerAccount   Account     @relation("ManagedBanTarget", fields: [managerAccountId], references: [id])
+  managerAccountId String      @db.Uuid
+  category         BanCategory
   reason           String
   memo             String
   expireTimestamp  DateTime?
-  bannedTimestamp  DateTime  @default(now())
+  bannedTimestamp  DateTime    @default(now())
 
   @@map("bans")
   @@schema("services")
 }
 
 model Chat {
-  id        Int           @id @default(autoincrement())
-  uuid      String        @unique @default(uuid()) @db.Uuid
+  id        String        @id @default(uuid()) @db.Uuid
   title     String
-  modeFlags Int
+  isPrivate Boolean
+  isSecret  Boolean
   password  String
   limit     Int
   members   ChatMember[]
@@ -240,11 +243,11 @@ model Chat {
 
 model ChatMember {
   chat          Chat         @relation(fields: [chatId], references: [id])
-  chatId        Int
+  chatId        String       @db.Uuid
   account       Account      @relation(fields: [accountId], references: [id])
-  accountId     Int
-  modeFlags     Int
-  lastMessage   ChatMessage? @relation(fields: [lastMessageId], references: [uuid])
+  accountId     String       @db.Uuid
+  role          Role
+  lastMessage   ChatMessage? @relation(fields: [lastMessageId], references: [id])
   lastMessageId String?      @db.Uuid
 
   @@id([chatId, accountId])
@@ -253,13 +256,13 @@ model ChatMember {
 }
 
 model ChatMessage {
-  uuid           String       @id @default(uuid()) @db.Uuid
+  id             String       @id @default(uuid()) @db.Uuid
   chat           Chat         @relation(fields: [chatId], references: [id])
-  chatId         Int
+  chatId         String       @db.Uuid
   account        Account      @relation(fields: [accountId], references: [id])
-  accountId      Int
+  accountId      String       @db.Uuid
   content        String
-  modeFlags      Int
+  messageType    MessageType
   timestamp      DateTime     @default(now())
   reachedMembers ChatMember[]
 
@@ -269,29 +272,28 @@ model ChatMessage {
 }
 
 model ChatBan {
-  id               Int       @id @default(autoincrement())
-  chat             Chat      @relation(fields: [chatId], references: [id])
-  chatId           Int
-  account          Account   @relation("ChatBanList", fields: [accountId], references: [id])
-  accountId        Int
-  managerAccount   Account   @relation("ManagedChatBanTarget", fields: [managerAccountId], references: [id])
-  managerAccountId Int
-  type             BanType
+  id               String      @id @default(nanoid()) @db.VarChar(21)
+  chat             Chat        @relation(fields: [chatId], references: [id])
+  chatId           String      @db.Uuid
+  account          Account     @relation("ChatBanList", fields: [accountId], references: [id])
+  accountId        String      @db.Uuid
+  managerAccount   Account     @relation("ManagedChatBanTarget", fields: [managerAccountId], references: [id])
+  managerAccountId String      @db.Uuid
+  category         BanCategory
   reason           String
   memo             String
   expireTimestamp  DateTime?
-  bannedTimestamp  DateTime  @default(now())
+  bannedTimestamp  DateTime    @default(now())
 
   @@map("chat_bans")
   @@schema("services")
 }
 
 model Game {
-  id          BigInt       @id @default(autoincrement())
-  uuid        String       @unique @default(uuid()) @db.Uuid
-  code        String       @unique @default(nanoid(2))
+  id          String       @id @default(uuid()) @db.Uuid
+  code        String       @unique @default(nanoid(2)) @db.VarChar(2)
   title       String
-  modeFlags   Int
+  modeFlags   String       @db.Bit(16)
   password    String
   battlefield Int
   timestamp   DateTime     @default(now())
@@ -304,10 +306,10 @@ model Game {
 
 model GameMember {
   game      Game    @relation(fields: [gameId], references: [id])
-  gameId    BigInt
+  gameId    String  @db.Uuid
   account   Account @relation(fields: [accountId], references: [id])
-  accountId Int     @unique
-  modeFlags Int
+  accountId String  @unique @db.Uuid
+  modeFlags String  @db.Bit(16)
   statistic Json    @default("{}")
 
   @@id([gameId, accountId])
@@ -317,7 +319,7 @@ model GameMember {
 
 model GameQueue {
   account     Account  @relation(fields: [accountId], references: [id])
-  accountId   Int      @unique
+  accountId   String   @unique @db.Uuid
   skillRating Int
   timestamp   DateTime @default(now())
 
@@ -328,9 +330,8 @@ model GameQueue {
 }
 
 model GameHistory {
-  id               BigInt    @id
-  uuid             String    @unique @db.Uuid
-  modeFlags        Int
+  id               String    @id @db.Uuid
+  modeFlags        String    @db.Bit(16)
   battlefield      Int
   timestamp        DateTime
   statistic        Json      @default("{}")

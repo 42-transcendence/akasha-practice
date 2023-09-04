@@ -9,7 +9,7 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import {
-  AccountWithBans,
+  AccountForAuth,
   AccountsService,
 } from "@/user/accounts/accounts.service";
 import {
@@ -27,9 +27,7 @@ import {
   TOTP,
   TokenSuccessfulResponse,
   UnknownOAuthError,
-  decodeBase32,
   generateOTP,
-  isBase32,
 } from "akasha-lib";
 import { Account, Authorization, Session } from "@prisma/client";
 import * as jose from "jose";
@@ -40,7 +38,7 @@ import {
   TokenSet,
   isAuthPayload,
 } from "@common/auth-payloads";
-import { getBanTypeNumber, getRoleNumber } from "@common/generated/types";
+import { getBanCategoryNumber, getRoleNumber } from "@common/generated/types";
 
 @Injectable()
 export class AuthService {
@@ -133,7 +131,7 @@ export class AuthService {
         );
       const subject: string = await AuthService.fetchSubject(source, param);
 
-      const account: AccountWithBans =
+      const account: AccountForAuth =
         await this.accounts.findOrCreateAccountForAuth(source.key, subject);
 
       if (account.otpSecret !== null) {
@@ -161,14 +159,13 @@ export class AuthService {
 
   async refreshAuth(refreshToken: string): Promise<TokenSet> {
     try {
-      const session: Session | null = await this.sessions.refreshSession(
-        refreshToken,
-      );
+      const session: Session | null =
+        await this.sessions.refreshSession(refreshToken);
       if (session === null) {
         throw new UnauthorizedException("Not found token");
       }
 
-      const account: AccountWithBans | null =
+      const account: AccountForAuth | null =
         await this.accounts.findAccountForAuth(session.accountId);
       if (account === null) {
         this.sessions.invalidateSession(session.id);
@@ -208,38 +205,34 @@ export class AuthService {
         throw new BadRequestException("Not found state");
       }
 
-      const accountId: number = await this.accounts.findAccountIdByUUIDOrThrow(
-        //XXX: Hack
-        state.redirectURI,
-      );
-      const account: AccountWithBans | null =
-        await this.accounts.findAccountForAuth(accountId);
+      const account: AccountForAuth | null =
+        await this.accounts.findAccountForAuth(state.redirectURI); //XXX: Hack
       if (account === null) {
         throw new BadRequestException("Not found account");
       }
 
-      if (account.otpSecret === null) {
+      const secret = account.otpSecret;
+      if (secret === null) {
         throw new InternalServerErrorException("Missing OTP data");
       }
-      const params = new URLSearchParams(account.otpSecret);
-
-      const secretStr: string | null = params.get("secret");
-      const codeDigitsStr: string | null = params.get("digits");
-      const movingPeriodStr: string | null = params.get("period");
-      const algorithm: string | null = params.get("algorithm");
+      const params = secret.params;
       if (
-        secretStr === null ||
-        codeDigitsStr === null ||
-        movingPeriodStr === null ||
-        algorithm === null
+        params === null ||
+        typeof params !== "object" ||
+        Array.isArray(params)
       ) {
-        throw new InternalServerErrorException("Corrupted OTP data");
+        throw new InternalServerErrorException("Corrupted OTP param");
       }
 
-      const codeDigits = Number(codeDigitsStr);
-      const movingPeriod = Number(movingPeriodStr);
-      if (Number.isNaN(codeDigits) || Number.isNaN(movingPeriod)) {
-        throw new InternalServerErrorException("Corrupted OTP data (numbers)");
+      const codeDigits = params["digits"];
+      const movingPeriod = params["period"];
+      const algorithm = params["algorithm"];
+      if (
+        typeof codeDigits !== "number" ||
+        typeof movingPeriod !== "number" ||
+        typeof algorithm !== "string"
+      ) {
+        throw new InternalServerErrorException("Corrupted OTP data");
       }
 
       if (
@@ -252,15 +245,10 @@ export class AuthService {
         );
       }
 
-      if (!isBase32(secretStr)) {
-        throw new InternalServerErrorException("Corrupted OTP data (base32)");
-      }
-
-      const secret = decodeBase32(secretStr);
       const movingFactor = TOTP.getMovingFactor(movingPeriod);
 
       const serverOTP: string = await generateOTP(
-        secret,
+        secret.data,
         movingFactor,
         codeDigits,
         algorithm,
@@ -283,10 +271,9 @@ export class AuthService {
 
   private async makeTemporaryToken(account: Account): Promise<TokenSet> {
     const state: Authorization = await this.sessions.createNewTemporaryState({
-      //XXX: Temporary access token을 일회용으로 만들기 위하여 endpointKey에 빈 문자열을 사용하여 표시하고 활용했음.
+      //XXX: Hack: Temporary access token을 일회용으로 만들기 위하여 endpointKey에 빈 문자열을 사용하여 표시하고 활용했음.
       endpointKey: "",
-      //XXX: 계정의 식별자로 정수형 ID를 사용하는 것이 효율적이나 형식과 관계의 설정이 번거로운 관계로 UUID를 활용했음.
-      redirectURI: account.uuid,
+      redirectURI: account.id,
     });
 
     const payload: AuthPayload = {
@@ -305,12 +292,12 @@ export class AuthService {
     return { access_token: accessToken };
   }
 
-  private async makeBlockedToken(account: AccountWithBans): Promise<TokenSet> {
+  private async makeBlockedToken(account: AccountForAuth): Promise<TokenSet> {
     const payload: AuthPayload = {
       auth_level: AuthLevel.BLOCKED,
-      user_id: account.uuid,
+      user_id: account.id,
       bans: account.bans.map((e) => ({
-        type: getBanTypeNumber(e.type),
+        category: getBanCategoryNumber(e.category),
         reason: e.reason,
         expireTimestamp: e.expireTimestamp,
       })),
@@ -333,7 +320,7 @@ export class AuthService {
   ): Promise<TokenSet> {
     const payload: AuthPayload = {
       auth_level: AuthLevel.COMPLETED,
-      user_id: account.uuid,
+      user_id: account.id,
       user_role: getRoleNumber(account.role),
     };
 
@@ -429,14 +416,14 @@ export class AuthService {
     );
 
     if (!verify.success) {
-      throw verify.expired
-        ? new UnauthorizedException("Expired JWT")
-        : new BadRequestException("Invalid JWT");
+      throw new UnauthorizedException(
+        verify.expired ? "Expired JWT" : "Invalid JWT",
+      );
     }
 
     const payload: Record<string, unknown> = verify.payload;
     if (!isAuthPayload(payload)) {
-      throw new InternalServerErrorException("Unexpected JWT Payload");
+      throw new BadRequestException("Unexpected JWT Payload");
     }
     return payload;
   }

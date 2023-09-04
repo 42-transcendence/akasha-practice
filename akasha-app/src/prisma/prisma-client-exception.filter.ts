@@ -15,6 +15,7 @@ export class PrismaClientExceptionFilter extends BaseExceptionFilter {
     const response = ctx.getResponse<Response>();
     const message = exception.message.replace(/\n/g, "");
 
+    //TODO: Messages containing database errors should not be sent to users.
     switch (exception.code) {
       case "P2002": {
         // Unique constraint failed on the {constraint}

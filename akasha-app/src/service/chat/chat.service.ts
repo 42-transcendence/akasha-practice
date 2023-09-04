@@ -5,67 +5,84 @@ import {
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
+  FRIEND_ACTIVE_FLAGS_SIZE,
   FriendEntry,
-  NewChatRoomRequest,
   SocialPayload,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
-import { ActiveStatus, BanType, ChatBan, Prisma } from "@prisma/client";
+import {
+  ActiveStatus,
+  BanCategory,
+  ChatBan,
+  ChatMember,
+  Prisma,
+} from "@prisma/client";
 import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import {
   ActiveStatusNumber,
+  MessageTypeNumber,
+  RoleNumber,
   getActiveStatusFromNumber,
   getActiveStatusNumber,
+  getMessageTypeFromNumber,
+  getMessageTypeNumber,
+  getRoleFromNumber,
+  getRoleNumber,
 } from "@common/generated/types";
+import { fromBitsString, toBitsString } from "akasha-lib";
 
-/// ChatRoom
-const chatRoomWithMembers = Prisma.validator<Prisma.ChatDefaultArgs>()({
-  include: {
-    members: {
-      include: {
-        account: { select: { uuid: true } },
-      },
-    },
+/// ChatMemberForEntry
+const chatMemberForEntry = Prisma.validator<Prisma.ChatMemberDefaultArgs>()({
+  select: {
+    accountId: true,
+    role: true,
   },
 });
-export type ChatRoomWithMembers = Prisma.ChatGetPayload<
-  typeof chatRoomWithMembers
+export type ChatMemberForEntry = Prisma.ChatMemberGetPayload<
+  typeof chatMemberForEntry
 >;
 
-export function toChatRoomEntry(chat: ChatRoomWithMembers): ChatRoomEntry {
+export function toChatMemberEntry(
+  member: ChatMemberForEntry,
+): ChatRoomMemberEntry {
+  return {
+    ...member,
+    role: getRoleNumber(member.role),
+  };
+}
+
+/// ChatRoomForEntry
+const chatRoomForEntry = Prisma.validator<Prisma.ChatDefaultArgs>()({
+  include: {
+    members: chatMemberForEntry,
+  },
+});
+export type ChatRoomForEntry = Prisma.ChatGetPayload<typeof chatRoomForEntry>;
+
+export function toChatRoomEntry(
+  chat: ChatRoomForEntry,
+  lastMessageId: string | null = null,
+): ChatRoomEntry {
   return {
     ...chat,
-    members: chat.members.map((e) => ({
-      ...e,
-      uuid: e.account.uuid,
-    })),
-    lastMessageId: null,
+    members: chat.members.map((e) => toChatMemberEntry(e)),
+    lastMessageId: lastMessageId,
   };
 }
 
 /// ChatMemberWithRoom
 const chatMemberWithRoom = Prisma.validator<Prisma.ChatMemberDefaultArgs>()({
   include: {
-    chat: { ...chatRoomWithMembers },
-    account: { select: { uuid: true } },
+    chat: chatRoomForEntry,
   },
 });
 export type ChatMemberWithRoom = Prisma.ChatMemberGetPayload<
   typeof chatMemberWithRoom
 >;
 
-export function toChatMemberEntry(
-  member: ChatMemberWithRoom,
-): ChatRoomMemberEntry {
-  return {
-    ...member,
-    uuid: member.account.uuid,
-  };
-}
-
 @Injectable()
 export class ChatService {
-  private readonly memberCache = new Map<string, Set<number>>();
+  private readonly memberCache = new Map<string, Set<string>>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -73,119 +90,81 @@ export class ChatService {
   ) {}
 
   // forward
-  async getAccountId(accountUUID: string) {
-    return this.accounts.findAccountIdByUUID(accountUUID);
-  }
-
-  // forward
-  async getActiveStatus(accountUUID: string) {
-    const activeStatusRaw = await this.accounts.findActiveStatusByUUID(
-      accountUUID,
-    );
+  async getActiveStatus(accountId: string) {
+    const activeStatusRaw = await this.accounts.findActiveStatus(accountId);
     return activeStatusRaw !== null
       ? getActiveStatusNumber(activeStatusRaw)
       : null;
   }
 
   // forward
-  async setActiveStatus(accountUUID: string, activeStatus: ActiveStatusNumber) {
-    return this.accounts.updateActiveStatusByUUID(
-      accountUUID,
+  async setActiveStatus(accountId: string, activeStatus: ActiveStatusNumber) {
+    return this.accounts.updateActiveStatus(
+      accountId,
       getActiveStatusFromNumber(activeStatus),
     );
   }
 
   // forward
-  async setActiveTimestamp(accountUUID: string, force: boolean) {
-    return this.accounts.updateActiveTimestampByUUID(
-      accountUUID,
+  async setActiveTimestamp(accountId: string, force: boolean) {
+    return this.accounts.updateActiveTimestamp(
+      accountId,
       force ? undefined : ActiveStatus.INVISIBLE,
     );
   }
 
-  async loadOwnRoomListByAccountId(
-    accountId: number,
-  ): Promise<ChatRoomEntry[]> {
+  async loadOwnRoomList(accountId: string): Promise<ChatRoomEntry[]> {
     const data = await this.prisma.chatMember.findMany({
       where: { accountId },
       select: {
-        chat: {
-          include: {
-            members: {
-              select: {
-                account: { select: { uuid: true } },
-                modeFlags: true,
-              },
-            },
-          },
-        },
+        chat: chatRoomForEntry,
         lastMessageId: true,
       },
     });
 
-    return data.map((e) => ({
-      ...e.chat,
-      members: e.chat.members.map((e) => ({
-        ...e,
-        uuid: e.account.uuid,
-      })),
-      lastMessageId: e.lastMessageId,
-    }));
+    return data.map((e) => toChatRoomEntry(e.chat, e.lastMessageId));
   }
 
   async loadMessagesAfter(
-    roomUUID: string,
+    chatId: string,
     lastMessageId: string | undefined,
   ): Promise<ChatMessageEntry[]> {
     const data = await this.prisma.chatMessage.findMany({
-      where: {
-        chat: { uuid: roomUUID },
-      },
-      include: {
-        //XXX: UUID를 가져올 때 Index-Only Scan을 사용하는 것이 성능에 유리하지만, Prisma가 Covering Index를 지원하지 않았음.
-        chat: { select: { uuid: true } },
-        account: { select: { uuid: true } },
-      },
-      orderBy: {
-        timestamp: Prisma.SortOrder.asc,
-      },
+      where: { chat: { id: chatId } },
+      orderBy: { timestamp: Prisma.SortOrder.asc },
       ...(lastMessageId !== undefined
         ? {
             skip: 1,
-            cursor: {
-              uuid: lastMessageId,
-            },
+            cursor: { id: lastMessageId },
           }
         : {}),
-      take: 1024, //FIXME: 무제한이어도 잘 되어야 함.
     });
 
     return data.map((e) => ({
       ...e,
-      roomUUID: e.chat.uuid,
-      memberUUID: e.account.uuid,
+      messageType: getMessageTypeNumber(e.messageType),
     }));
   }
 
-  async loadSocialByAccountId(id: number): Promise<SocialPayload> {
+  async loadSocial(accountId: string): Promise<SocialPayload> {
     const data = await this.prisma.account.findUniqueOrThrow({
-      where: { id },
+      where: { id: accountId },
       select: {
         friends: {
           select: {
-            friendAccount: { select: { uuid: true } },
+            friendAccountId: true,
             groupName: true,
             activeFlags: true,
           },
         },
         friendReferences: {
           select: {
-            account: { select: { uuid: true } },
+            accountId: true,
           },
         },
         enemies: {
           select: {
-            enemyAccount: { select: { uuid: true } },
+            enemyAccountId: true,
             memo: true,
           },
         },
@@ -193,29 +172,25 @@ export class ChatService {
     });
 
     const friendList = data.friends.map((e) => ({
-      uuid: e.friendAccount.uuid,
-      groupName: e.groupName,
-      activeFlags: e.activeFlags,
+      ...e,
+      activeFlags: fromBitsString(e.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
     }));
 
     const friendUUIDSet = new Set<string>(
-      data.friends.map((e) => e.friendAccount.uuid),
+      data.friends.map((e) => e.friendAccountId),
     );
     const friendRequestList = data.friendReferences
-      .map((e) => e.account.uuid)
+      .map((e) => e.accountId)
       .filter((e) => !friendUUIDSet.has(e));
 
-    const enemyList = data.enemies.map((e) => ({
-      uuid: e.enemyAccount.uuid,
-      memo: e.memo,
-    }));
+    const enemyList = data.enemies;
 
     return { friendList, friendRequestList, enemyList };
   }
 
   async addFriend(
-    accountId: number,
-    targetUUID: string,
+    accountId: string,
+    targetAccountId: string,
     groupName: string,
     activeFlags: number,
   ): Promise<FriendEntry | null> {
@@ -223,16 +198,15 @@ export class ChatService {
       const data = await this.prisma.friend.create({
         data: {
           account: { connect: { id: accountId } },
-          friendAccount: { connect: { uuid: targetUUID } },
+          friendAccount: { connect: { id: targetAccountId } },
           groupName,
-          activeFlags,
-        },
-        include: {
-          account: { select: { uuid: true } },
-          friendAccount: { select: { uuid: true } },
+          activeFlags: toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
         },
       });
-      return { ...data, uuid: data.friendAccount.uuid };
+      return {
+        ...data,
+        activeFlags: fromBitsString(data.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
+      };
     } catch (e) {
       if (e instanceof PrismaClientKnownRequestError) {
         if (e.code === "P2002") {
@@ -244,53 +218,67 @@ export class ChatService {
   }
 
   async modifyFriend(
-    accountId: number,
-    targetUUID: string,
-    mutationInput: Prisma.FriendUpdateManyMutationInput,
+    accountId: string,
+    targetAccountId: string,
+    groupName: string | undefined,
+    activeFlags: number | undefined,
   ): Promise<FriendEntry | null> {
-    const targetId = await this.getAccountId(targetUUID);
-    if (targetId === null) {
-      return null;
-    }
     const data = await this.prisma.friend.update({
-      data: mutationInput,
-      where: {
-        accountId_friendAccountId: { accountId, friendAccountId: targetId },
+      data: {
+        groupName,
+        activeFlags:
+          activeFlags !== undefined
+            ? toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE)
+            : undefined,
       },
-      include: {
-        account: { select: { uuid: true } },
-        friendAccount: { select: { uuid: true } },
+      where: {
+        accountId_friendAccountId: {
+          accountId,
+          friendAccountId: targetAccountId,
+        },
       },
     });
-    return { ...data, uuid: data.friendAccount.uuid };
+    return {
+      ...data,
+      activeFlags: fromBitsString(data.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
+    };
   }
 
-  async deleteFriend(accountId: number, targetUUID: string): Promise<boolean> {
+  async deleteFriend(
+    accountId: string,
+    targetAccountId: string,
+  ): Promise<boolean> {
     const batch = await this.prisma.friend.deleteMany({
       where: {
         OR: [
-          { account: { id: accountId }, friendAccount: { uuid: targetUUID } },
-          { friendAccount: { id: accountId }, account: { uuid: targetUUID } },
+          {
+            account: { id: accountId },
+            friendAccount: { id: targetAccountId },
+          },
+          {
+            friendAccount: { id: accountId },
+            account: { id: targetAccountId },
+          },
         ],
       },
     });
     return batch.count !== 0;
   }
 
-  async isDuplexFriendByUUID(
-    accountId: number,
-    targetUUID: string,
+  async isDuplexFriend(
+    accountId: string,
+    targetAccountId: string,
   ): Promise<boolean> {
     const data = await this.prisma.account.findUnique({
       where: { id: accountId },
       select: {
         friends: {
           select: { friendAccountId: true },
-          where: { friendAccount: { uuid: targetUUID } },
+          where: { friendAccount: { id: targetAccountId } },
         },
         friendReferences: {
           select: { accountId: true },
-          where: { account: { uuid: targetUUID } },
+          where: { account: { id: targetAccountId } },
         },
       },
     });
@@ -301,140 +289,97 @@ export class ChatService {
     );
   }
 
-  async getDuplexFriendsByUUID(uuid: string): Promise<FriendEntry[] | null> {
-    const data = await this.prisma.account.findUnique({
-      where: { uuid },
+  async getDuplexFriends(accountId: string): Promise<FriendEntry[]> {
+    const data = await this.prisma.account.findUniqueOrThrow({
+      where: { id: accountId },
       select: {
-        friends: { select: { friendAccount: { select: { uuid: true } } } },
-        friendReferences: { include: { account: { select: { uuid: true } } } },
+        friends: { select: { friendAccountId: true } },
+        friendReferences: true,
       },
     });
-    if (data === null) {
-      return null;
-    }
 
     const forward = data.friends.reduce(
-      (set, e) => set.add(e.friendAccount.uuid),
+      (set, e) => set.add(e.friendAccountId),
       new Set<string>(),
     );
 
     return data.friendReferences
-      .filter((e) => forward.has(e.account.uuid))
-      .map((e) => ({ ...e, uuid: e.account.uuid }));
-  }
-
-  async getDuplexFriendUUIDSetByUUID(
-    uuid: string,
-  ): Promise<Set<string> | null> {
-    const friends = await this.getDuplexFriendsByUUID(uuid);
-    if (friends === null) {
-      return null;
-    }
-
-    return friends.reduce((set, e) => set.add(e.uuid), new Set<string>());
+      .filter((e) => forward.has(e.accountId))
+      .map((e) => ({
+        ...e,
+        activeFlags: fromBitsString(e.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
+      }));
   }
 
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
-    const data = await this.prisma.x.chat.findMany({
+    const data = await this.prisma.chat.findMany({
+      where: { isPrivate: false },
       include: { members: { select: { chatId: true, accountId: true } } },
     });
 
-    return (
-      data
-        //XXX: 작성시 Prisma가 generated column 혹은 computed field로의 filter를 지원하지 않았음.
-        .filter((e) => !e.isPrivate)
-        .map((e) => ({
-          ...e,
-          memberCount: e.members.length,
-        }))
-    );
+    return data.map((e) => ({
+      ...e,
+      memberCount: e.members.length,
+    }));
   }
 
-  async createNewRoom(req: NewChatRoomRequest): Promise<ChatRoomWithMembers> {
-    const localMemberUUIDToId =
-      await this.accounts.makeAccountIdToUUIDDictionary(
-        req.members.map((e) => e.uuid),
-      );
-
+  async createNewRoom(
+    req: Prisma.ChatCreateInput & {
+      members: Prisma.ChatMemberCreateManyChatInput[];
+    },
+  ): Promise<ChatRoomForEntry> {
     const data = await this.prisma.chat.create({
       data: {
         ...req,
         members: {
-          createMany: {
-            data: req.members.reduce((array, e) => {
-              const accountId = localMemberUUIDToId.get(e.uuid);
-              if (accountId !== undefined) {
-                array.push({
-                  accountId,
-                  modeFlags: e.modeFlags,
-                });
-              }
-              return array;
-            }, new Array<Prisma.ChatMemberCreateManyChatInput>()),
-          },
+          createMany: { data: req.members },
         },
       },
       include: {
-        ...chatRoomWithMembers.include,
+        ...chatRoomForEntry.include,
         messages: true,
       },
     });
 
-    const memberSet = new Set<number>(data.members.map((e) => e.accountId));
-    this.memberCache.set(data.uuid, memberSet);
+    const memberSet = new Set<string>(data.members.map((e) => e.accountId));
+    this.memberCache.set(data.id, memberSet);
 
     return data;
   }
 
-  async getChatMemberSet(roomUUID: string): Promise<Set<number>> {
-    const cache = this.memberCache.get(roomUUID);
+  async getChatMemberSet(chatId: string): Promise<Set<string>> {
+    const cache = this.memberCache.get(chatId);
     if (cache !== undefined) {
       //NOTE: Implement invalidate cache
       return cache;
     }
 
     const data = await this.prisma.chat.findUniqueOrThrow({
-      where: {
-        uuid: roomUUID,
-      },
-      select: {
-        members: {
-          select: {
-            accountId: true,
-          },
-        },
-      },
+      where: { id: chatId },
+      select: { members: { select: { accountId: true } } },
     });
 
-    const memberSet = new Set<number>(data.members.map((e) => e.accountId));
-    this.memberCache.set(roomUUID, memberSet);
+    const memberSet = new Set<string>(data.members.map((e) => e.accountId));
+    this.memberCache.set(chatId, memberSet);
     return memberSet;
   }
 
   async insertChatMember(
-    roomUUID: string,
-    accountId: number,
-    modeFlags: number = 0,
+    chatId: string,
+    accountId: string,
+    role: RoleNumber,
   ): Promise<ChatMemberWithRoom | null> {
     try {
       const data = await this.prisma.chatMember.create({
         ...chatMemberWithRoom,
         data: {
-          account: {
-            connect: {
-              id: accountId,
-            },
-          },
-          chat: {
-            connect: {
-              uuid: roomUUID,
-            },
-          },
-          modeFlags,
+          account: { connect: { id: accountId } },
+          chat: { connect: { id: chatId } },
+          role: getRoleFromNumber(role),
         },
       });
 
-      const cache = this.memberCache.get(roomUUID);
+      const cache = this.memberCache.get(chatId);
       if (cache !== undefined) {
         cache.add(accountId);
       }
@@ -451,129 +396,79 @@ export class ChatService {
     }
   }
 
-  async insertChatMemberByUUID(
-    roomUUID: string,
-    accountUUID: string,
-    modeFlags: number = 0,
-  ): Promise<ChatMemberWithRoom | null> {
-    try {
-      const accountId = await this.getAccountId(accountUUID);
-      if (accountId === null) {
-        //FIXME: 임시
-        return null;
-      }
-
-      return await this.insertChatMember(roomUUID, accountId, modeFlags);
-    } catch {
-      //FIXME: 임시
-      return null;
-    }
-  }
-
   async deleteChatMember(
-    roomUUID: string,
-    accountId: number,
-  ): Promise<boolean> {
-    const cache = this.memberCache.get(roomUUID);
+    chatId: string,
+    accountId: string,
+  ): Promise<ChatMember> {
+    const cache = this.memberCache.get(chatId);
     if (cache !== undefined) {
       cache.delete(accountId);
     }
 
-    const batch = await this.prisma.chatMember.deleteMany({
-      where: {
-        chat: {
-          uuid: roomUUID,
-        },
-        accountId,
-      },
+    const data = await this.prisma.chatMember.delete({
+      where: { chatId_accountId: { chatId, accountId } },
     });
 
-    return batch.count !== 0;
+    return data;
   }
 
   async createNewChatMessage(
-    roomUUID: string,
-    accountId: number,
+    chatId: string,
+    accountId: string,
     content: string,
-    modeFlags: number = 0,
+    messageType: MessageTypeNumber,
   ): Promise<ChatMessageEntry> {
     const data = await this.prisma.chatMessage.create({
       data: {
-        chat: {
-          connect: {
-            uuid: roomUUID,
-          },
-        },
-        account: {
-          connect: {
-            id: accountId,
-          },
-        },
+        chat: { connect: { id: chatId } },
+        account: { connect: { id: accountId } },
         content,
-        modeFlags,
-      },
-      include: {
-        chat: { select: { uuid: true } },
-        account: { select: { uuid: true } },
+        messageType: getMessageTypeFromNumber(messageType),
       },
     });
 
-    return { ...data, roomUUID: data.chat.uuid, memberUUID: data.account.uuid };
+    return { ...data, messageType: getMessageTypeNumber(data.messageType) };
   }
 
   async updateLastMessageCursor(
-    accountId: number,
+    chatId: string,
+    accountId: string,
     lastMessageId: string,
-  ): Promise<boolean> {
-    const batch = await this.prisma.chatMember.updateMany({
-      data: {
-        lastMessageId,
-      },
-      where: {
-        account: {
-          id: accountId,
-        },
-        chat: {
-          messages: {
-            some: {
-              uuid: lastMessageId,
-            },
-          },
-        },
-      },
-    });
-
-    return batch.count !== 0;
+  ): Promise<void> {
+    void (await this.prisma.chatMember.update({
+      where: { chatId_accountId: { chatId, accountId } },
+      data: { lastMessageId },
+    }));
   }
 
   async getChatBanned(
-    roomUUID: string,
-    accountId: number,
-    type: BanType,
+    chatId: string,
+    accountId: string,
+    category: BanCategory,
   ): Promise<ChatBan[]> {
-    const data = await this.prisma.chat.findUnique({
-      where: { uuid: roomUUID },
-      select: { bans: { where: { accountId, type } } },
+    const data = await this.prisma.chat.findUniqueOrThrow({
+      where: { id: chatId },
+      select: { bans: { where: { accountId, category } } },
     });
 
-    return data?.bans ?? [];
+    return data.bans;
   }
 
   async createChatBan(
-    roomUUID: string,
-    targetUUID: string,
-    managerAccountId: number,
-    type: BanType,
+    chatId: string,
+    targetAccountId: string,
+    managerAccountId: string,
+    category: BanCategory,
     reason: string,
     memo: string,
     expireTimestamp: Date | null,
   ): Promise<ChatBan> {
     const data = await this.prisma.chatBan.create({
       data: {
-        chat: { connect: { uuid: roomUUID } },
-        account: { connect: { uuid: targetUUID } },
+        chat: { connect: { id: chatId } },
+        account: { connect: { id: targetAccountId } },
         managerAccount: { connect: { id: managerAccountId } },
-        type,
+        category,
         reason,
         memo,
         expireTimestamp,
@@ -583,7 +478,7 @@ export class ChatService {
     return data;
   }
 
-  async deleteChatBan(chatBanId: number): Promise<ChatBan> {
+  async deleteChatBan(chatBanId: string): Promise<ChatBan> {
     const data = await this.prisma.chatBan.delete({
       where: { id: chatBanId },
     });
@@ -591,29 +486,10 @@ export class ChatService {
     return data;
   }
 
-  async isChatBanned(roomUUID: string, accountId: number, type: BanType) {
+  async isChatBanned(roomUUID: string, accountId: string, type: BanCategory) {
     const data = await this.getChatBanned(roomUUID, accountId, type);
 
     //FIXME: 임시
     return data.length !== 0;
-  }
-
-  async isChatBannedByUUID(
-    roomUUID: string,
-    accountUUID: string,
-    type: BanType,
-  ) {
-    try {
-      const accountId = await this.getAccountId(accountUUID);
-      if (accountId === null) {
-        //FIXME: 임시
-        return null;
-      }
-
-      return await this.isChatBanned(roomUUID, accountId, type);
-    } catch {
-      //FIXME: 임시
-      return null;
-    }
   }
 }

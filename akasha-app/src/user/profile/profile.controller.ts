@@ -35,20 +35,20 @@ import {
 export class ProfileController {
   constructor(private readonly profileService: ProfileService) {}
 
-  @Get("public/:uuid")
+  @Get("public/:targetId")
   async getPublicProfile(
     @Auth() auth: AuthPayload,
-    @Param("uuid") uuid: string,
+    @Param("targetId") targetId: string,
   ): Promise<AccountProfilePublicPayload> {
-    return await this.profileService.getPublicProfile(auth, uuid);
+    return await this.profileService.getPublicProfile(auth, targetId);
   }
 
-  @Get("protected/:uuid")
+  @Get("protected/:targetId")
   async getProtectedProfile(
     @Auth() auth: AuthPayload,
-    @Param("uuid") uuid: string,
+    @Param("targetId") targetId: string,
   ): Promise<AccountProfileProtectedPayload> {
-    return await this.profileService.getProtectedProfile(auth, uuid);
+    return await this.profileService.getProtectedProfile(auth, targetId);
   }
 
   @Get("private")

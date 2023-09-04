@@ -2,33 +2,32 @@ import { ChatRoomModeFlags } from "@common/chat-payloads";
 import { Injectable, OnModuleInit } from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
-@Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
-  private static extend(client: PrismaClient) {
-    return client.$extends({
-      result: {
-        chat: {
-          isPrivate: {
-            needs: { modeFlags: true },
-            compute(chat): boolean {
-              return (chat.modeFlags & ChatRoomModeFlags.PRIVATE) !== 0;
-            },
-          },
-          isSecret: {
-            needs: { modeFlags: true },
-            compute(chat): boolean {
-              return (chat.modeFlags & ChatRoomModeFlags.SECRET) !== 0;
-            },
+export type PrismaX = ReturnType<typeof extend>;
+
+function extend(client: PrismaClient) {
+  return client.$extends({
+    result: {
+      chat: {
+        modeFlags: {
+          needs: { isPrivate: true, isSecret: true },
+          compute(chat): number {
+            return (
+              (chat.isPrivate ? ChatRoomModeFlags.PRIVATE : 0) |
+              (chat.isSecret ? ChatRoomModeFlags.SECRET : 0)
+            );
           },
         },
       },
-    });
-  }
+    },
+  });
+}
 
-  private _backing_x!: ReturnType<typeof PrismaService.extend>;
+@Injectable()
+export class PrismaService extends PrismaClient implements OnModuleInit {
+  private _backing_x!: PrismaX;
 
   async onModuleInit() {
-    this._backing_x = PrismaService.extend(this);
+    this._backing_x = extend(this);
     await this._backing_x.$connect();
   }
 

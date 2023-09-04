@@ -17,7 +17,7 @@ import {
 import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 import {
   ChatMemberWithRoom,
-  ChatRoomWithMembers,
+  ChatRoomForEntry,
   toChatMemberEntry,
   toChatRoomEntry,
 } from "./chat.service";
@@ -53,9 +53,9 @@ export function makeAddFriendSuccessResult(entry: FriendEntry) {
   return buf;
 }
 
-export function makeFriendRequest(accountUUID: string) {
+export function makeFriendRequest(accountId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.FRIEND_REQUEST);
-  buf.writeUUID(accountUUID);
+  buf.writeUUID(accountId);
   return buf;
 }
 
@@ -70,31 +70,31 @@ export function makeModifyFriendFailedResult(errno: FriendErrorNumber) {
 }
 
 export function makeModifyFriendSuccessResult(
-  targetUUID: string,
+  targetAccountId: string,
   entry: FriendEntry,
 ) {
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.MODIFY_FRIEND_RESULT,
   );
   buf.write1(FriendErrorNumber.SUCCESS);
-  buf.writeUUID(targetUUID);
+  buf.writeUUID(targetAccountId);
   writeFriend(entry, buf);
   return buf;
 }
 
-export function makeUpdateFriendActiveStatus(accountUUID: string) {
+export function makeUpdateFriendActiveStatus(accountId: string) {
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.UPDATE_FRIEND_ACTIVE_STATUS,
   );
-  buf.writeUUID(accountUUID);
+  buf.writeUUID(accountId);
   return buf;
 }
 
-export function makeDeleteFriendSuccessResult(targetUUID: string) {
+export function makeDeleteFriendSuccessResult(targetAccountId: string) {
   const bufTarget = ByteBuffer.createWithOpcode(
     ChatClientOpcode.DELETE_FRIEND_RESULT,
   );
-  bufTarget.writeUUID(targetUUID);
+  bufTarget.writeUUID(targetAccountId);
   return bufTarget;
 }
 
@@ -105,7 +105,7 @@ export function makePublicRoomList(chatRoomViewList: ChatRoomViewEntry[]) {
 }
 
 export function makeInsertRoom(
-  room: ChatRoomWithMembers,
+  room: ChatRoomForEntry,
   messages: ChatMessageEntry[],
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM);
@@ -116,60 +116,60 @@ export function makeInsertRoom(
 
 export function makeCreateRoomResult(
   errno: RoomErrorNumber,
-  roomUUID: string | null,
+  chatId: string | null,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CREATE_ROOM_RESULT);
   buf.write1(errno);
-  buf.writeUUID(roomUUID ?? NULL_UUID);
+  buf.writeUUID(chatId ?? NULL_UUID);
   return buf;
 }
 
-export function makeEnterRoomResult(errno: RoomErrorNumber, roomUUID: string) {
+export function makeEnterRoomResult(errno: RoomErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ENTER_ROOM_RESULT);
   buf.write1(errno);
-  buf.writeUUID(roomUUID);
+  buf.writeUUID(chatId);
   return buf;
 }
 
-export function makeRemoveRoom(roomUUID: string) {
+export function makeRemoveRoom(chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM);
-  buf.writeUUID(roomUUID);
+  buf.writeUUID(chatId);
   return buf;
 }
 
-export function makeLeaveRoomResult(errno: RoomErrorNumber, roomUUID: string) {
+export function makeLeaveRoomResult(errno: RoomErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.LEAVE_ROOM_RESULT);
   buf.write1(errno);
-  buf.writeUUID(roomUUID);
+  buf.writeUUID(chatId);
   return buf;
 }
 
 export function makeInviteRoomResult(
   errno: RoomErrorNumber,
-  roomUUID: string,
-  targetUUID: string,
+  chatId: string,
+  targetAccountId: string,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INVITE_USER_RESULT);
   buf.write1(errno);
-  buf.writeUUID(roomUUID);
-  buf.writeUUID(targetUUID);
+  buf.writeUUID(chatId);
+  buf.writeUUID(targetAccountId);
   return buf;
 }
 
 export function makeInsertRoomMember(
-  roomUUID: string,
+  chatId: string,
   member: ChatMemberWithRoom,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM_MEMBER);
-  buf.writeUUID(roomUUID);
+  buf.writeUUID(chatId);
   writeChatRoomMember(toChatMemberEntry(member), buf);
   return buf;
 }
 
-export function makeRemoveRoomMember(roomUUID: string, memberUUID: string) {
+export function makeRemoveRoomMember(chatId: string, memberAccountId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM_MEMBER);
-  buf.writeUUID(roomUUID);
-  buf.writeUUID(memberUUID);
+  buf.writeUUID(chatId);
+  buf.writeUUID(memberAccountId);
   return buf;
 }
 

@@ -10,11 +10,6 @@ import {
 import { ChatServer } from "./chat.server";
 import { ActiveStatusNumber } from "@common/generated/types";
 
-type AccountLink = {
-  uuid: string;
-  id: number;
-};
-
 export class ChatWebSocket extends ServiceWebSocketBase {
   private _backing_server: ChatServer | undefined = undefined;
   protected get server(): ChatServer {
@@ -37,46 +32,45 @@ export class ChatWebSocket extends ServiceWebSocketBase {
     this._backing_chatService = chatService;
   }
 
-  account: AccountLink | undefined = undefined;
+  accountId: string | undefined = undefined;
 
   socketActiveStatus = ActiveStatusNumber.ONLINE;
 
   async onFirstConnection() {
-    assert(this.account !== undefined);
+    assert(this.accountId !== undefined);
 
-    this.chatService.setActiveTimestamp(this.account.uuid, false);
+    this.chatService.setActiveTimestamp(this.accountId, false);
   }
 
   async onLastDisconnect() {
-    assert(this.account !== undefined);
+    assert(this.accountId !== undefined);
 
-    this.chatService.setActiveTimestamp(this.account.uuid, false);
+    this.chatService.setActiveTimestamp(this.accountId, false);
   }
 
   async initialize(fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[]) {
-    assert(this.account !== undefined);
-
-    const id = this.account.id;
+    assert(this.accountId !== undefined);
 
     const chatRoomList: ChatRoomEntry[] =
-      await this.chatService.loadOwnRoomListByAccountId(id);
+      await this.chatService.loadOwnRoomList(this.accountId);
     const fetchedMessageIdMap = fetchedMessageIdPairs.reduce(
-      (map, e) => map.set(e.uuid, e.messageUUID),
+      (map, e) => map.set(e.chatId, e.messageId),
       new Map<string, string>(),
     );
     const chatMessageMap = new Map<string, ChatMessageEntry[]>();
     for (const chatRoom of chatRoomList) {
-      const roomUUID = chatRoom.uuid;
+      const chatId = chatRoom.id;
       chatMessageMap.set(
-        roomUUID,
+        chatId,
         await this.chatService.loadMessagesAfter(
-          roomUUID,
-          fetchedMessageIdMap.get(roomUUID),
+          chatId,
+          fetchedMessageIdMap.get(chatId),
         ),
       );
     }
-    const socialPayload: SocialPayload =
-      await this.chatService.loadSocialByAccountId(id);
+    const socialPayload: SocialPayload = await this.chatService.loadSocial(
+      this.accountId,
+    );
     return { chatRoomList, chatMessageMap, socialPayload };
   }
 }
