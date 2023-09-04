@@ -15,7 +15,7 @@ export abstract class ServiceWebSocketBase extends WebSocket {
   get auth(): AuthPayload {
     return assert(this._backing_auth !== undefined), this._backing_auth;
   }
-  protected set auth(value: AuthPayload) {
+  protected set auth(value: AuthPayload | undefined) {
     this._backing_auth = value;
   }
 

@@ -1,5 +1,5 @@
 import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
-import { ByteBuffer, assert } from "akasha-lib";
+import { ByteBuffer } from "akasha-lib";
 import { ServerOptions } from "ws";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
@@ -13,7 +13,6 @@ import {
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
 } from "@common/chat-payloads";
-import { AuthLevel } from "@common/auth-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
   CHAT_ROOM_TITLE_REGEX,
@@ -58,10 +57,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.HANDSHAKE)
   async handleHandshake(client: ChatWebSocket, payload: ByteBuffer) {
-    assert(client.auth.auth_level === AuthLevel.COMPLETED);
-    this.assertClient(client.accountId === undefined, "Duplicate handshake");
-
-    client.accountId = client.auth.user_id;
+    this.assertClient(!client.handshakeState, "Duplicate handshake");
     await this.server.trackClient(client);
 
     const fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[] =
@@ -78,7 +74,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ACTIVE_STATUS_MANUAL)
   async handleActiveStatus(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const activeStatus = payload.read1();
     switch (activeStatus) {
@@ -114,7 +110,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.IDLE_AUTO)
   async handleIdleAuto(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const idle = payload.readBoolean();
     client.socketActiveStatus = idle
@@ -129,7 +125,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)
   async handleAddFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
     const groupName = payload.readString();
@@ -174,7 +170,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.MODIFY_FRIEND)
   async handleModifyFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
     //FIXME: flags를 enum으로
@@ -214,7 +210,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.DELETE_FRIEND)
   async handleDeleteFriend(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
 
@@ -238,7 +234,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ADD_ENEMY)
   async handleAddEnemy(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const viaUUID = payload.readBoolean();
     if (viaUUID) {
@@ -253,7 +249,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.MODIFY_ENEMY)
   async handleModifyEnemy(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
     void targetAccountId; //FIXME: service
@@ -263,7 +259,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.DELETE_ENEMY)
   async handleDeleteEnemy(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
     void targetAccountId; //FIXME: service
@@ -271,7 +267,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.PUBLIC_ROOM_LIST_REQUEST)
   async handlePublicRoomListRequest(client: ChatWebSocket) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatRoomViewList = await this.chatService.loadPublicRoomList();
 
@@ -280,7 +276,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.CREATE_ROOM)
   async handleCreateRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const title = payload.readString();
     if (!CHAT_ROOM_TITLE_REGEX.test(title)) {
@@ -349,7 +345,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.ENTER_ROOM)
   async handleEnterRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     const password = payload.readString();
@@ -405,7 +401,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.LEAVE_ROOM)
   async handleLeaveRoom(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     //FIXME: 입장하지 않은 채팅방
@@ -450,7 +446,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.INVITE_USER)
   async handleInviteUser(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId: string = payload.readUUID();
     const targetAccountId: string = payload.readUUID();
@@ -505,7 +501,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.CHAT_MESSAGE)
   async handleChatMessage(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     const content = payload.readString();
@@ -526,7 +522,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
   async handleSyncCursor(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     const lastMessageId = payload.readUUID();
@@ -545,7 +541,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
   async handleMuteMember(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     void chatId; //FIXME: service
@@ -553,7 +549,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
   @SubscribeMessage(ChatServerOpcode.KICK_MEMBER)
   async handleKickMember(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.accountId !== undefined, "Invalid state");
+    this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     void chatId; //FIXME: service
