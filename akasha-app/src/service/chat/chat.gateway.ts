@@ -1,5 +1,5 @@
 import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
-import { ByteBuffer } from "akasha-lib";
+import { ByteBuffer, NULL_UUID } from "akasha-lib";
 import { ServerOptions } from "ws";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
@@ -9,6 +9,7 @@ import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatRoomChatMessagePairEntry,
   FriendActiveFlags,
+  FriendEntry,
   FriendErrorNumber,
   FriendModifyFlags,
   RoomErrorNumber,
@@ -28,6 +29,7 @@ import {
   Role,
   RoleNumber,
 } from "@common/generated/types";
+import { Prisma } from "@prisma/client";
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -116,6 +118,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const idle = payload.readBoolean();
+
     client.socketActiveStatus = idle
       ? ActiveStatusNumber.IDLE
       : ActiveStatusNumber.ONLINE;
@@ -139,16 +142,24 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         FriendErrorNumber.ERROR_SELF_FRIEND,
       );
     }
-    const entry = await this.chatService.addFriend(
-      client.accountId,
-      targetAccountId,
-      groupName,
-      activeFlags,
-    );
-    if (entry === null) {
-      return builder.makeAddFriendFailedResult(
-        FriendErrorNumber.ERROR_ALREADY_FRIEND,
+    let entry: FriendEntry;
+    try {
+      entry = await this.chatService.addFriend(
+        client.accountId,
+        targetAccountId,
+        groupName,
+        activeFlags,
       );
+    } catch (e) {
+      //FIXME: 개선
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2002") {
+          return builder.makeAddFriendFailedResult(
+            FriendErrorNumber.ERROR_ALREADY_FRIEND,
+          );
+        }
+      }
+      throw e;
     }
     if (
       await this.chatService.isDuplexFriend(client.accountId, targetAccountId)
@@ -186,17 +197,24 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       activeFlags = payload.read1();
     }
 
-    const entry = await this.chatService.modifyFriend(
-      client.accountId,
-      targetAccountId,
-      groupName,
-      activeFlags,
-    );
-
-    if (entry === null) {
-      return builder.makeModifyFriendFailedResult(
-        FriendErrorNumber.ERROR_NOT_FRIEND,
+    let entry: FriendEntry;
+    try {
+      entry = await this.chatService.modifyFriend(
+        client.accountId,
+        targetAccountId,
+        groupName,
+        activeFlags,
       );
+    } catch (e) {
+      //FIXME: 개선
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2025") {
+          return builder.makeModifyFriendFailedResult(
+            FriendErrorNumber.ERROR_NOT_FRIEND,
+          );
+        }
+      }
+      throw e;
     }
     void this.server.unicast(
       targetAccountId,
@@ -216,12 +234,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const targetAccountId = payload.readUUID();
 
-    const success = await this.chatService.deleteFriend(
+    const count = await this.chatService.deleteFriend(
       client.accountId,
       targetAccountId,
     );
-    void success;
-
+    //FIXME: 개선
+    void count;
     void this.server.unicast(
       targetAccountId,
       builder.makeDeleteFriendSuccessResult(client.accountId),
@@ -320,7 +338,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       ownerDuplexFriendSet.has(e),
     );
 
-    const room = await this.chatService.createNewRoom({
+    const result = await this.chatService.createNewRoom({
       title,
       ...modeFlags,
       password,
@@ -330,19 +348,22 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         role: e === ownerAccountId ? Role.ADMINISTRATOR : Role.USER,
       })),
     });
-    //FIXME: try-catch해서 RoomErrorNumber 설정하기? 아니 Transaction 사용하기
-    const chatId = room.id;
-    const messages = await this.chatService.loadMessagesAfter(
-      chatId,
-      undefined,
-    );
 
-    void this.server.multicastToRoom(
-      chatId,
-      builder.makeInsertRoom(room, messages),
-    );
+    let chatId: string = NULL_UUID;
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const room = result.room;
+      chatId = room.id;
+      const messages = await this.chatService.loadMessagesAfter(
+        chatId,
+        undefined,
+      );
+      void this.server.multicastToRoom(
+        chatId,
+        builder.makeInsertRoom(room, messages),
+      );
+    }
 
-    return builder.makeCreateRoomResult(RoomErrorNumber.SUCCESS, chatId);
+    return builder.makeCreateRoomResult(result.errno, chatId);
   }
 
   @SubscribeMessage(ChatServerOpcode.ENTER_ROOM)

@@ -36,6 +36,7 @@ export class PrismaClientExceptionFilter extends BaseExceptionFilter {
         break;
       }
       case "P2025": {
+        // An operation failed because it depends on one or more records that were required but not found. {cause}
         // NotFoundError
         const status = HttpStatus.NOT_FOUND;
         response.status(status).json({

@@ -69,12 +69,12 @@ export type AccountNickNameAndTag = Prisma.AccountGetPayload<
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async isExistsAccount(id: string): Promise<boolean> {
+  async isAvailableAccount(id: string): Promise<boolean> {
     const account = await this.prisma.account.findUnique({
       where: { id },
-      select: { id: true },
+      select: { nickName: true },
     });
-    return account !== null;
+    return account !== null && account.nickName !== null;
   }
 
   async findAccountPublic(id: string): Promise<AccountPublic | null> {
@@ -124,8 +124,8 @@ export class AccountsService {
     });
   }
 
-  async findAccountForAuth(id: string): Promise<AccountForAuth | null> {
-    return await this.prisma.account.findUnique({
+  async findAccountForAuth(id: string): Promise<AccountForAuth> {
+    return await this.prisma.account.findUniqueOrThrow({
       where: { id },
       include: {
         otpSecret: true,
@@ -136,29 +136,30 @@ export class AccountsService {
     });
   }
 
-  async findActiveStatus(id: string): Promise<ActiveStatus | null> {
-    const data = await this.prisma.account.findUnique({
+  async findActiveStatus(id: string): Promise<ActiveStatus> {
+    const account = await this.prisma.account.findUniqueOrThrow({
       where: { id },
       select: { activeStatus: true },
     });
-    return data?.activeStatus ?? null;
+    return account?.activeStatus;
   }
 
   async updateActiveStatus(
     id: string,
     activeStatus: ActiveStatus,
   ): Promise<void> {
-    const data = await this.prisma.account.update({
+    const account = await this.prisma.account.update({
       where: { id },
       data: { activeStatus },
     });
-    void data;
+    void account;
   }
 
   async updateActiveTimestamp(
     id: string,
     except?: ActiveStatus | undefined,
   ): Promise<void> {
+    //XXX: Conditional Update
     const batch = await this.prisma.account.updateMany({
       where: {
         id,
@@ -173,7 +174,7 @@ export class AccountsService {
     id: string,
     friendId: string,
   ): Promise<number | null> {
-    const reverse = await this.prisma.friend.findUnique({
+    const friendReverse = await this.prisma.friend.findUnique({
       where: {
         accountId_friendAccountId: {
           accountId: friendId,
@@ -184,11 +185,11 @@ export class AccountsService {
         activeFlags: true,
       },
     });
-    if (reverse === null) {
+    if (friendReverse === null) {
       return null;
     }
 
-    return fromBitsString(reverse.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE);
+    return fromBitsString(friendReverse.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE);
   }
 
   async updateNickAtomic(
@@ -197,7 +198,7 @@ export class AccountsService {
     tagHint: number | undefined,
     overwrite: boolean,
   ): Promise<AccountNickNameAndTag> {
-    const data = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // 1. Check Exists Account
       const prev = await tx.account.findUnique({
         where: { id },
@@ -240,15 +241,13 @@ export class AccountsService {
         ...accountNickNameAndTag,
       });
     });
-
-    return data;
   }
 
   async updateAvatarAtomic(
     id: string,
     avatarData: Buffer | null,
   ): Promise<string | null> {
-    const data = await this.prisma.$transaction(async (tx) => {
+    return this.prisma.$transaction(async (tx) => {
       // 1. Check Exists Account
       const prev = await tx.account.findUnique({
         where: { id },
@@ -282,14 +281,12 @@ export class AccountsService {
         return null;
       }
     });
-
-    return data;
   }
 
   async findAvatar(key: string): Promise<Buffer> {
-    const data = await this.prisma.avatar.findUniqueOrThrow({
+    const avatar = await this.prisma.avatar.findUniqueOrThrow({
       where: { id: key },
     });
-    return data.data;
+    return avatar.data;
   }
 }

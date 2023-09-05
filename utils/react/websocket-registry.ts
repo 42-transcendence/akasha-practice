@@ -79,11 +79,6 @@ export class WebSocketRegistry {
   private readonly listeners = new Map<string, Set<WebSocketListenProps>>();
 
   register(props: WebSocketRegisterProps): () => void {
-    const url = typeof props.url === "function" ? props.url() : props.url;
-    if (url === "") {
-      return () => {};
-    }
-
     const key = props.name;
     if (this.registry.has(key)) {
       throw new ReferenceError();
@@ -92,6 +87,7 @@ export class WebSocketRegistry {
     let ignore = false;
 
     const connect = () => {
+      const url = typeof props.url === "function" ? props.url() : props.url;
       const webSocket = new WebSocket(url, props.protocols);
       webSocket.binaryType = "arraybuffer";
 

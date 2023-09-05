@@ -13,6 +13,7 @@ import {
 } from "@/user/accounts/accounts.service";
 import { AuthLevel, AuthPayload } from "@common/auth-payloads";
 import {
+  ActiveStatus,
   ActiveStatusNumber,
   getActiveStatusNumber,
 } from "@common/generated/types";
@@ -88,10 +89,19 @@ export class ProfileService {
         activeTimestamp = new Date(0);
       }
 
+      let statusMessage: string;
+      if ((activeFlags & FriendActiveFlags.SHOW_STATUS_MESSAGE) !== 0) {
+        statusMessage = targetAccount.statusMessage;
+      } else {
+        // Hide statusMessage
+        statusMessage = "";
+      }
+
       return {
         ...targetAccount,
         activeStatus,
         activeTimestamp,
+        statusMessage,
       };
     }
     throw new ForbiddenException();
@@ -115,10 +125,13 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async getActiveStatus(targetAccountId: string): Promise<ActiveStatusNumber> {
-    const activeStatus = await this.accounts.findActiveStatus(targetAccountId);
+  async getActiveStatus(
+    targetAccountId: string,
+    activeStatusHint: ActiveStatus | null = null,
+  ): Promise<ActiveStatusNumber> {
+    let activeStatus = activeStatusHint;
     if (activeStatus === null) {
-      throw new NotFoundException();
+      activeStatus = await this.accounts.findActiveStatus(targetAccountId);
     }
 
     const manualActiveStatus = getActiveStatusNumber(activeStatus);

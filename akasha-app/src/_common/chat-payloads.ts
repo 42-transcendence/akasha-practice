@@ -12,6 +12,7 @@ export const FRIEND_ACTIVE_FLAGS_SIZE = 8;
 export const enum FriendActiveFlags {
   SHOW_ACTIVE_STATUS = 1 << 0,
   SHOW_ACTIVE_TIMESTAMP = 1 << 1,
+  SHOW_STATUS_MESSAGE = 1 << 2,
 }
 
 /// FriendModifyFlags

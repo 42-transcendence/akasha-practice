@@ -2,7 +2,6 @@ import {
   BadGatewayException,
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -108,13 +107,10 @@ export class AuthService {
         throw new BadRequestException("Invalid query parameter");
       }
 
-      const state: Authorization | null =
+      const state: Authorization =
         await this.sessions.findAndDeleteTemporaryState(
           authorizationCode.state,
         );
-      if (state === null) {
-        throw new BadRequestException("Not found state");
-      }
 
       const source: AuthSource | undefined = this.getAuthSource(
         state.endpointKey,
@@ -159,18 +155,10 @@ export class AuthService {
 
   async refreshAuth(refreshToken: string): Promise<TokenSet> {
     try {
-      const session: Session | null =
-        await this.sessions.refreshSession(refreshToken);
-      if (session === null) {
-        throw new UnauthorizedException("Not found token");
-      }
-
-      const account: AccountForAuth | null =
-        await this.accounts.findAccountForAuth(session.accountId);
-      if (account === null) {
-        this.sessions.invalidateSession(session.id);
-        throw new ForbiddenException("Gone account");
-      }
+      const session: Session = await this.sessions.refreshSession(refreshToken);
+      const account: AccountForAuth = await this.accounts.findAccountForAuth(
+        session.accountId,
+      );
 
       if (account.bans.length !== 0) {
         this.sessions.invalidateSession(session.id);
@@ -199,17 +187,11 @@ export class AuthService {
         throw new BadRequestException("Undefined OTP");
       }
 
-      const state: Authorization | null =
+      const state: Authorization =
         await this.sessions.findAndDeleteTemporaryState(auth.state);
-      if (state === null) {
-        throw new BadRequestException("Not found state");
-      }
-
-      const account: AccountForAuth | null =
-        await this.accounts.findAccountForAuth(state.redirectURI); //XXX: Hack
-      if (account === null) {
-        throw new BadRequestException("Not found account");
-      }
+      const account: AccountForAuth = await this.accounts.findAccountForAuth(
+        state.redirectURI, //XXX: Hack
+      );
 
       const secret = account.otpSecret;
       if (secret === null) {

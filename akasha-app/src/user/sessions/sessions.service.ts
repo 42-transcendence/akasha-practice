@@ -44,18 +44,8 @@ export class SessionsService {
     return await this.prisma.authorization.create({ data });
   }
 
-  async findAndDeleteTemporaryState(id: string): Promise<Authorization | null> {
-    try {
-      return await this.prisma.authorization.delete({ where: { id } });
-    } catch (e) {
-      if (e instanceof Prisma.PrismaClientKnownRequestError) {
-        if (e.code === "P2025") {
-          // An operation failed because it depends on one or more records that were required but not found. {cause}
-          return null;
-        }
-      }
-      throw e;
-    }
+  async findAndDeleteTemporaryState(id: string): Promise<Authorization> {
+    return await this.prisma.authorization.delete({ where: { id } });
   }
 
   async createNewSession(accountId: string): Promise<Session> {
@@ -64,33 +54,33 @@ export class SessionsService {
     });
   }
 
-  async refreshSession(token: string): Promise<Session | null> {
-    const prevSession: SessionTree | null =
-      await this.prisma.session.findUnique({
+  async refreshSession(token: string): Promise<Session> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Check Previous Session
+      const prevSession: SessionTree = await tx.session.findUniqueOrThrow({
         where: { token },
         include: { successor: true },
       });
-    if (prevSession === null) {
-      return null;
-    }
-    if (!prevSession.isValid) {
-      throw new InvalidSessionError();
-    }
-    if (prevSession.successor !== null) {
-      const affectedCount: number = await this.invalidateSession(
-        prevSession.id,
-      );
-      throw new ReuseDetectError(affectedCount);
-    }
+      if (!prevSession.isValid) {
+        throw new InvalidSessionError();
+      }
+      if (prevSession.successor !== null) {
+        const affectedCount: number = await this.invalidateSession(
+          prevSession.id,
+        );
+        throw new ReuseDetectError(affectedCount);
+      }
 
-    const successorSession: Session = await this.prisma.session.create({
-      data: {
-        accountId: prevSession.accountId,
-        isValid: true,
-        predecessorId: prevSession.id,
-      },
+      // 2. Create Next Session
+      const successorSession: Session = await tx.session.create({
+        data: {
+          accountId: prevSession.accountId,
+          isValid: true,
+          predecessorId: prevSession.id,
+        },
+      });
+      return successorSession;
     });
-    return successorSession;
   }
 
   async invalidateSession(id: number): Promise<number> {

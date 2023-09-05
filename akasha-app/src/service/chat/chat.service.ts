@@ -7,6 +7,7 @@ import {
   ChatRoomViewEntry,
   FRIEND_ACTIVE_FLAGS_SIZE,
   FriendEntry,
+  RoomErrorNumber,
   SocialPayload,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
@@ -17,7 +18,6 @@ import {
   ChatMember,
   Prisma,
 } from "@prisma/client";
-import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 import {
   ActiveStatusNumber,
   MessageTypeNumber,
@@ -193,28 +193,19 @@ export class ChatService {
     targetAccountId: string,
     groupName: string,
     activeFlags: number,
-  ): Promise<FriendEntry | null> {
-    try {
-      const data = await this.prisma.friend.create({
-        data: {
-          account: { connect: { id: accountId } },
-          friendAccount: { connect: { id: targetAccountId } },
-          groupName,
-          activeFlags: toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
-        },
-      });
-      return {
-        ...data,
-        activeFlags: fromBitsString(data.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
-      };
-    } catch (e) {
-      if (e instanceof PrismaClientKnownRequestError) {
-        if (e.code === "P2002") {
-          return null;
-        }
-      }
-      throw e;
-    }
+  ): Promise<FriendEntry> {
+    const data = await this.prisma.friend.create({
+      data: {
+        account: { connect: { id: accountId } },
+        friendAccount: { connect: { id: targetAccountId } },
+        groupName,
+        activeFlags: toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
+      },
+    });
+    return {
+      ...data,
+      activeFlags: fromBitsString(data.activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
+    };
   }
 
   async modifyFriend(
@@ -222,7 +213,7 @@ export class ChatService {
     targetAccountId: string,
     groupName: string | undefined,
     activeFlags: number | undefined,
-  ): Promise<FriendEntry | null> {
+  ): Promise<FriendEntry> {
     const data = await this.prisma.friend.update({
       data: {
         groupName,
@@ -247,7 +238,7 @@ export class ChatService {
   async deleteFriend(
     accountId: string,
     targetAccountId: string,
-  ): Promise<boolean> {
+  ): Promise<number> {
     const batch = await this.prisma.friend.deleteMany({
       where: {
         OR: [
@@ -262,7 +253,7 @@ export class ChatService {
         ],
       },
     });
-    return batch.count !== 0;
+    return batch.count;
   }
 
   async isDuplexFriend(
@@ -327,7 +318,11 @@ export class ChatService {
     req: Prisma.ChatCreateInput & {
       members: Prisma.ChatMemberCreateManyChatInput[];
     },
-  ): Promise<ChatRoomForEntry> {
+  ): Promise<
+    | { errno: RoomErrorNumber.SUCCESS; room: ChatRoomForEntry }
+    | { errno: Exclude<RoomErrorNumber, RoomErrorNumber.SUCCESS> }
+  > {
+    //FIXME: Transaction? 방 만들기 실패의 경우의 수 찾기
     const data = await this.prisma.chat.create({
       data: {
         ...req,
@@ -344,7 +339,7 @@ export class ChatService {
     const memberSet = new Set<string>(data.members.map((e) => e.accountId));
     this.memberCache.set(data.id, memberSet);
 
-    return data;
+    return { errno: RoomErrorNumber.SUCCESS, room: data };
   }
 
   async getChatMemberSet(chatId: string): Promise<Set<string>> {
@@ -386,6 +381,7 @@ export class ChatService {
 
       return data;
     } catch (e) {
+      //FIXME: 개선
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
           // An operation failed because it depends on one or more records that were required but not found. {cause}
