@@ -11,9 +11,10 @@ import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
 import { GameServerOpcode, GameClientOpcode } from "@common/game-opcodes";
-import { Frame } from "@/_common/game-payload";
+import { Frame, PhysicsAttribute } from "@/_common/game-payload";
 import { AuthLevel } from "@/_common/auth-payloads";
-import { readFrame } from "./game-payload-builder";
+import { readFrame, writeFrame, writeFrames } from "./game-payload-builder";
+import { copy, getScore, physicsEngine } from "./game-physics-engine";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",
@@ -26,12 +27,14 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
   private worldFrames: Map<string, { fixed: boolean, frame: Frame }[]>;
   //temp
   private gameRoomList: Map<string, string[]>;
+  private clients: Set<GameWebSocket>;
 
   constructor(private readonly gameService: GameService) {
     super();
     void this.server;
     this.worldFrames = new Map<string, { fixed: boolean, frame: Frame }[]>;
     this.gameRoomList = new Map<string, string[]>;
+    this.clients = new Set<GameWebSocket>;
   }
 
   override handleServiceConnection(client: GameWebSocket): void {
@@ -43,6 +46,7 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
   }
 
   override handleServiceDisconnect(client: GameWebSocket): void {
+    this.clients.delete(client); // tmp
     Logger.debug(
       `Disconnect GameWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );
@@ -54,14 +58,15 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
 
     const uuid = client.auth.user_id;
     client.uuid = uuid;
+    this.clients.add(client); // tmp
   }
 
   @SubscribeMessage(GameServerOpcode.JOIN)
   roomJoin(client: GameWebSocket, payload: ByteBuffer): ByteBuffer {
-    const roomName: string = payload.readString();
-    const members: string[] | undefined = this.gameRoomList.get(roomName);
+    const roomUUID: string = payload.readString();
+    const members: string[] | undefined = this.gameRoomList.get(roomUUID);
     if (members === undefined) {
-      this.gameRoomList.set(roomName, [client.uuid])
+      this.gameRoomList.set(roomUUID, [client.uuid])
     }
     else {
       if (members.length > 2) { } // TODO - 두명 넘으면 제껴!
@@ -73,33 +78,64 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
 
   @SubscribeMessage(GameServerOpcode.START)
   gameStrat(client: GameWebSocket, payload: ByteBuffer) {
-    const roomName: string = payload.readString();
-    const members: string[] | undefined = this.gameRoomList.get(roomName);
+    const roomUUID: string = payload.readString();
+    const members: string[] | undefined = this.gameRoomList.get(roomUUID);
     if (members === undefined) {
-      return ByteBuffer.createWithOpcode(GameClientOpcode.REJECT);
+      client.send(ByteBuffer.createWithOpcode(GameClientOpcode.REJECT).toArray());
+      return;
     }
     const buf = ByteBuffer.createWithOpcode(GameClientOpcode.START);
-
+    for (const _clinet of this.clients) {
+      if (members.includes(_clinet.uuid)) {
+        _clinet.send(buf.toArray());
+        break;
+      }
+    }
   }
+
   @SubscribeMessage(GameServerOpcode.FRAME)
   getFrame(client: GameWebSocket, payload: ByteBuffer) {
     const player: number = payload.read1();
-    const roomName: string = payload.readString();
+    const roomUUID: string = payload.readString();
     const frame: Frame = readFrame(payload);
-    // const members: string[] | undefined = this.gameRoomList.get(roomName);
-    // if (members === undefined) {
-    //   return ByteBuffer.createWithOpcode(GameClientOpcode.REJECT);
-    // }
-    const frames = this.worldFrames.get(roomName);
+    const frames = this.worldFrames.get(roomUUID);
+    const members = this.gameRoomList.get(roomUUID);
+    if (members === undefined) {
+      return;//멤버가 서버에 존재하지 않울때!!
+    }
     if (frames === undefined) {
-      this.worldFrames.set(roomName, [{ fixed: false, frame }]);
+      this.worldFrames.set(roomUUID, [{ fixed: false, frame }]);
+      const buf = ByteBuffer.create(GameClientOpcode.SYNC);
+      writeFrame(buf, frame);
+      for (const _clinet of this.clients) {
+        if (members.includes(_clinet.uuid) && _clinet !== client) {
+          _clinet.send(buf.toArray());
+          break;
+        }
+      }
     }
     else {
       if (frames.length === 0 || frames[frames.length - 1].frame.id < frame.id) {
         frames.push({ fixed: false, frame });
+        const buf = ByteBuffer.create(GameClientOpcode.SYNC);
+        writeFrame(buf, frame);
+        for (const _clinet of this.clients) {
+          if (members.includes(_clinet.uuid) && _clinet !== client) {
+            _clinet.send(buf.toArray());
+            break;
+          }
+        }
       }
       else {
-        this.syncFrame(player, frames, frame);
+        const resyncFrames = this.syncFrame(player, frames, frame);
+        const buf = ByteBuffer.create(GameClientOpcode.RESYNC);
+        writeFrames(buf, resyncFrames);
+        for (const _clinet of this.clients) {
+          if (members.includes(_clinet.uuid)) {
+            _clinet.send(buf.toArray());
+            break;
+          }
+        }
         let count = 0;
         for (; count < frames.length; count++) {
           if (frames[count].fixed === false) {
@@ -110,67 +146,63 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
       }
     }
   }
-  private syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame) {
+
+  private syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame): Frame[] {
+    const sendFrames: Frame[] = [];
     const velocity = { x: 0, y: 0 };
     const prevPos = { x: 0, y: 0 };
-    const ballV = { x: 0, y: 0 };
-    const ballPos = { x: 0, y: 0 };
+    const ball: PhysicsAttribute = { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } }
     for (let i = 0; i < frames.length; i++) {
       if (frames[i].frame.id === frame.id) {
         frames[i].fixed == true;
         //프레임 패들 위치 속도 병합
         if (player === 1) {
           frames[i].frame.paddle1 = frame.paddle1;
-          velocity.x = frame.paddle1.velocity.x;
-          velocity.y = frame.paddle1.velocity.y;
-          prevPos.x = frame.paddle1.position.x;
-          prevPos.y = frame.paddle1.position.y;
+          copy(velocity, frame.paddle1.velocity);
+          copy(prevPos, frame.paddle1.position);
         }
         else {
           frames[i].frame.paddle2 = frame.paddle2;
-          velocity.x = frame.paddle2.velocity.x;
-          velocity.y = frame.paddle2.velocity.y;
-          prevPos.x = frame.paddle2.position.x;
-          prevPos.y = frame.paddle2.position.y;
+          copy(velocity, frame.paddle2.velocity);
+          copy(prevPos, frame.paddle2.position);
         }
         //프레임 공의 위치 속도 병합
         if (frame.paddle1Hit === true || frame.paddle2Hit === true) {
           frames[i].frame.ball = frame.ball;
         }
-        ballV.x = frames[i].frame.ball.velocity.x;
-        ballV.y = frames[i].frame.ball.velocity.y;
-        ballPos.x = frames[i].frame.ball.position.x;
-        ballPos.y = frames[i].frame.ball.position.y;
-        //프레임 점수차이
-        if (frames[i].frame.player1Score !== frame.player1Score) {
-
-        }
-        else if (frames[i].frame.player2Score !== frame.player2Score) {
-
-        }
+        getScore(frames[i].frame);
+        copy(ball.velocity, frames[i].frame.ball.velocity);
+        copy(ball.position, frames[i].frame.ball.position);
+        sendFrames.push(frames[i].frame);
       }
-      else if (i > frame.id) {
+      else if (frames[i].frame.id > frame.id) {
         prevPos.x += velocity.x;
         prevPos.y += velocity.y;
         if (player === 1) {
-          frames[i].frame.paddle1.position = prevPos;
-          frames[i].frame.paddle1.velocity = velocity;
+          copy(frames[i].frame.paddle1.position, prevPos);
+          copy(frames[i].frame.paddle1.velocity, velocity);
         }
         else {
-          frames[i].frame.paddle2.position = prevPos;
-          frames[i].frame.paddle2.velocity = velocity;
+          copy(frames[i].frame.paddle2.position, prevPos);
+          copy(frames[i].frame.paddle2.velocity, velocity);
         }
-        ballPos.x += ballV.x;
-        ballPos.y += ballV.y;
-        frames[i].frame.ball.position = ballPos;
-        frames[i].frame.ball.velocity = ballV;
+        ball.position.x += ball.velocity.x;
+        ball.position.y += ball.velocity.y;
+        copy(frames[i].frame.ball.position, ball.position);
+        copy(frames[i].frame.ball.velocity, ball.velocity);
         // 자체 물리엔진 적용!
+        physicsEngine(frames[i].frame);
+        if (player === 1) {
+          copy(prevPos, frames[i].frame.paddle1.position);
+          copy(velocity, frames[i].frame.paddle1.velocity);
+        }
+        else {
+          copy(prevPos, frames[i].frame.paddle2.position);
+          copy(velocity, frames[i].frame.paddle2.velocity);
+        }
+        sendFrames.push(frames[i].frame);
       }
     }
-  }
-  private diff(num1: number, num2: number): boolean {
-    if (Math.abs(num1 - num2) < 1)
-      return true;
-    return false;
+    return (sendFrames);
   }
 }

@@ -19,6 +19,13 @@ export function writeFrame(payload: ByteBuffer, frame: Frame) {
 	payload.write1(frame.player2Score);
 }
 
+export function writeFrames(payload: ByteBuffer, frames: Frame[]) {
+	payload.write4Unsigned(frames.length);
+	for (let i = 0; i < frames.length; i++) {
+		writeFrame(payload, frames[i]);
+	}
+}
+
 export function readPhysicsAttribute(payload: ByteBuffer): PhysicsAttribute {
 	const posX = payload.read4();
 	const posY = payload.read4();
@@ -37,4 +44,13 @@ export function readFrame(payload: ByteBuffer): Frame {
 	const player1Score = payload.read1();
 	const player2Score = payload.read1();
 	return { id, paddle1, paddle1Hit, paddle2, paddle2Hit, ball, player1Score, player2Score };
+}
+
+export function readFrames(payload: ByteBuffer): Frame[] {
+	const size = payload.read4Unsigned();
+	const frames: Frame[] = []
+	for (let i = 0; i < size; i++) {
+		frames.push(readFrame(payload));
+	}
+	return frames;
 }
