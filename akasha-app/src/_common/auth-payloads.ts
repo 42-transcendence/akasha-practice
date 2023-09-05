@@ -1,4 +1,4 @@
-import { RoleNumber } from "./generated/types";
+import { JsonValue, RoleNumber } from "./generated/types";
 import { hasProperty } from "akasha-lib";
 import { BanSummaryPayload } from "./profile-payloads";
 
@@ -71,6 +71,54 @@ export function isAuthPayload(value: unknown): value is AuthPayload {
   }
   return false;
 }
+
+/// SecretParams
+export type SecretParams = {
+  enabled: boolean;
+  codeDigits: number;
+  movingPeriod: number;
+  algorithm: "SHA-256" | "SHA-384" | "SHA-512";
+};
+
+function hasProperty_algorithm<T extends Record<"algorithm", string>>(
+  value: T,
+): value is T & Record<"algorithm", SecretParams["algorithm"]> {
+  if (
+    value.algorithm !== "SHA-256" &&
+    value.algorithm !== "SHA-384" &&
+    value.algorithm !== "SHA-512"
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function isSecretParams(value: JsonValue): value is SecretParams {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+
+  if (
+    !hasProperty("boolean", value, "enabled") ||
+    !hasProperty("number", value, "codeDigits") ||
+    !hasProperty("number", value, "movingPeriod") ||
+    !hasProperty("string", value, "algorithm")
+  ) {
+    return false;
+  }
+
+  if (!hasProperty_algorithm(value)) {
+    return false;
+  }
+
+  value satisfies SecretParams;
+  return true;
+}
+
+export type SecretParamsView = Omit<SecretParams, "enabled">;
+
+/// OTPSecret
+export type OTPSecret = { data: string } & SecretParamsView;
 
 /// TokenSet
 export type TokenSet = {

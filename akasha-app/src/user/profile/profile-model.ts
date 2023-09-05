@@ -1,8 +1,9 @@
-import { IsString } from "class-validator";
+import { NICK_NAME_REGEX } from "@/_common/profile-constants";
+import { IsString, Matches } from "class-validator";
 
 /// NickNameModel
 export class NickNameModel {
-  @IsString() readonly name;
+  @IsString() @Matches(NICK_NAME_REGEX) readonly name;
 
   constructor(name: string) {
     this.name = name;

@@ -23,10 +23,8 @@ import {
   OAuth,
   OAuthDefinedError,
   OAuthError,
-  TOTP,
   TokenSuccessfulResponse,
   UnknownOAuthError,
-  generateOTP,
 } from "akasha-lib";
 import { Account, Authorization, Session } from "@prisma/client";
 import * as jose from "jose";
@@ -36,6 +34,7 @@ import {
   AuthPayload,
   TokenSet,
   isAuthPayload,
+  isSecretParams,
 } from "@common/auth-payloads";
 import { getBanCategoryNumber, getRoleNumber } from "@common/generated/types";
 
@@ -131,8 +130,14 @@ export class AuthService {
         await this.accounts.findOrCreateAccountForAuth(source.key, subject);
 
       if (account.otpSecret !== null) {
-        // Issue temporary token that require promotion using OTP.
-        return await this.makeTemporaryToken(account);
+        const params = account.otpSecret.params;
+        if (!isSecretParams(params)) {
+          throw new InternalServerErrorException("Corrupted OTP param");
+        }
+
+        if (params.enabled) {
+          return await this.makeTemporaryToken(account);
+        }
       }
 
       if (account.bans.length !== 0) {
@@ -197,46 +202,8 @@ export class AuthService {
       if (secret === null) {
         throw new InternalServerErrorException("Missing OTP data");
       }
-      const params = secret.params;
-      if (
-        params === null ||
-        typeof params !== "object" ||
-        Array.isArray(params)
-      ) {
-        throw new InternalServerErrorException("Corrupted OTP param");
-      }
 
-      const codeDigits = params["digits"];
-      const movingPeriod = params["period"];
-      const algorithm = params["algorithm"];
-      if (
-        typeof codeDigits !== "number" ||
-        typeof movingPeriod !== "number" ||
-        typeof algorithm !== "string"
-      ) {
-        throw new InternalServerErrorException("Corrupted OTP data");
-      }
-
-      if (
-        algorithm !== "SHA-256" &&
-        algorithm !== "SHA-384" &&
-        algorithm !== "SHA-512"
-      ) {
-        throw new InternalServerErrorException(
-          "Corrupted OTP data (algorithm)",
-        );
-      }
-
-      const movingFactor = TOTP.getMovingFactor(movingPeriod);
-
-      const serverOTP: string = await generateOTP(
-        secret.data,
-        movingFactor,
-        codeDigits,
-        algorithm,
-      );
-
-      if (clientOTP !== serverOTP) {
+      if (!(await this.accounts.checkOTP(secret, clientOTP))) {
         throw new UnauthorizedException("Wrong OTP");
       }
 

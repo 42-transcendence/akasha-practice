@@ -2,7 +2,8 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  NotFoundException,
+  InternalServerErrorException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import {
   ActiveStatus,
@@ -11,8 +12,13 @@ import {
   RegistrationState,
 } from "@prisma/client";
 import { PrismaService } from "@/prisma/prisma.service";
-import { fromBitsString } from "akasha-lib";
-import { FRIEND_ACTIVE_FLAGS_SIZE } from "@/_common/chat-payloads";
+import { TOTP, assert, fromBitsString, generateOTP } from "akasha-lib";
+import { FRIEND_ACTIVE_FLAGS_SIZE } from "@common/chat-payloads";
+import {
+  SecretParams,
+  SecretParamsView,
+  isSecretParams,
+} from "@common/auth-payloads";
 
 const MIN_TAG_NUMBER = 1000;
 const MAX_TAG_NUMBER = 9999;
@@ -65,6 +71,12 @@ export type AccountNickNameAndTag = Prisma.AccountGetPayload<
   typeof accountNickNameAndTag
 >;
 
+/// SecretValues
+const secretValues = Prisma.validator<Prisma.SecretDefaultArgs>()({
+  select: { data: true, params: true },
+});
+export type SecretValues = Prisma.SecretGetPayload<typeof secretValues>;
+
 @Injectable()
 export class AccountsService {
   constructor(private readonly prisma: PrismaService) {}
@@ -96,6 +108,14 @@ export class AccountsService {
       where: { id },
       ...accountPrivate,
     });
+  }
+
+  async findAccountIdByNick(name: string, tag: number): Promise<string | null> {
+    const account = await this.prisma.account.findUnique({
+      where: { nickName_nickTag: { nickName: name, nickTag: tag } },
+      select: { id: true },
+    });
+    return account?.id ?? null;
   }
 
   async findOrCreateAccountForAuth(
@@ -133,6 +153,134 @@ export class AccountsService {
           where: activeBanCondition(),
         },
       },
+    });
+  }
+
+  async checkOTP(secret: SecretValues, clientOTP: string): Promise<boolean> {
+    const params = secret.params;
+    if (!isSecretParams(params)) {
+      throw new InternalServerErrorException("Corrupted OTP param");
+    }
+
+    const movingFactor = TOTP.getMovingFactor(params.movingPeriod);
+
+    const serverOTP: string = await generateOTP(
+      secret.data,
+      movingFactor,
+      params.codeDigits,
+      params.algorithm,
+    );
+
+    return serverOTP === clientOTP;
+  }
+
+  async createOTPSecretAtomic(
+    id: string,
+    supplier: () => Promise<[Uint8Array, SecretParamsView]>,
+  ): Promise<SecretValues> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Check Exists Secret
+      const account = await tx.account.findUniqueOrThrow({
+        where: { id },
+        select: {
+          otpSecret: secretValues,
+        },
+      });
+
+      if (account.otpSecret !== null) {
+        // 2-A. Remaining Midway Data
+        const params = account.otpSecret.params;
+        if (!isSecretParams(params)) {
+          throw new InternalServerErrorException("Corrupted OTP param");
+        }
+
+        // Not Midway
+        if (params.enabled) {
+          throw new BadRequestException("Enabled otpSecret already exists");
+        }
+
+        return account.otpSecret;
+      } else {
+        // 2-B. Create New Secret
+        const data = await supplier();
+        const insertedSecret = await tx.secret.create({
+          data: {
+            data: Buffer.from(data[0]),
+            params: { ...data[1], enabled: false } satisfies SecretParams,
+          },
+        });
+        const changedAccount = await tx.account.update({
+          where: { id },
+          data: { otpSecret: { connect: { id: insertedSecret.id } } },
+          select: {
+            otpSecret: secretValues,
+          },
+        });
+
+        assert(changedAccount.otpSecret !== null);
+        return changedAccount.otpSecret;
+      }
+    });
+  }
+
+  async updateOTPSecretAtomic(id: string, clientOTP: string): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Load Secret
+      const account = await tx.account.findUniqueOrThrow({
+        where: { id },
+        select: {
+          otpSecret: { select: { ...secretValues.select, id: true } },
+        },
+      });
+
+      if (account.otpSecret === null) {
+        throw new BadRequestException();
+      }
+      if (!(await this.checkOTP(account.otpSecret, clientOTP))) {
+        throw new UnauthorizedException("Wrong OTP");
+      }
+      const params = account.otpSecret.params;
+      if (!isSecretParams(params)) {
+        throw new BadRequestException();
+      }
+      if (params.enabled) {
+        throw new ConflictException("Already enabled OTP");
+      }
+
+      // 2. Enable Secret
+      const changedAccount = await tx.secret.update({
+        where: { id: account.otpSecret.id },
+        data: {
+          params: { ...params, enabled: true } satisfies SecretParams,
+        },
+        ...secretValues,
+      });
+      void changedAccount;
+    });
+  }
+
+  async deleteOTPSecretAtomic(id: string, clientOTP: string): Promise<void> {
+    return this.prisma.$transaction(async (tx) => {
+      // 1. Load Exists Secret
+      const account = await tx.account.findUniqueOrThrow({
+        where: { id },
+        select: {
+          otpSecret: { select: { ...secretValues.select, id: true } },
+        },
+      });
+
+      if (account.otpSecret === null) {
+        throw new BadRequestException();
+      }
+      if (!(await this.checkOTP(account.otpSecret, clientOTP))) {
+        throw new UnauthorizedException("Wrong OTP");
+      }
+
+      // 2. Delete Secret
+      const deletedSecret = await this.prisma.secret.delete({
+        where: { id: account.otpSecret.id },
+      });
+      void deletedSecret;
     });
   }
 
@@ -199,15 +347,12 @@ export class AccountsService {
     overwrite: boolean,
   ): Promise<AccountNickNameAndTag> {
     return this.prisma.$transaction(async (tx) => {
-      // 1. Check Exists Account
-      const prev = await tx.account.findUnique({
+      // 1. Check Exists Nick
+      const account = await tx.account.findUniqueOrThrow({
         where: { id },
         select: { nickName: true },
       });
-      if (prev === null) {
-        throw new NotFoundException("account does not exists");
-      }
-      if (!overwrite && prev.nickName !== null) {
+      if (!overwrite && account.nickName !== null) {
         throw new BadRequestException("nickName already exists");
       }
 
@@ -248,34 +393,31 @@ export class AccountsService {
     avatarData: Buffer | null,
   ): Promise<string | null> {
     return this.prisma.$transaction(async (tx) => {
-      // 1. Check Exists Account
-      const prev = await tx.account.findUnique({
+      // 1. Load Exists Avatar
+      const account = await tx.account.findUniqueOrThrow({
         where: { id },
         select: { avatarKey: true },
       });
-      if (prev === null) {
-        throw new NotFoundException("account does not exists");
-      }
 
       // 2. Delete Avatar If Exists
-      if (prev.avatarKey !== null) {
-        const del = await this.prisma.avatar.delete({
-          where: { id: prev.avatarKey },
+      if (account.avatarKey !== null) {
+        const deletedAvatar = await this.prisma.avatar.delete({
+          where: { id: account.avatarKey },
         });
-        void del;
+        void deletedAvatar;
       }
 
       if (avatarData !== null) {
         // 3-A. Insert Updated Avatar
-        const ins = await this.prisma.avatar.create({
+        const insertedAvatar = await this.prisma.avatar.create({
           data: { data: avatarData },
         });
-        const data = await tx.account.update({
+        const changedAccount = await tx.account.update({
           where: { id },
-          data: { avatarKey: ins.id },
+          data: { avatarKey: insertedAvatar.id },
           select: { avatarKey: true },
         });
-        return data.avatarKey;
+        return changedAccount.avatarKey;
       } else {
         // 3-B. Expect account to have been updated by `ON DELETE SET NULL`
         return null;

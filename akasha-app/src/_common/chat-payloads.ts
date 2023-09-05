@@ -151,9 +151,9 @@ export type ChatRoomEntry = Pick<
 export function readChatRoom(buf: ByteBuffer): ChatRoomEntry {
   const id = buf.readUUID();
   const title = buf.readString();
+  const limit = buf.read2();
   const modeFlags = buf.read1();
   const members = buf.readArray(readChatRoomMember);
-  const limit = buf.read2();
   const lastMessageId = buf.readNullable(buf.readUUID, NULL_UUID);
   return {
     id,

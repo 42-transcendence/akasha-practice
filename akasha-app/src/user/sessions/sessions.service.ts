@@ -83,7 +83,7 @@ export class SessionsService {
     });
   }
 
-  async invalidateSession(id: number): Promise<number> {
+  async invalidateSession(id: bigint): Promise<number> {
     //XXX: 작성시 Prisma가 recursive를 지원하지 않았었음.
     const sql: Prisma.Sql = Prisma.sql`WITH RECURSIVE sessions_tree AS (
         SELECT s."id" FROM "services"."sessions" s WHERE "id" = ${id}

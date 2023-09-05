@@ -1,18 +1,22 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   Get,
   HttpStatus,
+  NotFoundException,
   Param,
   ParseFilePipeBuilder,
+  ParseIntPipe,
+  ParseUUIDPipe,
   Post,
+  Query,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from "@nestjs/common";
-import { encodeBase32, generateHMACKey } from "akasha-lib";
-import { AuthPayload } from "@common/auth-payloads";
+import { AuthPayload, OTPSecret } from "@common/auth-payloads";
 import { AuthGuard } from "@/user/auth/auth.guard";
 import { Auth } from "@/user/auth/auth.decorator";
 import { ProfileService } from "./profile.service";
@@ -29,6 +33,7 @@ import {
   AVATAR_LIMIT,
   AVATAR_MIME_REGEX,
 } from "@common/profile-constants";
+import { NickNamePipe } from "./profile.pipe";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -38,7 +43,7 @@ export class ProfileController {
   @Get("public/:targetId")
   async getPublicProfile(
     @Auth() auth: AuthPayload,
-    @Param("targetId") targetId: string,
+    @Param("targetId", ParseUUIDPipe) targetId: string,
   ): Promise<AccountProfilePublicPayload> {
     return await this.profileService.getPublicProfile(auth, targetId);
   }
@@ -46,7 +51,7 @@ export class ProfileController {
   @Get("protected/:targetId")
   async getProtectedProfile(
     @Auth() auth: AuthPayload,
-    @Param("targetId") targetId: string,
+    @Param("targetId", ParseUUIDPipe) targetId: string,
   ): Promise<AccountProfileProtectedPayload> {
     return await this.profileService.getProtectedProfile(auth, targetId);
   }
@@ -66,6 +71,23 @@ export class ProfileController {
     return this.profileService.registerNick(auth, body.name);
   }
 
+  @Get("lookup")
+  async lookup(
+    @Auth() auth: AuthPayload,
+    @Query("name", NickNamePipe) name: string,
+    @Query("tag", ParseIntPipe) tag: number,
+  ): Promise<string> {
+    const id: string | null = await this.profileService.lookupIdByNick(
+      auth,
+      name,
+      tag,
+    );
+    if (id === null) {
+      throw new NotFoundException();
+    }
+    return id;
+  }
+
   @Post("avatar")
   @UseInterceptors(FileInterceptor(AVATAR_FORM_DATA_KEY))
   async addAvatar(
@@ -83,27 +105,39 @@ export class ProfileController {
         }),
     )
     file: Express.Multer.File,
-  ) {
+  ): Promise<string | null> {
     return this.profileService.updateAvatar(auth, file.buffer);
   }
 
   @Delete("avatar")
-  async removeAvatar(@Auth() auth: AuthPayload) {
+  async removeAvatar(@Auth() auth: AuthPayload): Promise<string | null> {
     return this.profileService.updateAvatar(auth, null);
   }
 
-  @Get("setup-otp")
-  async setupOTP(): Promise<{
-    algorithm: string;
-    key: string;
-    digits: number;
-    period: number;
-  }> {
-    const algorithm = "SHA-256";
-    const key: Uint8Array = await generateHMACKey(algorithm);
-    const digits = 6;
-    const period = 30;
+  @Get("otp")
+  async getInertOTP(@Auth() auth: AuthPayload): Promise<OTPSecret> {
+    return this.profileService.getInertOTP(auth);
+  }
 
-    return { algorithm, key: encodeBase32(key), digits, period };
+  @Post("otp")
+  async enableOTP(
+    @Auth() auth: AuthPayload,
+    @Query("otp") clientOTP: string | undefined,
+  ): Promise<void> {
+    if (clientOTP === undefined) {
+      throw new BadRequestException("Undefined OTP");
+    }
+    return this.profileService.enableOTP(auth, clientOTP);
+  }
+
+  @Post("otp")
+  async disableOTP(
+    @Auth() auth: AuthPayload,
+    @Query("otp") clientOTP: string | undefined,
+  ): Promise<void> {
+    if (clientOTP === undefined) {
+      throw new BadRequestException("Undefined OTP");
+    }
+    return this.profileService.disableOTP(auth, clientOTP);
   }
 }

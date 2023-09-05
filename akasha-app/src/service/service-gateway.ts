@@ -15,7 +15,14 @@ export abstract class ServiceGatewayBase<T extends ServiceWebSocketBase>
       await this.handleServiceConnection(client, arg);
     } catch (e) {
       //XXX: NestJS가 OnGatewayConnection에서 발생하는 오류를 이벤트 루프에 도달할 때까지 잡지 않음.
-      Logger.error(`OnConnection: ${e}`, "UnhandledWebSocketError");
+      if (e instanceof Error) {
+        Logger.error(
+          `OnConnection: ${e.name}: ${e.message}: ${e.stack}`,
+          "UnhandledWebSocketError",
+        );
+      } else {
+        Logger.error(`OnConnection: ${e}`, "UnhandledWebSocketError");
+      }
       client.terminate();
     }
   }
@@ -32,7 +39,14 @@ export abstract class ServiceGatewayBase<T extends ServiceWebSocketBase>
       await this.handleServiceDisconnect(client);
     } catch (e) {
       //XXX: NestJS가 OnGatewayDisconnect에서 발생하는 오류를 이벤트 루프에 도달할 때까지 잡지 않음.
-      Logger.error(`OnDisconnect: ${e}`, "UnhandledWebSocketError");
+      if (e instanceof Error) {
+        Logger.error(
+          `OnDisconnect: ${e.name}: ${e.message}: ${e.stack}`,
+          "UnhandledWebSocketError",
+        );
+      } else {
+        Logger.error(`OnDisconnect: ${e}`, "UnhandledWebSocketError");
+      }
     }
   }
 

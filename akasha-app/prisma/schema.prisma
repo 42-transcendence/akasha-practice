@@ -68,7 +68,7 @@ model Account {
   authIssuer            Int
   authSubject           String            @db.VarChar(256)
   otpSecret             Secret?           @relation(fields: [otpSecretKey], references: [id], onDelete: Restrict)
-  otpSecretKey          String?           @db.VarChar(21)
+  otpSecretKey          Int?
   // Register
   createdTimestamp      DateTime          @default(now())
   changedTimestamp      DateTime          @default(now())
@@ -103,8 +103,8 @@ model Account {
   gameHistory           GameHistory[]
 
   @@unique([authIssuer, authSubject])
+  @@unique([nickName, nickTag])
   @@index(nickName)
-  @@index([nickName, nickTag])
   @@map("accounts")
   @@schema("services")
 }
@@ -120,14 +120,14 @@ model Authorization {
 }
 
 model Session {
-  id               Int      @id @default(autoincrement())
+  id               BigInt   @id @default(autoincrement())
   account          Account  @relation(fields: [accountId], references: [id])
   accountId        String   @db.Uuid
   token            String   @unique @default(nanoid(128)) @db.VarChar(128)
   createdTimestamp DateTime @default(now())
   successor        Session? @relation("SessionHistory")
   predecessor      Session? @relation("SessionHistory", fields: [predecessorId], references: [id])
-  predecessorId    Int?     @unique
+  predecessorId    BigInt?  @unique
   isValid          Boolean  @default(true)
 
   @@map("sessions")
@@ -135,7 +135,7 @@ model Session {
 }
 
 model Secret {
-  id                String    @id @default(nanoid()) @db.VarChar(21)
+  id                Int       @id @default(autoincrement())
   data              Bytes
   params            Json
   createdTimestamp  DateTime  @default(now())

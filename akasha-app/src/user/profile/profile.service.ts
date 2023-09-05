@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  InternalServerErrorException,
   NotFoundException,
 } from "@nestjs/common";
 import {
@@ -10,8 +11,14 @@ import {
   AccountProtected,
   AccountPublic,
   AccountsService,
+  SecretValues,
 } from "@/user/accounts/accounts.service";
-import { AuthLevel, AuthPayload } from "@common/auth-payloads";
+import {
+  AuthLevel,
+  AuthPayload,
+  OTPSecret,
+  isSecretParams,
+} from "@common/auth-payloads";
 import {
   ActiveStatus,
   ActiveStatusNumber,
@@ -25,6 +32,7 @@ import {
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
 import { FriendActiveFlags } from "@common/chat-payloads";
+import { encodeBase32, generateHMACKey } from "akasha-lib";
 
 @Injectable()
 export class ProfileService {
@@ -121,6 +129,54 @@ export class ProfileService {
         ...targetAccount,
         activeStatus: getActiveStatusNumber(targetAccount.activeStatus),
       };
+    }
+    throw new ForbiddenException();
+  }
+
+  async lookupIdByNick(
+    payload: AuthPayload,
+    name: string,
+    tag: number,
+  ): Promise<string | null> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      return this.accounts.findAccountIdByNick(name, tag);
+    }
+    throw new ForbiddenException();
+  }
+
+  async getInertOTP(payload: AuthPayload): Promise<OTPSecret> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      const algorithm = "SHA-256";
+      const codeDigits = 6;
+      const movingPeriod = 30;
+
+      const secret: SecretValues = await this.accounts.createOTPSecretAtomic(
+        payload.user_id,
+        async () => [
+          await generateHMACKey(algorithm),
+          { algorithm, codeDigits, movingPeriod },
+        ],
+      );
+      const params = secret.params;
+      if (!isSecretParams(params)) {
+        throw new InternalServerErrorException("Corrupted OTP param");
+      }
+
+      return { data: encodeBase32(secret.data), ...params };
+    }
+    throw new ForbiddenException();
+  }
+
+  async enableOTP(payload: AuthPayload, clientOTP: string): Promise<void> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      return this.accounts.updateOTPSecretAtomic(payload.user_id, clientOTP);
+    }
+    throw new ForbiddenException();
+  }
+
+  async disableOTP(payload: AuthPayload, clientOTP: string): Promise<void> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      return this.accounts.deleteOTPSecretAtomic(payload.user_id, clientOTP);
     }
     throw new ForbiddenException();
   }

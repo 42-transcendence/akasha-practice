@@ -17,21 +17,20 @@ export class ChatServer {
 
   async trackClient(client: ChatWebSocket): Promise<void> {
     assert(client.accountId !== undefined);
+    assert(this.temporaryClients.delete(client));
 
     const id = client.accountId;
-    if (this.temporaryClients.delete(client)) {
-      const clientSet = this.clients.get(id);
-      if (clientSet !== undefined) {
-        clientSet.add(client);
-      } else {
-        this.clients.set(id, new Set<ChatWebSocket>([client]));
-        await client.onFirstConnection();
-      }
+    const clientSet = this.clients.get(id);
+    if (clientSet !== undefined) {
+      clientSet.add(client);
+    } else {
+      this.clients.set(id, new Set<ChatWebSocket>([client]));
+      await client.onFirstConnection();
     }
   }
 
   async untrackClient(client: ChatWebSocket): Promise<void> {
-    if (client.accountId !== undefined) {
+    if (client.handshakeState) {
       const id = client.accountId;
       const clientSet = this.clients.get(id);
 

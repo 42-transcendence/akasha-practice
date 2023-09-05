@@ -38,7 +38,7 @@ class Field {
     ID: "string",
     UUID: "string",
     Json: "JsonValue",
-    Bytes: "Buffer",
+    Bytes: "Uint8Array",
     Decimal: "Decimal",
     BigInt: "bigint",
   };

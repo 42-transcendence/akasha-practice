@@ -9,9 +9,15 @@ export class WsServiceExceptionsFilter extends BaseWsExceptionFilter {
     // super.catch(exception, host);
     const ws: WsArgumentsHost = host.switchToWs();
     const client = ws.getClient<ServiceWebSocketBase>();
-    Logger.debug(
-      `Exception ServiceWebSocket[${client.remoteAddress} -> ${client.remoteURL}]: ${exception}`,
-    );
+    if (exception instanceof Error) {
+      Logger.debug(
+        `Exception ServiceWebSocket[${client.remoteAddress} -> ${client.remoteURL}]: ${exception.name}: ${exception.message}: ${exception.stack}`,
+      );
+    } else {
+      Logger.debug(
+        `Exception ServiceWebSocket[${client.remoteAddress} -> ${client.remoteURL}]: ${exception}`,
+      );
+    }
     if (client.isIllegalException(exception)) {
       client.terminate();
     }
