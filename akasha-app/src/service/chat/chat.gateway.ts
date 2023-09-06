@@ -366,8 +366,8 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         (e) => e.friendAccountId,
       ),
     );
-    const memberAccountIdList = targetAccountIdList.filter((e) =>
-      ownerDuplexFriendSet.has(e),
+    const memberAccountIdList = targetAccountIdList.filter(
+      (e) => e === ownerAccountId || ownerDuplexFriendSet.has(e),
     );
 
     const result = await this.chatService.createNewRoom(
@@ -568,17 +568,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleSyncCursor(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
-    const chatId = payload.readUUID();
-    const lastMessageId = payload.readUUID();
+    const pair = readChatRoomChatMessagePair(payload);
 
-    await this.chatService.updateLastMessageCursor(
-      client.accountId,
-      chatId,
-      lastMessageId,
-    );
+    await this.chatService.updateLastMessageCursor(client.accountId, pair);
     this.server.unicast(
       client.accountId,
-      builder.makeSyncCursorPayload(lastMessageId),
+      builder.makeSyncCursorPayload(pair),
       client,
     );
   }

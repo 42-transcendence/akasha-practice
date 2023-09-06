@@ -2,6 +2,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { Injectable } from "@nestjs/common";
 import {
   ChatMessageEntry,
+  ChatRoomChatMessagePairEntry,
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
@@ -398,59 +399,88 @@ export class ChatService {
   //TODO: 상세한 루틴 create(...), enter(...), leave(...), invite(...), kick(...)에 대하여 더 자세한 구현은 매번 함수를 만든다.
   /**
 방을 만드려고 한다.
- - 성공했습니다.
- - 당신은 방을 만들 수 없습니다.
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 방을 만들 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
 
 방에 입장하려고 한다.
- - 성공했습니다.
- - 당신은 방에 입장할 수 없습니다.
- - (서버 전체에) 존재하지 않는 방입니다.
- - 이미 들어와 있는 방입니다.
- - 비밀번호가 틀렸습니다.
- - 꽉찬 방입니다.
- - 방에서 정지당했습니다. [이유도 포함]
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 방에 입장할 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (서버 전체에) 존재하지 않는 방입니다.
+ [ERROR_ALREADY_ROOM_MEMBER] - 이미 들어와 있는 방입니다.
+ [ERROR_WRONG_PASSWORD]		 - 비밀번호가 틀렸습니다.
+ [ERROR_EXCEED_LIMIT]		 - 꽉찬 방입니다.
+ [ERROR_CHAT_BANNED]		 - 방에서 정지당했습니다. [이유도 포함]
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
 
 방에 초대하려고 한다.
- - 성공했습니다.
- - 당신은 방에 누군가를 초대할 수 없습니다.
- - (내 목록에) 존재하지 않는 방입니다.
- - (대상이) 이미 들어와 있는 방입니다.
- - 대상이 나를 차단했습니다.
- - 비밀번호가 틀렸습니다. (매니저가 아니라서 비밀번호를 알 수 없습니다)
- - 꽉찬 방입니다.
- - (대상이) 방에서 정지당했습니다. [이유도 포함]
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 방에 누군가를 초대할 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_ALREADY_ROOM_MEMBER] - (대상이) 이미 들어와 있는 방입니다.
+ [ERROR_ENEMY]				 - 대상이 나를 차단했습니다.
+ [ERROR_PERMISSION]			 - 비밀번호가 틀렸습니다. (관리자가 아니라서 비밀번호를 알 수 없습니다)
+ [ERROR_EXCEED_LIMIT]		 - 꽉찬 방입니다.
+ [ERROR_CHAT_BANNED]		 - (대상이) 방에서 정지당했습니다. [이유도 포함]
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
 
 방에서 퇴장하려고 한다.
- - 성공했습니다.
- - 당신은 방에서 나갈 수 없습니다.
- - (내 목록에) 존재하지 않는 방입니다.
- - 방장은 나갈 수 없습니다.
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 방에서 나갈 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_RESTRICTED]			 - 방장은 나갈 수 없습니다.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
 
 방에서 강퇴하려고 한다.
- - 성공했습니다.
- - 당신은 누군가를 강퇴할 수 없습니다. (계정의 활동정지의 의미)
- - 당신은 강퇴할 권한이 없습니다. (매니저가 아님)
- - (내 목록에) 존재하지 않는 방입니다.
- - 방에 존재하지 않는 멤버입니다.
- - 나보다 상위 수준의 멤버를 강퇴할 수 없습니다.
- - 스스로를 강퇴할 수 없습니다.
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 누군가를 강퇴할 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_PERMISSION]			 - 관리자가 아니어서 강퇴할 권한이 없습니다.
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_NO_MEMBER]			 - 방에 존재하지 않는 멤버입니다.
+ [ERROR_RESTRICTED]			 - 나보다 상위 수준의 멤버를 강퇴할 수 없습니다.
+ [ERROR_SELF]				 - 스스로를 강퇴할 수 없습니다.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
 
-방에서 나가진 이유 (신규 옵코드 필요!!)
+방에서 나가진 이유 (신규 옵코드 필요!! (보내기 전용))
  - 평범하게 나갔습니다. (아무것도 안보낸다.)
  - 강퇴당했습니다. [이유도 포함]
  - 방이 해체되었습니다.
 
 메시지를 보내려고 한다.
- - 성공했습니다.
- - 당신은 채팅을 보낼 수 없습니다. (계정의 활동정지의 의미)
- - 방에서 채팅 정지당했습니다. [이유도 포함]
- - 지금은 보낼 수 없습니다. 잠시 후 다시 시도하세요.
- - 알 수 없는 오류로 실패했습니다. (DB Fail)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 채팅을 보낼 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_CHAT_BANNED]		 - 방에서 채팅 정지당했습니다. [이유도 포함]
+ [ERROR_RESTRICTED]			 - 지금은 보낼 수 없습니다. 잠시 후 다시 시도하세요.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
+
+관리자 승급(강등): (신규 옵코드 필요!!)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 관리자를 승급(강등)시킬 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_NO_MEMBER]			 - 방에 존재하지 않는 멤버입니다.
+ [ERROR_PERMISSION]			 - 소유자가 아니어서 관리자를 승급(강등)시킬 권한이 없습니다.
+ [ERROR_RESTRICTED]			 - 이미 승급(강등)되어 있는 멤버입니다.
+ [ERROR_SELF]				 - 스스로를 승급(강등)할 수 없습니다.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
+
+채팅방 양도: (신규 옵코드 필요!!)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 채팅방을 양도할 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_NO_MEMBER]			 - 방에 존재하지 않는 멤버입니다.
+ [ERROR_PERMISSION]			 - 소유자가 아니어서 채팅방을 양도할 권한이 없습니다.
+ [ERROR_RESTRICTED]			 - 매니저가 아닌 유저에게 채팅방을 양도할 수 없습니다.
+ [ERROR_SELF]				 - 스스로에게 양도할 수 없습니다.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
+
+채팅방 해체: (신규 옵코드 필요!!)
+ [SUCCESS]					 - 성공했습니다.
+ [ERROR_ACCOUNT_BAN]		 - 당신은 채팅방을 해체할 수 없습니다. (계정의 활동정지의 의미)
+ [ERROR_NO_ROOM]			 - (내 목록에) 존재하지 않는 방입니다.
+ [ERROR_PERMISSION]			 - 소유자가 아니어서 채팅방을 해체할 권한이 없습니다.
+ [ERROR_RESTRICTED]			 - 나를 제외한 멤버가 남아있으면 채팅방을 해체할 수 없습니다.
+ [ERROR_UNKNOWN]			 - 알 수 없는 오류로 실패했습니다. (DB Fail)
   */
   async createNewRoom(
     room: Prisma.ChatCreateInput,
@@ -517,7 +547,7 @@ export class ChatService {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
           // An operation failed because it depends on one or more records that were required but not found. {cause}
-          return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
+          return { errno: RoomErrorNumber.ERROR_ALREADY_ROOM_MEMBER };
         }
       }
       throw e;
@@ -552,7 +582,7 @@ export class ChatService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
-          return { errno: RoomErrorNumber.ERROR_NOT_MEMBER };
+          return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
         }
       }
       throw e;
@@ -580,13 +610,12 @@ export class ChatService {
   }
 
   async updateLastMessageCursor(
-    chatId: string,
     accountId: string,
-    lastMessageId: string,
+    pair: ChatRoomChatMessagePairEntry,
   ): Promise<void> {
     void (await this.prisma.chatMember.update({
-      where: { chatId_accountId: { chatId, accountId } },
-      data: { lastMessageId },
+      where: { chatId_accountId: { chatId: pair.chatId, accountId } },
+      data: { lastMessageId: pair.messageId },
     }));
   }
 

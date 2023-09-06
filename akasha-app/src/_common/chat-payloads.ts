@@ -45,8 +45,8 @@ export const enum FriendErrorNumber {
   SUCCESS,
   ERROR_ALREADY_FRIEND,
   ERROR_NOT_FRIEND,
-  ERROR_LOOKUP_FAILED,
   ERROR_SELF_FRIEND,
+  ERROR_LOOKUP_FAILED,
 }
 
 /// EnemyEntry
@@ -86,11 +86,18 @@ export function writeSocialPayload(obj: SocialPayload, buf: ByteBuffer) {
 /// RoomErrorNumber
 export const enum RoomErrorNumber {
   SUCCESS,
-  ERROR_ALREADY_MEMBER,
-  ERROR_NOT_MEMBER,
-  ERROR_OWNER,
-  ERROR_NOT_OWNER,
-  ERROR_NOT_MANAGER,
+  ERROR_NO_ROOM,
+  ERROR_NO_MEMBER,
+  ERROR_ALREADY_ROOM_MEMBER,
+  ERROR_PERMISSION,
+  ERROR_RESTRICTED,
+  ERROR_SELF,
+  ERROR_ENEMY,
+  ERROR_CHAT_BANNED,
+  ERROR_WRONG_PASSWORD,
+  ERROR_EXCEED_LIMIT,
+  ERROR_UNKNOWN,
+  ERROR_ACCOUNT_BAN,
 }
 
 /// ChatRoomModeFlags

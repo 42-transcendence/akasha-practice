@@ -1,6 +1,7 @@
 import { ChatClientOpcode } from "@common/chat-opcodes";
 import {
   ChatMessageEntry,
+  ChatRoomChatMessagePairEntry,
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
@@ -10,6 +11,7 @@ import {
   SocialPayload,
   writeChatMessage,
   writeChatRoom,
+  writeChatRoomChatMessagePair,
   writeChatRoomMember,
   writeChatRoomView,
   writeFriend,
@@ -189,8 +191,8 @@ export function makeChatMessagePayload(message: ChatMessageEntry) {
   return buf;
 }
 
-export function makeSyncCursorPayload(lastMessageId: string) {
+export function makeSyncCursorPayload(pair: ChatRoomChatMessagePairEntry) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SYNC_CURSOR);
-  buf.writeUUID(lastMessageId);
+  writeChatRoomChatMessagePair(pair, buf);
   return buf;
 }
