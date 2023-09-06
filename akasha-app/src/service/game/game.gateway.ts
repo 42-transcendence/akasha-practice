@@ -3,7 +3,7 @@ import {
   WebSocketGateway,
   WebSocketServer,
 } from "@nestjs/websockets";
-import { ByteBuffer, assert } from "akasha-lib";
+import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 import { ServerOptions, WebSocketServer as Server } from "ws";
 import { Logger } from "@nestjs/common";
 import { ServiceGatewayBase } from "@/service/service-gateway";
@@ -61,15 +61,24 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     this.clients.add(client); // tmp
   }
 
+  @SubscribeMessage(GameServerOpcode.CREATE)
+  handleCreate(client: GameWebSocket, _payload: ByteBuffer): ByteBuffer {
+    // const roomTitle: string = payload.readString();
+    const roomUUID: string = NULL_UUID
+    this.gameRoomList.set(roomUUID, [client.uuid])
+    const buf = ByteBuffer.createWithOpcode(GameClientOpcode.ACCEPT);
+    buf.writeUUID(roomUUID);
+    return buf;
+  }
+
   @SubscribeMessage(GameServerOpcode.JOIN)
-  roomJoin(client: GameWebSocket, payload: ByteBuffer): ByteBuffer {
+  handleJoin(client: GameWebSocket, payload: ByteBuffer): ByteBuffer {
     const roomUUID: string = payload.readString();
     const members: string[] | undefined = this.gameRoomList.get(roomUUID);
-    if (members === undefined) {
-      this.gameRoomList.set(roomUUID, [client.uuid])
+    if (members === undefined || members.length > 2) {
+      return ByteBuffer.createWithOpcode(GameClientOpcode.REJECT);
     }
     else {
-      if (members.length > 2) { } // TODO - 두명 넘으면 제껴!
       members.push(client.uuid);
     }
     const buf = ByteBuffer.createWithOpcode(GameClientOpcode.ACCEPT);
@@ -77,7 +86,7 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
   }
 
   @SubscribeMessage(GameServerOpcode.START)
-  gameStrat(client: GameWebSocket, payload: ByteBuffer) {
+  handleStrat(client: GameWebSocket, payload: ByteBuffer) {
     const roomUUID: string = payload.readString();
     const members: string[] | undefined = this.gameRoomList.get(roomUUID);
     if (members === undefined) {

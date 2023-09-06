@@ -1,5 +1,6 @@
 export const enum GameServerOpcode {
   HANDSHAKE,
+  CREATE,
   START,
   JOIN,
   FRAME
