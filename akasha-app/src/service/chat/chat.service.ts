@@ -1,5 +1,5 @@
 import { PrismaService } from "@/prisma/prisma.service";
-import { Injectable } from "@nestjs/common";
+import { Injectable, Logger } from "@nestjs/common";
 import {
   ChatMessageEntry,
   ChatRoomChatMessagePairEntry,
@@ -118,6 +118,17 @@ type ChatLeaveRoomResult =
 
 @Injectable()
 export class ChatService {
+  protected static readonly logger = new Logger(ChatService.name);
+
+  protected static logUnknownError(e: any) {
+    if (e instanceof Error) {
+      ChatService.logger.error(e.name);
+      ChatService.logger.error(e.message, e.stack);
+    } else {
+      ChatService.logger.error(e);
+    }
+  }
+
   private readonly memberCache = new Map<string, Set<string>>();
 
   constructor(
@@ -248,7 +259,8 @@ export class ChatService {
           return { errno: FriendErrorNumber.ERROR_ALREADY_FRIEND };
         }
       }
-      throw e;
+      ChatService.logUnknownError(e);
+      return { errno: FriendErrorNumber.ERROR_UNKNOWN };
     }
     return {
       errno: FriendErrorNumber.SUCCESS,
@@ -285,7 +297,8 @@ export class ChatService {
           return { errno: FriendErrorNumber.ERROR_NOT_FRIEND };
         }
       }
-      throw e;
+      ChatService.logUnknownError(e);
+      return { errno: FriendErrorNumber.ERROR_UNKNOWN };
     }
     return {
       errno: FriendErrorNumber.SUCCESS,
@@ -301,38 +314,45 @@ export class ChatService {
   > {
     //XXX: Prisma가 DELETE RETURNING을 deleteMany에서 지원하지 않았음.
     //XXX: Prisma가 DeleteUniqueIfExists 따위를 지원하지 않았음.
-    const [forward, reverse] = await this.prisma.$transaction([
-      this.prisma.friend.findUnique({
-        where: {
-          accountId_friendAccountId: {
-            accountId: accountId,
-            friendAccountId: targetAccountId,
-          },
-        },
-      }),
-      this.prisma.friend.findUnique({
-        where: {
-          accountId_friendAccountId: {
-            friendAccountId: accountId,
-            accountId: targetAccountId,
-          },
-        },
-      }),
-      this.prisma.friend.deleteMany({
-        where: {
-          OR: [
-            {
+    let data: [Friend | null, Friend | null, unknown];
+    try {
+      data = await this.prisma.$transaction([
+        this.prisma.friend.findUnique({
+          where: {
+            accountId_friendAccountId: {
               accountId: accountId,
               friendAccountId: targetAccountId,
             },
-            {
+          },
+        }),
+        this.prisma.friend.findUnique({
+          where: {
+            accountId_friendAccountId: {
               friendAccountId: accountId,
               accountId: targetAccountId,
             },
-          ],
-        },
-      }),
-    ]);
+          },
+        }),
+        this.prisma.friend.deleteMany({
+          where: {
+            OR: [
+              {
+                accountId: accountId,
+                friendAccountId: targetAccountId,
+              },
+              {
+                friendAccountId: accountId,
+                accountId: targetAccountId,
+              },
+            ],
+          },
+        }),
+      ]);
+    } catch (e) {
+      ChatService.logUnknownError(e);
+      return [FriendErrorNumber.ERROR_UNKNOWN, undefined, undefined];
+    }
+    const [forward, reverse] = data;
     if (forward !== null || reverse !== null) {
       return [FriendErrorNumber.ERROR_NOT_FRIEND, undefined, undefined];
     }
@@ -486,18 +506,24 @@ export class ChatService {
     room: Prisma.ChatCreateInput,
     members: Prisma.ChatMemberCreateManyChatInput[],
   ): Promise<ChatCreateRoomResult> {
-    const data: ChatRoomForEntry = await this.prisma.chat.create({
-      data: {
-        ...room,
-        members: {
-          createMany: { data: members },
+    let data: ChatRoomForEntry;
+    try {
+      data = await this.prisma.chat.create({
+        data: {
+          ...room,
+          members: {
+            createMany: { data: members },
+          },
         },
-      },
-      include: {
-        ...chatRoomForEntry.include,
-        messages: true,
-      },
-    });
+        include: {
+          ...chatRoomForEntry.include,
+          messages: true,
+        },
+      });
+    } catch (e) {
+      ChatService.logUnknownError(e);
+      return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+    }
 
     const memberSet = new Set<string>(data.members.map((e) => e.accountId));
     this.memberCache.set(data.id, memberSet);
@@ -550,7 +576,8 @@ export class ChatService {
           return { errno: RoomErrorNumber.ERROR_ALREADY_ROOM_MEMBER };
         }
       }
-      throw e;
+      ChatService.logUnknownError(e);
+      return { errno: RoomErrorNumber.ERROR_UNKNOWN };
     }
 
     const cache = this.memberCache.get(chatId);
@@ -585,7 +612,8 @@ export class ChatService {
           return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
         }
       }
-      throw e;
+      ChatService.logUnknownError(e);
+      return { errno: RoomErrorNumber.ERROR_UNKNOWN };
     }
 
     return { errno: RoomErrorNumber.SUCCESS, member: toChatMemberEntry(data) };

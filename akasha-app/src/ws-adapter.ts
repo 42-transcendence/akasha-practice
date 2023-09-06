@@ -32,7 +32,8 @@ const UNDERLYING_HTTP_SERVER_PORT = 0;
  * @publicApi
  */
 export class WsAdapter extends AbstractWsAdapter {
-  protected readonly logger = new Logger(WsAdapter.name);
+  protected static readonly logger = new Logger(WsAdapter.name);
+
   protected readonly httpServersRegistry = new Map<
     HttpServerRegistryKey,
     HttpServerRegistryEntry
@@ -151,9 +152,9 @@ export class WsAdapter extends AbstractWsAdapter {
 
   public bindErrorHandler(server: WsServer) {
     server.on(CONNECTION_EVENT, (ws: WsClient) =>
-      ws.on(ERROR_EVENT, (err: Error) => this.logger.error(err)),
+      ws.on(ERROR_EVENT, (err: Error) => WsAdapter.logger.error(err)),
     );
-    server.on(ERROR_EVENT, (err: Error) => this.logger.error(err));
+    server.on(ERROR_EVENT, (err: Error) => WsAdapter.logger.error(err));
     return server;
   }
 

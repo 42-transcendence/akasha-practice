@@ -20,9 +20,6 @@ import {
   isSecretParams,
 } from "@common/auth-payloads";
 
-const MIN_TAG_NUMBER = 1000;
-const MAX_TAG_NUMBER = 9999;
-
 /// AccountPublic
 const accountPublic = Prisma.validator<Prisma.AccountDefaultArgs>()({
   select: { id: true, nickName: true, nickTag: true, avatarKey: true },
@@ -307,7 +304,7 @@ export class AccountsService {
     id: string,
     except?: ActiveStatus | undefined,
   ): Promise<void> {
-    //XXX: Conditional Update
+    //XXX: Prisma가 Conditional Update 따위를 지원하지 않았음.
     const batch = await this.prisma.account.updateMany({
       where: {
         id,
@@ -346,7 +343,7 @@ export class AccountsService {
     tagHint: number | undefined,
     overwrite: boolean,
   ): Promise<AccountNickNameAndTag> {
-    return this.prisma.$transaction(async (tx) => {
+    return this.prisma.x.$transaction(async (tx) => {
       // 1. Check Exists Nick
       const account = await tx.account.findUniqueOrThrow({
         where: { id },
@@ -357,17 +354,7 @@ export class AccountsService {
       }
 
       // 2. Pick Random Tag
-      //XXX: 작성시 Prisma가 프로시저 호출을 지원하지 않았었음.
-      const tagNumberQuery = await tx.$queryRaw`
-      SELECT "tagNumber"
-        FROM generate_series(${MIN_TAG_NUMBER}, ${MAX_TAG_NUMBER}) AS "tagNumber"
-        WHERE "tagNumber" NOT IN (
-          SELECT "nickTag" FROM services.accounts
-          WHERE "nickName" = ${name}
-        )
-        ORDER BY "tagNumber" = ${tagHint} DESC, random()
-      LIMIT 1
-    `;
+      const tagNumberQuery = await tx.account.generateTagNumber(name, tagHint);
       if (!Array.isArray(tagNumberQuery) || tagNumberQuery.length === 0) {
         throw new ConflictException(
           `No more tagNumber left for name [${name}]`,

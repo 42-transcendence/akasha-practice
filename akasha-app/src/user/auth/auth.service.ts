@@ -41,8 +41,8 @@ import { getBanCategoryNumber, getRoleNumber } from "@common/generated/types";
 @Injectable()
 export class AuthService {
   static readonly JWT_ALGORITHM: JWTHashAlgorithm = "HS256";
+  protected static readonly logger = new Logger(AuthService.name);
 
-  protected readonly logger = new Logger(AuthService.name);
   private readonly config: AuthConfiguration;
 
   constructor(
@@ -59,10 +59,10 @@ export class AuthService {
         source.client_id,
         source.client_secret,
       );
-      this.logger.log(`[${sourceKey}] auth source loaded`);
+      AuthService.logger.log(`[${sourceKey}] auth source loaded`);
     }
     if (config.jwt_secret.length < 32) {
-      this.logger.warn(
+      AuthService.logger.warn(
         "Security threat: Authentication is vulnerable because JWT Secret is configured too short.",
       );
     }

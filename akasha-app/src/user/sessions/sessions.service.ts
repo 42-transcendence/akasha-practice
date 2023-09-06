@@ -84,16 +84,6 @@ export class SessionsService {
   }
 
   async invalidateSession(id: bigint): Promise<number> {
-    //XXX: 작성시 Prisma가 recursive를 지원하지 않았었음.
-    const sql: Prisma.Sql = Prisma.sql`WITH RECURSIVE sessions_tree AS (
-        SELECT s."id" FROM "services"."sessions" s WHERE "id" = ${id}
-    UNION ALL
-        SELECT s."id"
-        FROM sessions_tree prev, "services"."sessions" s
-        WHERE s."predecessorId" = prev."id"
-    )
-    UPDATE "services"."sessions" SET "isValid" = false
-        WHERE "id" IN (SELECT "id" FROM sessions_tree)`;
-    return await this.prisma.$executeRaw(sql);
+    return await this.prisma.x.session.invalidateSessionTree(id);
   }
 }

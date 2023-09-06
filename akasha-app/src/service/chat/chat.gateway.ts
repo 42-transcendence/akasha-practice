@@ -116,7 +116,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         break;
       default:
         throw new PacketHackException(
-          `${ChatGateway.name}: ${this.handleActiveStatus.name}: Illegal active status [${activeStatus}]`,
+          `Illegal active status [${activeStatus}]`,
         );
     }
 
@@ -165,7 +165,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       const targetNickName = payload.readString();
       if (!NICK_NAME_REGEX.test(targetNickName)) {
         throw new PacketHackException(
-          `${ChatGateway.name}: ${this.handleAddFriend.name}: Illegal targetNickName [${targetNickName}]`,
+          `Illegal targetNickName [${targetNickName}]`,
         );
       }
       const targetNickTag = payload.read4Unsigned();
@@ -328,38 +328,30 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const title = payload.readString();
     if (!CHAT_ROOM_TITLE_REGEX.test(title)) {
-      throw new PacketHackException(
-        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Illegal title [${title}]`,
-      );
+      throw new PacketHackException(`Illegal title [${title}]`);
     }
     const modeFlags = fromChatRoomModeFlags(payload.read1());
     let password: string = "";
     if (modeFlags.isSecret) {
       password = payload.readString();
       if (!validateBcryptSalt(password)) {
-        throw new PacketHackException(
-          `${ChatGateway.name}: ${this.handleCreateRoom.name}: Illegal password [${password}]`,
-        );
+        throw new PacketHackException(`Illegal password [${password}]`);
       }
     }
     const limit = payload.read2Unsigned();
     if (limit == 0 || limit > MAX_CHAT_MEMBER_CAPACITY) {
-      throw new PacketHackException(
-        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Illegal limit [${limit}]`,
-      );
+      throw new PacketHackException(`Illegal limit [${limit}]`);
     }
     const targetAccountIdList = payload.readArray(payload.readUUID);
     if (targetAccountIdList.length > limit) {
       throw new PacketHackException(
-        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Exceed limit [${limit}], member count [${targetAccountIdList.length}]`,
+        `Exceed limit [${limit}], member count [${targetAccountIdList.length}]`,
       );
     }
 
     const ownerAccountId = client.accountId;
     if (!targetAccountIdList.includes(ownerAccountId)) {
-      throw new PacketHackException(
-        `${ChatGateway.name}: ${this.handleCreateRoom.name}: Member without owner`,
-      );
+      throw new PacketHackException(`Member without owner`);
     }
     const ownerDuplexFriendSet = new Set<string>(
       (await this.chatService.getDuplexFriends(ownerAccountId)).map(
@@ -408,9 +400,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const password = payload.readNullable(payload.readString);
     if (password !== null) {
       if (!validateBcryptSalt(password)) {
-        throw new PacketHackException(
-          `${ChatGateway.name}: ${this.handleEnterRoom.name}: Illegal password [${password}]`,
-        );
+        throw new PacketHackException(`Illegal password [${password}]`);
       }
     }
 

@@ -47,6 +47,7 @@ export const enum FriendErrorNumber {
   ERROR_NOT_FRIEND,
   ERROR_SELF_FRIEND,
   ERROR_LOOKUP_FAILED,
+  ERROR_UNKNOWN,
 }
 
 /// EnemyEntry

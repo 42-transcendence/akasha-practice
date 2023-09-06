@@ -48,7 +48,7 @@ export class AuthJWTOptions implements JWTOptions {
 }
 
 export class AuthConfiguration {
-  static readonly logger = new Logger(AuthConfiguration.name);
+  protected static readonly logger = new Logger(AuthConfiguration.name);
 
   static load(env: ConfigService) {
     const config = plainToClass(AuthConfiguration, env.get("auth"));
