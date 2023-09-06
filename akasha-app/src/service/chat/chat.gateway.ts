@@ -17,6 +17,8 @@ import {
 } from "@common/chat-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
+  CHAT_PASSWORD_BCRYPT_ALGORITHM,
+  CHAT_PASSWORD_BCRYPT_LOG_ROUNDS,
   CHAT_ROOM_TITLE_REGEX,
   MAX_CHAT_MEMBER_CAPACITY,
 } from "@common/chat-constants";
@@ -29,6 +31,31 @@ import {
   RoleNumber,
 } from "@common/generated/types";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
+
+function validateBcryptSalt(value: string): boolean {
+  if (!value.startsWith("$")) {
+    return false;
+  }
+
+  const [algorithm, costStr, saltAndHash] = value.substring(1).split("$", 3);
+  if (algorithm !== CHAT_PASSWORD_BCRYPT_ALGORITHM) {
+    return false;
+  }
+
+  const cost = Number(costStr);
+  if (!Number.isSafeInteger(cost) || cost < 0 || cost >= 32) {
+    return false;
+  }
+  if (cost !== CHAT_PASSWORD_BCRYPT_LOG_ROUNDS) {
+    return false;
+  }
+
+  if (saltAndHash.length !== 22 + 31) {
+    return false;
+  }
+
+  return true;
+}
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -309,7 +336,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     let password: string = "";
     if (modeFlags.isSecret) {
       password = payload.readString();
-      //NOTE: password에 대하여 유효한 bcrypt 검사
+      if (!validateBcryptSalt(password)) {
+        throw new PacketHackException(
+          `${ChatGateway.name}: ${this.handleCreateRoom.name}: Illegal password [${password}]`,
+        );
+      }
     }
     const limit = payload.read2Unsigned();
     if (limit == 0 || limit > MAX_CHAT_MEMBER_CAPACITY) {
@@ -374,7 +405,14 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    const password = payload.readString();
+    const password = payload.readNullable(payload.readString);
+    if (password !== null) {
+      if (!validateBcryptSalt(password)) {
+        throw new PacketHackException(
+          `${ChatGateway.name}: ${this.handleEnterRoom.name}: Illegal password [${password}]`,
+        );
+      }
+    }
 
     const result = await this.chatService.insertChatMember(
       chatId,
