@@ -2,6 +2,7 @@ import { ChatClientOpcode } from "@common/chat-opcodes";
 import {
   ChatMessageEntry,
   ChatRoomEntry,
+  ChatRoomMemberEntry,
   ChatRoomViewEntry,
   FriendEntry,
   FriendErrorNumber,
@@ -15,12 +16,6 @@ import {
   writeSocialPayload,
 } from "@common/chat-payloads";
 import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
-import {
-  ChatMemberWithRoom,
-  ChatRoomForEntry,
-  toChatMemberEntry,
-  toChatRoomEntry,
-} from "./chat.service";
 
 export function makeInitializePayload(
   chatRoomList: ChatRoomEntry[],
@@ -90,12 +85,27 @@ export function makeUpdateFriendActiveStatus(accountId: string) {
   return buf;
 }
 
-export function makeDeleteFriendSuccessResult(targetAccountId: string) {
-  const bufTarget = ByteBuffer.createWithOpcode(
+export function makeDeleteFriendFailedResult(errno: FriendErrorNumber) {
+  assert(errno !== FriendErrorNumber.SUCCESS);
+
+  const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.DELETE_FRIEND_RESULT,
   );
-  bufTarget.writeUUID(targetAccountId);
-  return bufTarget;
+  buf.write1(errno);
+  return buf;
+}
+
+export function makeDeleteFriendSuccessResult(
+  targetAccountId: string,
+  half: boolean,
+) {
+  const buf = ByteBuffer.createWithOpcode(
+    ChatClientOpcode.DELETE_FRIEND_RESULT,
+  );
+  buf.write1(FriendErrorNumber.SUCCESS);
+  buf.writeUUID(targetAccountId);
+  buf.writeBoolean(half);
+  return buf;
 }
 
 export function makePublicRoomList(chatRoomViewList: ChatRoomViewEntry[]) {
@@ -105,11 +115,11 @@ export function makePublicRoomList(chatRoomViewList: ChatRoomViewEntry[]) {
 }
 
 export function makeInsertRoom(
-  room: ChatRoomForEntry,
+  room: ChatRoomEntry,
   messages: ChatMessageEntry[],
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM);
-  writeChatRoom(toChatRoomEntry(room), buf);
+  writeChatRoom(room, buf);
   buf.writeArray(messages, writeChatMessage);
   return buf;
 }
@@ -158,11 +168,11 @@ export function makeInviteRoomResult(
 
 export function makeInsertRoomMember(
   chatId: string,
-  member: ChatMemberWithRoom,
+  member: ChatRoomMemberEntry,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INSERT_ROOM_MEMBER);
   buf.writeUUID(chatId);
-  writeChatRoomMember(toChatMemberEntry(member), buf);
+  writeChatRoomMember(member, buf);
   return buf;
 }
 

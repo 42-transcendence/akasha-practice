@@ -45,6 +45,7 @@ export const enum FriendErrorNumber {
   SUCCESS,
   ERROR_ALREADY_FRIEND,
   ERROR_NOT_FRIEND,
+  ERROR_LOOKUP_FAILED,
   ERROR_SELF_FRIEND,
 }
 

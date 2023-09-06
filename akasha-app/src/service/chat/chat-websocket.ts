@@ -58,7 +58,8 @@ export class ChatWebSocket extends ServiceWebSocketBase {
 
   async initialize(fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[]) {
     const chatRoomList: ChatRoomEntry[] =
-      await this.chatService.loadOwnRoomList(this.accountId);
+      await this.chatService.loadJoinedRoomList(this.accountId);
+
     const fetchedMessageIdMap = fetchedMessageIdPairs.reduce(
       (map, e) => map.set(e.chatId, e.messageId),
       new Map<string, string>(),
@@ -74,6 +75,7 @@ export class ChatWebSocket extends ServiceWebSocketBase {
         ),
       );
     }
+
     const socialPayload: SocialPayload = await this.chatService.loadSocial(
       this.accountId,
     );

@@ -1,5 +1,5 @@
 import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
-import { ByteBuffer, NULL_UUID } from "akasha-lib";
+import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 import { ServerOptions } from "ws";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
@@ -9,7 +9,6 @@ import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatRoomChatMessagePairEntry,
   FriendActiveFlags,
-  FriendEntry,
   FriendErrorNumber,
   FriendModifyFlags,
   RoomErrorNumber,
@@ -29,7 +28,7 @@ import {
   Role,
   RoleNumber,
 } from "@common/generated/types";
-import { Prisma } from "@prisma/client";
+import { NICK_NAME_REGEX } from "@common/profile-constants";
 
 @WebSocketGateway<ServerOptions>({
   path: "/chat",
@@ -133,34 +132,37 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleAddFriend(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
-    const targetAccountId = payload.readUUID();
+    const lookup = payload.readBoolean();
+    let targetAccountId: string | null;
+    if (lookup) {
+      const targetNickName = payload.readString();
+      if (!NICK_NAME_REGEX.test(targetNickName)) {
+        throw new PacketHackException(
+          `${ChatGateway.name}: ${this.handleAddFriend.name}: Illegal targetNickName [${targetNickName}]`,
+        );
+      }
+      const targetNickTag = payload.read4Unsigned();
+      targetAccountId = await this.chatService.getAccountIdByNick(
+        targetNickName,
+        targetNickTag,
+      );
+    } else {
+      targetAccountId = payload.readUUID();
+    }
     const groupName = payload.readString();
     const activeFlags = payload.read1();
 
-    if (targetAccountId === client.accountId) {
-      return builder.makeAddFriendFailedResult(
-        FriendErrorNumber.ERROR_SELF_FRIEND,
-      );
+    const result = await this.chatService.addFriend(
+      client.accountId,
+      targetAccountId,
+      groupName,
+      activeFlags,
+    );
+    if (result.errno !== FriendErrorNumber.SUCCESS) {
+      return builder.makeAddFriendFailedResult(result.errno);
     }
-    let entry: FriendEntry;
-    try {
-      entry = await this.chatService.addFriend(
-        client.accountId,
-        targetAccountId,
-        groupName,
-        activeFlags,
-      );
-    } catch (e) {
-      //FIXME: 개선
-      if (e instanceof Prisma.PrismaClientKnownRequestError) {
-        if (e.code === "P2002") {
-          return builder.makeAddFriendFailedResult(
-            FriendErrorNumber.ERROR_ALREADY_FRIEND,
-          );
-        }
-      }
-      throw e;
-    }
+    assert(targetAccountId !== null);
+    const { friend } = result;
     if (
       await this.chatService.isDuplexFriend(client.accountId, targetAccountId)
     ) {
@@ -176,7 +178,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     }
     void this.server.unicast(
       client.accountId,
-      builder.makeAddFriendSuccessResult(entry),
+      builder.makeAddFriendSuccessResult(friend),
     );
 
     return undefined;
@@ -197,32 +199,23 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       activeFlags = payload.read1();
     }
 
-    let entry: FriendEntry;
-    try {
-      entry = await this.chatService.modifyFriend(
-        client.accountId,
-        targetAccountId,
-        groupName,
-        activeFlags,
-      );
-    } catch (e) {
-      //FIXME: 개선
-      if (e instanceof Prisma.PrismaClientKnownRequestError) {
-        if (e.code === "P2025") {
-          return builder.makeModifyFriendFailedResult(
-            FriendErrorNumber.ERROR_NOT_FRIEND,
-          );
-        }
-      }
-      throw e;
+    const result = await this.chatService.modifyFriend(
+      client.accountId,
+      targetAccountId,
+      groupName,
+      activeFlags,
+    );
+    if (result.errno !== FriendErrorNumber.SUCCESS) {
+      return builder.makeModifyFriendFailedResult(result.errno);
     }
+    const { friend } = result;
     void this.server.unicast(
       targetAccountId,
       builder.makeUpdateFriendActiveStatus(client.accountId),
     );
     void this.server.unicast(
       client.accountId,
-      builder.makeModifyFriendSuccessResult(targetAccountId, entry),
+      builder.makeModifyFriendSuccessResult(targetAccountId, friend),
     );
 
     return undefined;
@@ -234,19 +227,27 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const targetAccountId = payload.readUUID();
 
-    const count = await this.chatService.deleteFriend(
+    const [errno, forward, reverse] = await this.chatService.deleteFriend(
       client.accountId,
       targetAccountId,
     );
-    //FIXME: 개선
-    void count;
+    if (errno !== FriendErrorNumber.SUCCESS) {
+      return builder.makeDeleteFriendFailedResult(errno);
+    }
+    assert(forward === undefined || reverse !== undefined);
     void this.server.unicast(
       targetAccountId,
-      builder.makeDeleteFriendSuccessResult(client.accountId),
+      builder.makeDeleteFriendSuccessResult(
+        client.accountId,
+        reverse === undefined,
+      ),
     );
     void this.server.unicast(
       client.accountId,
-      builder.makeDeleteFriendSuccessResult(targetAccountId),
+      builder.makeDeleteFriendSuccessResult(
+        targetAccountId,
+        forward === undefined,
+      ),
     );
 
     return undefined;
@@ -338,20 +339,22 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       ownerDuplexFriendSet.has(e),
     );
 
-    const result = await this.chatService.createNewRoom({
-      title,
-      ...modeFlags,
-      password,
-      limit,
-      members: memberAccountIdList.map((e) => ({
+    const result = await this.chatService.createNewRoom(
+      {
+        title,
+        ...modeFlags,
+        password,
+        limit,
+      },
+      memberAccountIdList.map((e) => ({
         accountId: e,
         role: e === ownerAccountId ? Role.ADMINISTRATOR : Role.USER,
       })),
-    });
+    );
 
     let chatId: string = NULL_UUID;
     if (result.errno === RoomErrorNumber.SUCCESS) {
-      const room = result.room;
+      const { room } = result;
       chatId = room.id;
       const messages = await this.chatService.loadMessagesAfter(
         chatId,
@@ -373,31 +376,26 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const chatId = payload.readUUID();
     const password = payload.readString();
 
-    //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
-    //FIXME: password 검사
-    void password;
-    //FIXME: 이미 꽉 찬 채팅방
-    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
-    const member = await this.chatService.insertChatMember(
+    const result = await this.chatService.insertChatMember(
       chatId,
       client.accountId,
+      password,
       RoleNumber.USER,
     );
-    //FIXME: 실패한 이유
-    let errno = RoomErrorNumber.SUCCESS;
-    if (member !== null) {
+    if (result.errno === RoomErrorNumber.SUCCESS) {
       //NOTE: 공통 (InsertMember)
+      const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
-        chatId,
+        room.id,
         undefined,
       );
       void this.server.unicast(
         member.accountId,
-        builder.makeInsertRoom(member.chat, messages),
+        builder.makeInsertRoom(room, messages),
       );
       void this.server.multicastToRoom(
-        chatId,
-        builder.makeInsertRoomMember(chatId, member),
+        room.id,
+        builder.makeInsertRoomMember(room.id, member),
         member.accountId,
       );
 
@@ -405,21 +403,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         //FIXME: Temporary: 입장 메시지
         //NOTE: 공통 (SendChatMessage)
         const message = await this.chatService.createNewChatMessage(
-          chatId,
+          room.id,
           client.accountId,
           `${client.accountId}님이 입장했습니다.`, //FIXME: SearchParams
           MessageTypeNumber.NOTICE,
         );
         void this.server.multicastToRoom(
-          chatId,
+          room.id,
           builder.makeChatMessagePayload(message),
         );
       }
-    } else {
-      errno = RoomErrorNumber.ERROR_ALREADY_MEMBER;
     }
 
-    return builder.makeEnterRoomResult(errno, chatId);
+    return builder.makeEnterRoomResult(result.errno, chatId);
   }
 
   @SubscribeMessage(ChatServerOpcode.LEAVE_ROOM)
@@ -427,16 +423,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    //FIXME: 입장하지 않은 채팅방
-    //FIXME: 방장은 나갈 수 없게 혹은 자동으로 양도
-    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
-    const success = await this.chatService.deleteChatMember(
+    const result = await this.chatService.deleteChatMember(
       chatId,
       client.accountId,
     );
-    //FIXME: 실패한 이유
-    let errno = RoomErrorNumber.SUCCESS;
-    if (success) {
+    if (result.errno !== RoomErrorNumber.SUCCESS) {
       void this.server.unicast(
         client.accountId,
         builder.makeRemoveRoom(chatId),
@@ -460,11 +451,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           builder.makeChatMessagePayload(message),
         );
       }
-    } else {
-      errno = RoomErrorNumber.ERROR_NOT_MEMBER;
     }
 
-    return builder.makeLeaveRoomResult(errno, chatId);
+    return builder.makeLeaveRoomResult(result.errno, chatId);
   }
 
   @SubscribeMessage(ChatServerOpcode.INVITE_USER)
@@ -474,30 +463,26 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const chatId: string = payload.readUUID();
     const targetAccountId: string = payload.readUUID();
 
-    //FIXME: 없는 상대 혹은 상대가 차단하여 초대할 수 없음
-    //FIXME: 존재하지 않는 채팅방 혹은 이미 입장한 채팅방
-    //FIXME: 이미 꽉 찬 채팅방
-    //TODO: 이 모든것의 판별이 서비스에서 트랜잭션으로 제공되어야 하는가?
-    const member = await this.chatService.insertChatMember(
+    const result = await this.chatService.insertChatMember(
       chatId,
       targetAccountId,
+      null,
       RoleNumber.USER,
     );
-    //FIXME: 실패한 이유
-    let errno = RoomErrorNumber.SUCCESS;
-    if (member !== null) {
+    if (result.errno === RoomErrorNumber.SUCCESS) {
       //NOTE: 공통 (InsertMember)
+      const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
-        chatId,
+        room.id,
         undefined,
       );
       void this.server.unicast(
         member.accountId,
-        builder.makeInsertRoom(member.chat, messages),
+        builder.makeInsertRoom(room, messages),
       );
       void this.server.multicastToRoom(
-        chatId,
-        builder.makeInsertRoomMember(chatId, member),
+        room.id,
+        builder.makeInsertRoomMember(room.id, member),
         member.accountId,
       );
 
@@ -505,21 +490,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         //FIXME: Temporary: 초대 메시지
         //NOTE: 공통 (SendChatMessage)
         const message = await this.chatService.createNewChatMessage(
-          chatId,
+          room.id,
           client.accountId,
           `${targetAccountId}님을 초대했습니다.`, //FIXME: SearchParams
           MessageTypeNumber.NOTICE,
         );
         void this.server.multicastToRoom(
-          chatId,
+          room.id,
           builder.makeChatMessagePayload(message),
         );
       }
-    } else {
-      errno = RoomErrorNumber.ERROR_ALREADY_MEMBER;
     }
 
-    return builder.makeInviteRoomResult(errno, chatId, targetAccountId);
+    return builder.makeInviteRoomResult(result.errno, chatId, targetAccountId);
   }
 
   @SubscribeMessage(ChatServerOpcode.CHAT_MESSAGE)

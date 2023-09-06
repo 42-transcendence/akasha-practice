@@ -277,7 +277,7 @@ export class AccountsService {
       }
 
       // 2. Delete Secret
-      const deletedSecret = await this.prisma.secret.delete({
+      const deletedSecret = await tx.secret.delete({
         where: { id: account.otpSecret.id },
       });
       void deletedSecret;
@@ -401,7 +401,7 @@ export class AccountsService {
 
       // 2. Delete Avatar If Exists
       if (account.avatarKey !== null) {
-        const deletedAvatar = await this.prisma.avatar.delete({
+        const deletedAvatar = await tx.avatar.delete({
           where: { id: account.avatarKey },
         });
         void deletedAvatar;
@@ -409,7 +409,7 @@ export class AccountsService {
 
       if (avatarData !== null) {
         // 3-A. Insert Updated Avatar
-        const insertedAvatar = await this.prisma.avatar.create({
+        const insertedAvatar = await tx.avatar.create({
           data: { data: avatarData },
         });
         const changedAccount = await tx.account.update({
