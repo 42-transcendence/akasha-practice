@@ -10,7 +10,7 @@ import {
   ChatRoomChatMessagePairEntry,
   FriendActiveFlags,
   FriendModifyFlags,
-  RoomErrorNumber,
+  ChatErrorNumber,
   RoomModifyFlags,
   SocialErrorNumber,
   fromChatRoomModeFlags,
@@ -127,7 +127,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       ) {
         this.chatService.setActiveTimestamp(client.accountId, true);
       }
-      this.server.multicastToFriend(
+      void this.server.multicastToFriend(
         client.accountId,
         builder.makeUpdateFriendActiveStatus(client.accountId),
         FriendActiveFlags.SHOW_ACTIVE_STATUS,
@@ -144,7 +144,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     client.socketActiveStatus = idle
       ? ActiveStatusNumber.IDLE
       : ActiveStatusNumber.ONLINE;
-    this.server.multicastToFriend(
+    void this.server.multicastToFriend(
       client.accountId,
       builder.makeUpdateFriendActiveStatus(client.accountId),
       FriendActiveFlags.SHOW_ACTIVE_STATUS,
@@ -431,7 +431,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
 
     let chatId: string = NULL_UUID;
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { room } = result;
       chatId = room.id;
       const messages = await this.chatService.loadMessagesAfter(
@@ -474,7 +474,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       password,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
         room.id,
@@ -500,7 +500,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       );
     }
 
-    if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
+    if (result.errno === ChatErrorNumber.ERROR_CHAT_BANNED) {
       assert(result.bans !== null);
       return builder.makeEnterRoomFailedCauseBanned(chatId, result.bans);
     }
@@ -513,7 +513,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const chatId = payload.readUUID();
     const result = await this.chatService.leaveRoom(chatId, client.accountId);
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId } = result;
       void this.server.unicast(
         client.accountId,
@@ -549,7 +549,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       targetAccountId,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
         room.id,
@@ -580,7 +580,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   }
 
   @SubscribeMessage(ChatServerOpcode.SEND_MESSAGE)
-  async handleChatMessage(client: ChatWebSocket, payload: ByteBuffer) {
+  async handleSendMessage(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
@@ -591,19 +591,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       content,
     );
-    if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
+    if (result.errno === ChatErrorNumber.ERROR_CHAT_BANNED) {
       assert(result.bans !== null);
-      return builder.makeChatMessageFailedCauseBanned(result.bans);
+      return builder.makeSendMessageFailedCauseBanned(chatId, result.bans);
     }
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { message } = result;
-      this.server.multicastToRoom(
+      void this.server.multicastToRoom(
         chatId,
         builder.makeChatMessagePayload(message),
       );
     }
 
-    return builder.makeChatMessageResult(result.errno);
+    return builder.makeSendMessageResult(result.errno, chatId);
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
@@ -613,7 +613,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const pair = readChatRoomChatMessagePair(payload);
 
     await this.chatService.updateLastMessageCursor(client.accountId, pair);
-    this.server.unicast(
+    void this.server.unicast(
       client.accountId,
       builder.makeSyncCursorPayload(pair),
       client,
@@ -660,7 +660,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       password,
       limit,
     });
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { room } = result;
       void this.server.multicastToRoom(chatId, builder.makeUpdateRoom(room));
 
@@ -697,7 +697,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       targetAccountId,
       targetRole,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, member } = result;
       void this.server.multicastToRoom(
         chatId,
@@ -735,7 +735,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       targetAccountId,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, members } = result;
       for (const member of members) {
         void this.server.multicastToRoom(
@@ -780,7 +780,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       memo,
       timespanSecs,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId, banId, ban } = result;
       void this.server.unicast(accountId, builder.makeKickNotify(chatId, ban));
       void this.server.unicast(accountId, builder.makeRemoveRoom(chatId));
@@ -822,7 +822,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       memo,
       timespanSecs,
     );
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId, banId, ban } = result;
       void this.server.unicast(accountId, builder.makeMuteNotify(chatId, ban));
 
@@ -863,7 +863,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const banId = payload.readString();
 
     const result = await this.chatService.unbanMember(client.accountId, banId);
-    if (result.errno === RoomErrorNumber.SUCCESS) {
+    if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId, ban } = result;
 
       void this.server.sendNotice(
@@ -880,5 +880,43 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     }
 
     return builder.makeUnbanMemberResult(result.errno, banId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.LOAD_DIRECTS)
+  async handleLoadDirects(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const targetAccountId = payload.readUUID();
+    const fetchedMessageId = payload.readNullable(payload.readUUID, NULL_UUID);
+
+    //TODO: cache
+    const messages = await this.chatService.loadDirectsAfter(
+      client.accountId,
+      targetAccountId,
+      fetchedMessageId ?? undefined,
+    );
+    return builder.makeDirectsList(targetAccountId, messages);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.SEND_DIRECT)
+  async handleSendDirect(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const targetAccountId = payload.readUUID();
+    const content = payload.readString();
+
+    const result = await this.chatService.trySendDirect(
+      client.accountId,
+      targetAccountId,
+      content,
+    );
+    if (result.errno === ChatErrorNumber.SUCCESS) {
+      const { message } = result;
+      const payload = builder.makeChatDirectPayload(message);
+      void this.server.unicast(client.accountId, payload);
+      void this.server.unicast(targetAccountId, payload);
+    }
+
+    return builder.makeSendMessageResult(result.errno, targetAccountId);
   }
 }

@@ -14,9 +14,10 @@ import {
   EnemyEntry,
   FRIEND_ACTIVE_FLAGS_SIZE,
   FriendEntry,
-  RoomErrorNumber,
+  ChatErrorNumber,
   SocialErrorNumber,
   SocialPayload,
+  ChatDirectEntry,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import {
@@ -142,24 +143,24 @@ type EnemyResult =
 type ChatRoomFailed =
   | {
       errno: Exclude<
-        RoomErrorNumber,
-        RoomErrorNumber.SUCCESS | RoomErrorNumber.ERROR_CHAT_BANNED
+        ChatErrorNumber,
+        ChatErrorNumber.SUCCESS | ChatErrorNumber.ERROR_CHAT_BANNED
       >;
     }
   | {
-      errno: RoomErrorNumber.ERROR_CHAT_BANNED;
+      errno: ChatErrorNumber.ERROR_CHAT_BANNED;
       bans: ChatBanSummaryEntry[] | null;
     };
 
 /// ChatCreateRoomResult
 type ChatCreateRoomResult =
-  | { errno: RoomErrorNumber.SUCCESS; room: ChatRoomEntry }
+  | { errno: ChatErrorNumber.SUCCESS; room: ChatRoomEntry }
   | ChatRoomFailed;
 
 /// ChatEnterRoomResult
 type ChatEnterRoomResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       room: ChatRoomEntry;
       member: ChatRoomMemberEntry;
     }
@@ -168,7 +169,7 @@ type ChatEnterRoomResult =
 /// ChatLeaveRoomResult
 type ChatLeaveRoomResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       chatId: string;
       accountId: string;
     }
@@ -177,7 +178,7 @@ type ChatLeaveRoomResult =
 /// ChatMessageResult
 type ChatMessageResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       message: ChatMessageEntry;
     }
   | ChatRoomFailed;
@@ -185,7 +186,7 @@ type ChatMessageResult =
 /// ChatRoomResult
 type ChatRoomResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       room: ChatRoomViewEntry;
     }
   | ChatRoomFailed;
@@ -193,7 +194,7 @@ type ChatRoomResult =
 /// ChatMemberResult
 type ChatMemberResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       chatId: string;
       member: ChatRoomMemberEntry;
     }
@@ -202,7 +203,7 @@ type ChatMemberResult =
 /// ChatMembersResult
 type ChatMembersResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       chatId: string;
       members: ChatRoomMemberEntry[];
     }
@@ -211,11 +212,19 @@ type ChatMembersResult =
 /// ChatBanResult
 type ChatBanResult =
   | {
-      errno: RoomErrorNumber.SUCCESS;
+      errno: ChatErrorNumber.SUCCESS;
       chatId: string;
       accountId: string;
       banId: string;
       ban: ChatBanSummaryEntry;
+    }
+  | ChatRoomFailed;
+
+/// ChatDirectResult
+type ChatDirectResult =
+  | {
+      errno: ChatErrorNumber.SUCCESS;
+      message: ChatDirectEntry;
     }
   | ChatRoomFailed;
 
@@ -285,14 +294,14 @@ export class ChatService {
     lastMessageId: string | undefined,
   ): Promise<ChatMessageEntry[]> {
     const messages = await this.prisma.chatMessage.findMany({
-      where: { chat: { id: chatId } },
+      where: { chatId },
       orderBy: { timestamp: Prisma.SortOrder.asc },
       ...(lastMessageId !== undefined
         ? {
             skip: 1,
             cursor: { id: lastMessageId },
           }
-        : {}),
+        : undefined),
     });
 
     return messages.map((e) => ({
@@ -687,14 +696,14 @@ export class ChatService {
         });
       } catch (e) {
         ChatService.logUnknownError(e);
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
 
       const memberSet = new Set<string>(room.members.map((e) => e.accountId));
       this.memberCache.set(room.id, memberSet);
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         room: toChatRoomEntry(room),
       };
     });
@@ -713,10 +722,10 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_ALREADY_MEMBER };
       }
 
       const room = await tx.chat.findUniqueOrThrow({
@@ -724,10 +733,10 @@ export class ChatService {
         select: { isSecret: true, password: true, limit: true },
       });
       if (room.isSecret && password !== room.password) {
-        return { errno: RoomErrorNumber.ERROR_WRONG_PASSWORD };
+        return { errno: ChatErrorNumber.ERROR_WRONG_PASSWORD };
       }
       if (memberSet.size >= room.limit) {
-        return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
+        return { errno: ChatErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
       const bans = await this.getChatBanned(
@@ -737,7 +746,7 @@ export class ChatService {
         tx,
       );
       if (bans.length !== 0) {
-        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans };
+        return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans };
       }
 
       return this.insertChatMember(tx, chatId, accountId, RoleNumber.USER);
@@ -756,10 +765,10 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -767,7 +776,7 @@ export class ChatService {
         select: { role: true },
       });
       if (member.role === Role.ADMINISTRATOR) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
       return this.deleteChatMember(tx, chatId, accountId);
@@ -787,23 +796,23 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_ALREADY_MEMBER };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
       if (!(await this.isDuplexFriend(accountId, targetAccountId, tx))) {
-        return { errno: RoomErrorNumber.ERROR_NOT_FRIEND };
+        return { errno: ChatErrorNumber.ERROR_NOT_FRIEND };
       }
       if (await this.isSimplexEnemy(accountId, targetAccountId, tx)) {
-        return { errno: RoomErrorNumber.ERROR_ENEMY };
+        return { errno: ChatErrorNumber.ERROR_ENEMY };
       }
 
       const room = await tx.chat.findUniqueOrThrow({
@@ -819,10 +828,10 @@ export class ChatService {
         room.password !== "" &&
         getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)
       ) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       if (memberSet.size >= room.limit) {
-        return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
+        return { errno: ChatErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
       const bans = await this.getChatBanned(
@@ -833,7 +842,7 @@ export class ChatService {
       );
       if (bans.length !== 0) {
         //NOTE: Do NOT with `bans`
-        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans: null };
+        return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans: null };
       }
 
       return this.insertChatMember(
@@ -861,17 +870,17 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_NO_MEMBER };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -879,14 +888,14 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(targetMember.role)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
       const ban = await this.prisma.chatBan.create({
@@ -904,7 +913,7 @@ export class ChatService {
         },
       });
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         chatId,
         accountId: targetAccountId,
         banId: ban.id,
@@ -929,17 +938,17 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_NO_MEMBER };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -947,17 +956,17 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(targetMember.role)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
       if (targetMember.role === Role.ADMINISTRATOR) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
       const ban = await this.prisma.chatBan.create({
@@ -976,7 +985,7 @@ export class ChatService {
       });
 
       const result = await this.deleteChatMember(tx, chatId, targetAccountId);
-      if (result.errno === RoomErrorNumber.SUCCESS) {
+      if (result.errno === ChatErrorNumber.SUCCESS) {
         return {
           ...result,
           banId: ban.id,
@@ -996,20 +1005,20 @@ export class ChatService {
 
       const ban = await tx.chatBan.findUnique({ where: { id: banId } });
       if (ban === null) {
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
       const { chatId, accountId: targetAccountId, managerAccountId } = ban;
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -1017,14 +1026,14 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       const managerMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: managerAccountId } },
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(managerMember.role)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
       //NOTE: Soft delete
@@ -1034,7 +1043,7 @@ export class ChatService {
       }));
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         chatId,
         accountId: targetAccountId,
         banId: ban.id,
@@ -1056,10 +1065,10 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -1067,7 +1076,7 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
 
       let room: ChatRoomForViewEntry;
@@ -1079,11 +1088,11 @@ export class ChatService {
         });
       } catch (e) {
         ChatService.logUnknownError(e);
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         room: toChatRoomViewEntry(room),
       };
     });
@@ -1103,17 +1112,17 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_NO_MEMBER };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -1121,14 +1130,14 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
       if (role === getRoleNumber(targetMember.role)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
       const updatedTargetMember = await tx.chatMember.update({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
@@ -1137,7 +1146,7 @@ export class ChatService {
       });
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         chatId: updatedTargetMember.chatId,
         member: toChatMemberEntry(updatedTargetMember),
       };
@@ -1157,17 +1166,17 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: ChatErrorNumber.ERROR_NO_MEMBER };
       }
 
       if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
+        return { errno: ChatErrorNumber.ERROR_SELF };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -1175,14 +1184,14 @@ export class ChatService {
         select: { role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
       if (getRoleLevel(targetMember.role) < getRoleLevel(Role.MANAGER)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
       const updatedMember = await tx.chatMember.update({
         where: { chatId_accountId: { chatId, accountId } },
@@ -1196,7 +1205,7 @@ export class ChatService {
       });
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         chatId: updatedTargetMember.chatId,
         members: [
           toChatMemberEntry(updatedMember),
@@ -1218,13 +1227,13 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
       if (memberSet.size === 1) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -1232,7 +1241,7 @@ export class ChatService {
         select: { chatId: true, accountId: true, role: true },
       });
       if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+        return { errno: ChatErrorNumber.ERROR_PERMISSION };
       }
 
       let room: Chat;
@@ -1241,13 +1250,13 @@ export class ChatService {
         //NOTE: chat_members & chat_messages are expected to be deleted by `ON DELETE CASCADE`
       } catch (e) {
         ChatService.logUnknownError(e);
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
 
       this.memberCache.set(room.id, null);
 
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         chatId: room.id,
         accountId: member.accountId,
       };
@@ -1260,7 +1269,7 @@ export class ChatService {
     content: string,
   ): Promise<ChatMessageResult> {
     if (content === "") {
-      return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      return { errno: ChatErrorNumber.ERROR_RESTRICTED };
     }
 
     return this.prisma.$transaction(async (tx) => {
@@ -1271,10 +1280,10 @@ export class ChatService {
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+        return { errno: ChatErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+        return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
 
       const bans = await this.getChatBanned(
@@ -1284,7 +1293,7 @@ export class ChatService {
         tx,
       );
       if (bans.length !== 0) {
-        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans };
+        return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans };
       }
 
       const message = await this.createNewChatMessage(
@@ -1294,10 +1303,10 @@ export class ChatService {
         MessageTypeNumber.REGULAR,
       );
       if (message === null) {
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
       return {
-        errno: RoomErrorNumber.SUCCESS,
+        errno: ChatErrorNumber.SUCCESS,
         message,
       };
     });
@@ -1334,7 +1343,7 @@ export class ChatService {
     const bans = await this.accounts.findActiveBansOnTransaction(tx, accountId);
     if (bans.length !== 0) {
       //TODO: return with `bans`
-      return { errno: RoomErrorNumber.ERROR_ACCOUNT_BAN };
+      return { errno: ChatErrorNumber.ERROR_ACCOUNT_BAN };
     }
 
     return undefined;
@@ -1360,11 +1369,11 @@ export class ChatService {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
           // An operation failed because it depends on one or more records that were required but not found. {cause}
-          return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
+          return { errno: ChatErrorNumber.ERROR_ALREADY_MEMBER };
         }
       }
       ChatService.logUnknownError(e);
-      return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      return { errno: ChatErrorNumber.ERROR_UNKNOWN };
     }
 
     const cache = this.memberCache.get(chatId);
@@ -1373,7 +1382,7 @@ export class ChatService {
     }
 
     return {
-      errno: RoomErrorNumber.SUCCESS,
+      errno: ChatErrorNumber.SUCCESS,
       room: toChatRoomEntry(member.chat),
       member: toChatMemberEntry(member),
     };
@@ -1397,15 +1406,15 @@ export class ChatService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
-          return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+          return { errno: ChatErrorNumber.ERROR_NO_MEMBER };
         }
       }
       ChatService.logUnknownError(e);
-      return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      return { errno: ChatErrorNumber.ERROR_UNKNOWN };
     }
 
     return {
-      errno: RoomErrorNumber.SUCCESS,
+      errno: ChatErrorNumber.SUCCESS,
       chatId: member.chatId,
       accountId: member.accountId,
     };
@@ -1485,5 +1494,73 @@ export class ChatService {
     return (
       member !== null && getRoleLevel(member.role) >= getRoleLevel(Role.MANAGER)
     );
+  }
+
+  async loadDirectsAfter(
+    accountId: string,
+    targetAccountId: string,
+    lastMessageId: string | undefined,
+  ): Promise<ChatDirectEntry[]> {
+    const directs = await this.prisma.chatDirect.findMany({
+      where: {
+        OR: [
+          { sourceAccountId: accountId, destinationAccountId: targetAccountId },
+          { sourceAccountId: targetAccountId, destinationAccountId: accountId },
+        ],
+      },
+      orderBy: { timestamp: Prisma.SortOrder.asc },
+      ...(lastMessageId !== undefined
+        ? {
+            skip: 1,
+            cursor: { id: lastMessageId },
+          }
+        : undefined),
+    });
+
+    return directs;
+  }
+
+  async trySendDirect(
+    accountId: string,
+    targetAccountId: string,
+    content: string,
+  ): Promise<ChatDirectResult> {
+    if (content === "") {
+      return { errno: ChatErrorNumber.ERROR_RESTRICTED };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: ChatErrorNumber.ERROR_SELF };
+      }
+      if (!(await this.isDuplexFriend(accountId, targetAccountId, tx))) {
+        return { errno: ChatErrorNumber.ERROR_NOT_FRIEND };
+      }
+      if (await this.isSimplexEnemy(accountId, targetAccountId, tx)) {
+        return { errno: ChatErrorNumber.ERROR_ENEMY };
+      }
+
+      try {
+        const message = await tx.chatDirect.create({
+          data: {
+            sourceAccountId: accountId,
+            destinationAccountId: targetAccountId,
+            content,
+          },
+        });
+        return {
+          errno: ChatErrorNumber.SUCCESS,
+          message,
+        };
+      } catch (e) {
+        ChatService.logUnknownError(e);
+        return { errno: ChatErrorNumber.ERROR_UNKNOWN };
+      }
+    });
   }
 }

@@ -9,7 +9,7 @@ import {
   ChatRoomViewEntry,
   EnemyEntry,
   FriendEntry,
-  RoomErrorNumber,
+  ChatErrorNumber,
   SocialErrorNumber,
   SocialPayload,
   writeChatBanDetail,
@@ -22,6 +22,8 @@ import {
   writeEnemy,
   writeFriend,
   writeSocialPayload,
+  ChatDirectEntry,
+  writeChatDirect,
 } from "@common/chat-payloads";
 import { BanSummaryPayload } from "@common/profile-payloads";
 import { RoleNumber } from "@common/generated/types";
@@ -184,7 +186,7 @@ export function makeInsertRoom(
 }
 
 export function makeCreateRoomResult(
-  errno: RoomErrorNumber,
+  errno: ChatErrorNumber,
   chatId: string | null,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CREATE_ROOM_RESULT);
@@ -193,7 +195,7 @@ export function makeCreateRoomResult(
   return buf;
 }
 
-export function makeEnterRoomResult(errno: RoomErrorNumber, chatId: string) {
+export function makeEnterRoomResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ENTER_ROOM_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
@@ -204,7 +206,7 @@ export function makeEnterRoomFailedCauseBanned(
   chatId: string,
   bans: BanSummaryPayload[],
 ) {
-  const buf = makeEnterRoomResult(RoomErrorNumber.ERROR_CHAT_BANNED, chatId);
+  const buf = makeEnterRoomResult(ChatErrorNumber.ERROR_CHAT_BANNED, chatId);
   buf.writeArray(bans, writeChatBanSummary);
   return buf;
 }
@@ -221,7 +223,7 @@ export function makeRemoveRoom(chatId: string) {
   return buf;
 }
 
-export function makeLeaveRoomResult(errno: RoomErrorNumber, chatId: string) {
+export function makeLeaveRoomResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.LEAVE_ROOM_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
@@ -229,7 +231,7 @@ export function makeLeaveRoomResult(errno: RoomErrorNumber, chatId: string) {
 }
 
 export function makeInviteRoomResult(
-  errno: RoomErrorNumber,
+  errno: ChatErrorNumber,
   chatId: string,
   targetAccountId: string,
 ) {
@@ -273,14 +275,18 @@ export function makeChatMessagePayload(message: ChatMessageEntry) {
   return buf;
 }
 
-export function makeChatMessageResult(errno: RoomErrorNumber) {
+export function makeSendMessageResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_RESULT);
   buf.write1(errno);
+  buf.writeUUID(chatId);
   return buf;
 }
 
-export function makeChatMessageFailedCauseBanned(bans: BanSummaryPayload[]) {
-  const buf = makeChatMessageResult(RoomErrorNumber.ERROR_CHAT_BANNED);
+export function makeSendMessageFailedCauseBanned(
+  chatId: string,
+  bans: BanSummaryPayload[],
+) {
+  const buf = makeSendMessageResult(ChatErrorNumber.ERROR_CHAT_BANNED, chatId);
   buf.writeArray(bans, writeChatBanSummary);
   return buf;
 }
@@ -292,7 +298,7 @@ export function makeSyncCursorPayload(pair: ChatRoomChatMessagePairEntry) {
 }
 
 export function makeChangeRoomPropertyResult(
-  errno: RoomErrorNumber,
+  errno: ChatErrorNumber,
   chatId: string,
 ) {
   const buf = ByteBuffer.createWithOpcode(
@@ -304,7 +310,7 @@ export function makeChangeRoomPropertyResult(
 }
 
 export function makeChangeMemberRoleResult(
-  errno: RoomErrorNumber,
+  errno: ChatErrorNumber,
   chatId: string,
   targetAccountId: string,
   targetRole: RoleNumber,
@@ -320,7 +326,7 @@ export function makeChangeMemberRoleResult(
 }
 
 export function makeHandoverRoomOwnerResult(
-  errno: RoomErrorNumber,
+  errno: ChatErrorNumber,
   chatId: string,
   targetAccountId: string,
 ) {
@@ -333,7 +339,7 @@ export function makeHandoverRoomOwnerResult(
   return buf;
 }
 
-export function makeKickMemberResult(errno: RoomErrorNumber, chatId: string) {
+export function makeKickMemberResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.KICK_MEMBER_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
@@ -347,7 +353,7 @@ export function makeKickNotify(chatId: string, ban: ChatBanSummaryEntry) {
   return buf;
 }
 
-export function makeMuteMemberResult(errno: RoomErrorNumber, chatId: string) {
+export function makeMuteMemberResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MUTE_MEMBER_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
@@ -367,9 +373,35 @@ export function makeBanList(bans: ChatBanDetailEntry[]) {
   return buf;
 }
 
-export function makeUnbanMemberResult(errno: RoomErrorNumber, banId: string) {
+export function makeUnbanMemberResult(errno: ChatErrorNumber, banId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.UNBAN_MEMBER_RESULT);
   buf.write1(errno);
   buf.writeString(banId);
+  return buf;
+}
+
+export function makeDirectsList(
+  targetAccountId: string,
+  messages: ChatDirectEntry[],
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DIRECTS_LIST);
+  buf.writeUUID(targetAccountId);
+  buf.writeArray(messages, writeChatDirect);
+  return buf;
+}
+
+export function makeChatDirectPayload(message: ChatDirectEntry) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_DIRECT);
+  writeChatDirect(message, buf);
+  return buf;
+}
+
+export function makeSendDirectResult(
+  errno: ChatErrorNumber,
+  targetAccountId: string,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_DIRECT_RESULT);
+  buf.write1(errno);
+  buf.writeUUID(targetAccountId);
   return buf;
 }

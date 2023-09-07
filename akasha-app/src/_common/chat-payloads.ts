@@ -1,6 +1,7 @@
 import {
   BanCategoryNumber,
   ChatBanEntity,
+  ChatDirectEntity,
   ChatEntity,
   ChatMemberEntity,
   ChatMessageEntity,
@@ -87,8 +88,8 @@ export function writeSocialPayload(obj: SocialPayload, buf: ByteBuffer) {
   buf.writeArray(obj.enemyList, writeEnemy);
 }
 
-/// RoomErrorNumber
-export const enum RoomErrorNumber {
+/// ChatErrorNumber
+export const enum ChatErrorNumber {
   SUCCESS,
   ERROR_NO_ROOM,
   ERROR_NO_MEMBER,
@@ -327,4 +328,25 @@ export function writeChatBanDetail(obj: ChatBanDetailEntry, buf: ByteBuffer) {
   buf.writeString(obj.memo);
   buf.writeNullable(obj.expireTimestamp, buf.writeDate);
   buf.writeDate(obj.bannedTimestamp);
+}
+
+/// ChatDirectEntry
+export type ChatDirectEntry = Pick<
+  ChatDirectEntity,
+  "sourceAccountId" | "destinationAccountId" | "content" | "timestamp"
+>;
+
+export function readChatDirect(buf: ByteBuffer): ChatDirectEntry {
+  const sourceAccountId = buf.readUUID();
+  const destinationAccountId = buf.readUUID();
+  const content = buf.readString();
+  const timestamp = buf.readDate();
+  return { sourceAccountId, destinationAccountId, content, timestamp };
+}
+
+export function writeChatDirect(obj: ChatDirectEntry, buf: ByteBuffer) {
+  buf.writeUUID(obj.sourceAccountId);
+  buf.writeUUID(obj.destinationAccountId);
+  buf.writeString(obj.content);
+  buf.writeDate(obj.timestamp);
 }
