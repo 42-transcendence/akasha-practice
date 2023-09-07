@@ -2,7 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { ChatWebSocket } from "./chat-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
 import { ChatService } from "./chat.service";
-import { ActiveStatusNumber } from "@common/generated/types";
+import { ActiveStatusNumber, MessageTypeNumber } from "@common/generated/types";
+import * as builder from "./chat-payload-builder";
 
 @Injectable()
 export class ChatServer {
@@ -89,13 +90,15 @@ export class ChatServer {
   ): Promise<number> {
     let counter = 0;
     const memberSet = await this.service.getChatMemberSet(chatId);
-    for (const memberAccountId of memberSet) {
-      if (memberAccountId === exceptAccountId) {
-        continue;
-      }
+    if (memberSet !== null) {
+      for (const memberAccountId of memberSet) {
+        if (memberAccountId === exceptAccountId) {
+          continue;
+        }
 
-      if (this.unicast(memberAccountId, buf, undefined)) {
-        counter++;
+        if (this.unicast(memberAccountId, buf, undefined)) {
+          counter++;
+        }
       }
     }
     return counter;
@@ -138,5 +141,20 @@ export class ChatServer {
     }
 
     return ActiveStatusNumber.ONLINE;
+  }
+
+  async sendChatMessage(
+    chatId: string,
+    accountId: string,
+    content: string,
+    messageType: MessageTypeNumber,
+  ): Promise<void> {
+    const message = await this.service.createNewChatMessage(
+      chatId,
+      accountId,
+      content,
+      messageType,
+    );
+    void this.multicastToRoom(chatId, builder.makeChatMessagePayload(message));
   }
 }

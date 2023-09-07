@@ -11,7 +11,10 @@ import {
   Prisma,
   RegistrationState,
 } from "@prisma/client";
-import { PrismaService } from "@/prisma/prisma.service";
+import {
+  PrismaService,
+  PrismaTransactionClient,
+} from "@/prisma/prisma.service";
 import { TOTP, assert, fromBitsString, generateOTP } from "akasha-lib";
 import { FRIEND_ACTIVE_FLAGS_SIZE } from "@common/chat-payloads";
 import {
@@ -52,12 +55,11 @@ const accountForAuth = Prisma.validator<Prisma.AccountDefaultArgs>()({
 export type AccountForAuth = Prisma.AccountGetPayload<typeof accountForAuth>;
 
 const activeBanCondition = (): Prisma.BanWhereInput => ({
-  AND: [
-    { category: BanCategory.ACCESS },
-    {
-      OR: [{ expireTimestamp: null }, { expireTimestamp: { gte: new Date() } }],
-    },
-  ],
+  OR: [{ expireTimestamp: null }, { expireTimestamp: { gte: new Date() } }],
+});
+
+const activeAccessBanCondition = (): Prisma.BanWhereInput => ({
+  AND: [{ category: BanCategory.ACCESS }, activeBanCondition()],
 });
 
 /// AccountNickNameAndTag
@@ -135,7 +137,7 @@ export class AccountsService {
       include: {
         otpSecret: true,
         bans: {
-          where: activeBanCondition(),
+          where: activeAccessBanCondition(),
         },
       },
     });
@@ -147,10 +149,22 @@ export class AccountsService {
       include: {
         otpSecret: true,
         bans: {
+          where: activeAccessBanCondition(),
+        },
+      },
+    });
+  }
+
+  async findActiveBansOnTransaction(tx: PrismaTransactionClient, id: string) {
+    const account = await tx.account.findUniqueOrThrow({
+      where: { id },
+      select: {
+        bans: {
           where: activeBanCondition(),
         },
       },
     });
+    return account.bans;
   }
 
   async checkOTP(secret: SecretValues, clientOTP: string): Promise<boolean> {

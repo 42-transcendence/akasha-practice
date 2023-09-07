@@ -28,7 +28,6 @@ import {
   ActiveStatusNumber,
   MessageTypeNumber,
   Role,
-  RoleNumber,
 } from "@common/generated/types";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 
@@ -363,6 +362,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
 
     const result = await this.chatService.createNewRoom(
+      ownerAccountId,
       {
         title,
         ...modeFlags,
@@ -397,21 +397,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    const password = payload.readNullable(payload.readString);
-    if (password !== null) {
+    const password = payload.readString();
+    if (password !== "") {
       if (!validateBcryptSalt(password)) {
         throw new PacketHackException(`Illegal password [${password}]`);
       }
     }
 
-    const result = await this.chatService.insertChatMember(
+    const result = await this.chatService.enterRoom(
       chatId,
       client.accountId,
       password,
-      RoleNumber.USER,
     );
     if (result.errno === RoomErrorNumber.SUCCESS) {
-      //NOTE: 공통 (InsertMember)
       const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
         room.id,
@@ -427,20 +425,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         member.accountId,
       );
 
-      {
-        //FIXME: Temporary: 입장 메시지
-        //NOTE: 공통 (SendChatMessage)
-        const message = await this.chatService.createNewChatMessage(
-          room.id,
-          client.accountId,
-          `${client.accountId}님이 입장했습니다.`, //FIXME: SearchParams
-          MessageTypeNumber.NOTICE,
-        );
-        void this.server.multicastToRoom(
-          room.id,
-          builder.makeChatMessagePayload(message),
-        );
-      }
+      void this.server.sendChatMessage(
+        room.id,
+        member.accountId,
+        `${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
+        MessageTypeNumber.NOTICE,
+      );
     }
 
     return builder.makeEnterRoomResult(result.errno, chatId);
@@ -451,11 +441,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    const result = await this.chatService.deleteChatMember(
-      chatId,
-      client.accountId,
-    );
-    if (result.errno !== RoomErrorNumber.SUCCESS) {
+    const result = await this.chatService.leaveRoom(chatId, client.accountId);
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, accountId } = result;
       void this.server.unicast(
         client.accountId,
         builder.makeRemoveRoom(chatId),
@@ -465,20 +453,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         builder.makeRemoveRoomMember(chatId, client.accountId),
       );
 
-      {
-        //FIXME: Temporary: 퇴장 메시지
-        //NOTE: 공통 (SendChatMessage)
-        const message = await this.chatService.createNewChatMessage(
-          chatId,
-          client.accountId,
-          `${client.accountId}님이 퇴장했습니다.`, //FIXME: SearchParams
-          MessageTypeNumber.NOTICE,
-        );
-        void this.server.multicastToRoom(
-          chatId,
-          builder.makeChatMessagePayload(message),
-        );
-      }
+      void this.server.sendChatMessage(
+        chatId,
+        accountId,
+        `${client.accountId}님이 퇴장했습니다.`, //FIXME: content to SearchParams
+        MessageTypeNumber.NOTICE,
+      );
     }
 
     return builder.makeLeaveRoomResult(result.errno, chatId);
@@ -491,14 +471,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const chatId: string = payload.readUUID();
     const targetAccountId: string = payload.readUUID();
 
-    const result = await this.chatService.insertChatMember(
+    const result = await this.chatService.inviteRoomMember(
       chatId,
+      client.accountId,
       targetAccountId,
-      null,
-      RoleNumber.USER,
     );
     if (result.errno === RoomErrorNumber.SUCCESS) {
-      //NOTE: 공통 (InsertMember)
       const { room, member } = result;
       const messages = await this.chatService.loadMessagesAfter(
         room.id,
@@ -514,20 +492,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         member.accountId,
       );
 
-      {
-        //FIXME: Temporary: 초대 메시지
-        //NOTE: 공통 (SendChatMessage)
-        const message = await this.chatService.createNewChatMessage(
-          room.id,
-          client.accountId,
-          `${targetAccountId}님을 초대했습니다.`, //FIXME: SearchParams
-          MessageTypeNumber.NOTICE,
-        );
-        void this.server.multicastToRoom(
-          room.id,
-          builder.makeChatMessagePayload(message),
-        );
-      }
+      void this.server.sendChatMessage(
+        room.id,
+        member.accountId,
+        `${client.accountId}님의 초대로 ${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
+        MessageTypeNumber.NOTICE,
+      );
     }
 
     return builder.makeInviteRoomResult(result.errno, chatId, targetAccountId);
