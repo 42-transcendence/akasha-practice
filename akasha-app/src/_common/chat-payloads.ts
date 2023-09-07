@@ -42,16 +42,6 @@ export function writeFriend(obj: FriendEntry, buf: ByteBuffer) {
   buf.write1(obj.activeFlags);
 }
 
-/// FriendErrorNumber
-export const enum FriendErrorNumber {
-  SUCCESS,
-  ERROR_ALREADY_FRIEND,
-  ERROR_NOT_FRIEND,
-  ERROR_SELF_FRIEND,
-  ERROR_LOOKUP_FAILED,
-  ERROR_UNKNOWN,
-}
-
 /// EnemyEntry
 export type EnemyEntry = Pick<EnemyEntity, "enemyAccountId" | "memo">;
 
@@ -64,6 +54,16 @@ export function readEnemy(buf: ByteBuffer): EnemyEntry {
 export function writeEnemy(obj: EnemyEntry, buf: ByteBuffer) {
   buf.writeUUID(obj.enemyAccountId);
   buf.writeString(obj.memo);
+}
+
+/// SocialErrorNumber
+export const enum SocialErrorNumber {
+  SUCCESS,
+  ERROR_ALREADY_EXISTS,
+  ERROR_NOT_FOUND,
+  ERROR_SELF,
+  ERROR_LOOKUP_FAILED,
+  ERROR_UNKNOWN,
 }
 
 /// SocialPayload

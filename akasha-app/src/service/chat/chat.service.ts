@@ -11,10 +11,11 @@ import {
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
+  EnemyEntry,
   FRIEND_ACTIVE_FLAGS_SIZE,
   FriendEntry,
-  FriendErrorNumber,
   RoomErrorNumber,
+  SocialErrorNumber,
   SocialPayload,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
@@ -24,6 +25,7 @@ import {
   Chat,
   ChatBan,
   ChatMember,
+  Enemy,
   Friend,
   Prisma,
   Role,
@@ -114,9 +116,15 @@ function toBanDetailEntry(ban: ChatBan): ChatBanDetailEntry {
 
 /// FriendResult
 type FriendResult =
-  | { errno: FriendErrorNumber.SUCCESS; friend: FriendEntry }
-  | { errno: Exclude<FriendErrorNumber, FriendErrorNumber.SUCCESS> };
+  | { errno: SocialErrorNumber.SUCCESS; friend: FriendEntry }
+  | { errno: Exclude<SocialErrorNumber, SocialErrorNumber.SUCCESS> };
 
+/// EnemyResult
+type EnemyResult =
+  | { errno: SocialErrorNumber.SUCCESS; enemy: EnemyEntry }
+  | { errno: Exclude<SocialErrorNumber, SocialErrorNumber.SUCCESS> };
+
+/// ChatRoomFailed
 type ChatRoomFailed =
   | {
       errno: Exclude<
@@ -262,7 +270,7 @@ export class ChatService {
   }
 
   async loadSocial(accountId: string): Promise<SocialPayload> {
-    const data = await this.prisma.account.findUniqueOrThrow({
+    const account = await this.prisma.account.findUniqueOrThrow({
       where: { id: accountId },
       select: {
         friends: true,
@@ -280,16 +288,16 @@ export class ChatService {
       },
     });
 
-    const friendList = data.friends.map((e) => toFriendEntry(e));
+    const friendList = account.friends.map((e) => toFriendEntry(e));
 
     const friendUUIDSet = new Set<string>(
-      data.friends.map((e) => e.friendAccountId),
+      account.friends.map((e) => e.friendAccountId),
     );
-    const friendRequestList = data.friendReferences
+    const friendRequestList = account.friendReferences
       .map((e) => e.accountId)
       .filter((e) => !friendUUIDSet.has(e));
 
-    const enemyList = data.enemies;
+    const enemyList = account.enemies;
 
     return { friendList, friendRequestList, enemyList };
   }
@@ -301,10 +309,10 @@ export class ChatService {
     activeFlags: number,
   ): Promise<FriendResult> {
     if (targetAccountId === null) {
-      return { errno: FriendErrorNumber.ERROR_LOOKUP_FAILED };
+      return { errno: SocialErrorNumber.ERROR_LOOKUP_FAILED };
     }
     if (targetAccountId === accountId) {
-      return { errno: FriendErrorNumber.ERROR_SELF_FRIEND };
+      return { errno: SocialErrorNumber.ERROR_SELF };
     }
     let friend: Friend;
     try {
@@ -319,14 +327,14 @@ export class ChatService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2002") {
-          return { errno: FriendErrorNumber.ERROR_ALREADY_FRIEND };
+          return { errno: SocialErrorNumber.ERROR_ALREADY_EXISTS };
         }
       }
       ChatService.logUnknownError(e);
-      return { errno: FriendErrorNumber.ERROR_UNKNOWN };
+      return { errno: SocialErrorNumber.ERROR_UNKNOWN };
     }
     return {
-      errno: FriendErrorNumber.SUCCESS,
+      errno: SocialErrorNumber.SUCCESS,
       friend: toFriendEntry(friend),
     };
   }
@@ -354,14 +362,14 @@ export class ChatService {
     } catch (e) {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
-          return { errno: FriendErrorNumber.ERROR_NOT_FRIEND };
+          return { errno: SocialErrorNumber.ERROR_NOT_FOUND };
         }
       }
       ChatService.logUnknownError(e);
-      return { errno: FriendErrorNumber.ERROR_UNKNOWN };
+      return { errno: SocialErrorNumber.ERROR_UNKNOWN };
     }
     return {
-      errno: FriendErrorNumber.SUCCESS,
+      errno: SocialErrorNumber.SUCCESS,
       friend: toFriendEntry(friend),
     };
   }
@@ -370,7 +378,7 @@ export class ChatService {
     accountId: string,
     friendAccountId: string,
   ): Promise<
-    [FriendErrorNumber, FriendEntry | undefined, FriendEntry | undefined]
+    [SocialErrorNumber, FriendEntry | undefined, FriendEntry | undefined]
   > {
     //XXX: Prisma가 DELETE RETURNING을 deleteMany에서 지원하지 않았음.
     //XXX: Prisma가 DeleteUniqueIfExists 따위를 지원하지 않았음.
@@ -407,14 +415,14 @@ export class ChatService {
       ]);
     } catch (e) {
       ChatService.logUnknownError(e);
-      return [FriendErrorNumber.ERROR_UNKNOWN, undefined, undefined];
+      return [SocialErrorNumber.ERROR_UNKNOWN, undefined, undefined];
     }
     const [forward, reverse] = data;
     if (forward !== null || reverse !== null) {
-      return [FriendErrorNumber.ERROR_NOT_FRIEND, undefined, undefined];
+      return [SocialErrorNumber.ERROR_NOT_FOUND, undefined, undefined];
     }
     return [
-      FriendErrorNumber.SUCCESS,
+      SocialErrorNumber.SUCCESS,
       forward !== null ? toFriendEntry(forward) : undefined,
       reverse !== null ? toFriendEntry(reverse) : undefined,
     ];
@@ -426,7 +434,7 @@ export class ChatService {
     tx?: PrismaTransactionClient | undefined,
   ): Promise<boolean> {
     tx ??= this.prisma;
-    const data = await tx.account.findUnique({
+    const account = await tx.account.findUnique({
       where: { id: accountId },
       select: {
         friends: {
@@ -444,10 +452,10 @@ export class ChatService {
       },
     });
     return (
-      data !== null &&
-      data.friends.length !== 0 &&
-      data.friendReferences.length !== 0 &&
-      data.enemyReferences.length === 0
+      account !== null &&
+      account.friends.length !== 0 &&
+      account.friendReferences.length !== 0 &&
+      account.enemyReferences.length === 0
     );
   }
 
@@ -456,7 +464,7 @@ export class ChatService {
     tx?: PrismaTransactionClient | undefined,
   ): Promise<FriendEntry[]> {
     tx ??= this.prisma;
-    const data = await tx.account.findUniqueOrThrow({
+    const account = await tx.account.findUniqueOrThrow({
       where: { id: accountId },
       select: {
         friends: true,
@@ -466,16 +474,110 @@ export class ChatService {
     });
 
     const reverses = new Set<string>(
-      data.friendReferences.map((e) => e.accountId),
+      account.friendReferences.map((e) => e.accountId),
     );
     const reverseEnemies = new Set<string>(
-      data.enemyReferences.map((e) => e.accountId),
+      account.enemyReferences.map((e) => e.accountId),
     );
 
-    return data.friends
+    return account.friends
       .filter((e) => reverses.has(e.friendAccountId))
       .filter((e) => !reverseEnemies.has(e.friendAccountId))
       .map((e) => toFriendEntry(e));
+  }
+
+  async addEnemy(
+    accountId: string,
+    targetAccountId: string | null,
+    memo: string,
+  ): Promise<EnemyResult> {
+    if (targetAccountId === null) {
+      return { errno: SocialErrorNumber.ERROR_LOOKUP_FAILED };
+    }
+    if (targetAccountId === accountId) {
+      return { errno: SocialErrorNumber.ERROR_SELF };
+    }
+    let enemy: Enemy;
+    try {
+      enemy = await this.prisma.enemy.create({
+        data: {
+          accountId,
+          enemyAccountId: targetAccountId,
+          memo,
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2002") {
+          return { errno: SocialErrorNumber.ERROR_ALREADY_EXISTS };
+        }
+      }
+      ChatService.logUnknownError(e);
+      return { errno: SocialErrorNumber.ERROR_UNKNOWN };
+    }
+    return {
+      errno: SocialErrorNumber.SUCCESS,
+      enemy,
+    };
+  }
+
+  async modifyEnemy(
+    accountId: string,
+    enemyAccountId: string,
+    memo: string | undefined,
+  ): Promise<EnemyResult> {
+    let enemy: Enemy;
+    try {
+      enemy = await this.prisma.enemy.update({
+        data: {
+          memo,
+        },
+        where: {
+          accountId_enemyAccountId: { accountId, enemyAccountId },
+        },
+      });
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2025") {
+          return { errno: SocialErrorNumber.ERROR_NOT_FOUND };
+        }
+      }
+      ChatService.logUnknownError(e);
+      return { errno: SocialErrorNumber.ERROR_UNKNOWN };
+    }
+    return {
+      errno: SocialErrorNumber.SUCCESS,
+      enemy,
+    };
+  }
+
+  async deleteEnemy(
+    accountId: string,
+    enemyAccountId: string,
+  ): Promise<[SocialErrorNumber, EnemyEntry | undefined]> {
+    //XXX: Prisma가 DELETE RETURNING을 deleteMany에서 지원하지 않았음.
+    //XXX: Prisma가 DeleteUniqueIfExists 따위를 지원하지 않았음.
+    let data: [Enemy | null, unknown];
+    try {
+      data = await this.prisma.$transaction([
+        this.prisma.enemy.findUnique({
+          where: {
+            accountId_enemyAccountId: { accountId, enemyAccountId },
+          },
+        }),
+        this.prisma.enemy.deleteMany({
+          where: { accountId, enemyAccountId },
+        }),
+      ]);
+    } catch (e) {
+      ChatService.logUnknownError(e);
+      return [SocialErrorNumber.ERROR_UNKNOWN, undefined];
+    }
+    const [forward] = data;
+    if (forward !== null) {
+      return [SocialErrorNumber.ERROR_NOT_FOUND, undefined];
+    }
+    return [SocialErrorNumber.SUCCESS, forward !== null ? forward : undefined];
   }
 
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {

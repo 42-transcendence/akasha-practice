@@ -1,4 +1,4 @@
-import { NICK_NAME_REGEX } from "@/_common/profile-constants";
+import { NICK_NAME_REGEX } from "@common/profile-constants";
 import {
   ArgumentMetadata,
   BadRequestException,

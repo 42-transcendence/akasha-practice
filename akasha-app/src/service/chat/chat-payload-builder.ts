@@ -5,9 +5,10 @@ import {
   ChatRoomEntry,
   ChatRoomMemberEntry,
   ChatRoomViewEntry,
+  EnemyEntry,
   FriendEntry,
-  FriendErrorNumber,
   RoomErrorNumber,
+  SocialErrorNumber,
   SocialPayload,
   writeChatBanSummary,
   writeChatMessage,
@@ -15,6 +16,7 @@ import {
   writeChatRoomChatMessagePair,
   writeChatRoomMember,
   writeChatRoomView,
+  writeEnemy,
   writeFriend,
   writeSocialPayload,
 } from "@common/chat-payloads";
@@ -37,8 +39,8 @@ export function makeInitializePayload(
   return buf;
 }
 
-export function makeAddFriendFailedResult(errno: FriendErrorNumber) {
-  assert(errno !== FriendErrorNumber.SUCCESS);
+export function makeAddFriendFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
 
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ADD_FRIEND_RESULT);
   buf.write1(errno);
@@ -47,7 +49,7 @@ export function makeAddFriendFailedResult(errno: FriendErrorNumber) {
 
 export function makeAddFriendSuccessResult(entry: FriendEntry) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ADD_FRIEND_RESULT);
-  buf.write1(FriendErrorNumber.SUCCESS);
+  buf.write1(SocialErrorNumber.SUCCESS);
   writeFriend(entry, buf);
   return buf;
 }
@@ -58,8 +60,8 @@ export function makeFriendRequest(accountId: string) {
   return buf;
 }
 
-export function makeModifyFriendFailedResult(errno: FriendErrorNumber) {
-  assert(errno !== FriendErrorNumber.SUCCESS);
+export function makeModifyFriendFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
 
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.MODIFY_FRIEND_RESULT,
@@ -75,7 +77,7 @@ export function makeModifyFriendSuccessResult(
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.MODIFY_FRIEND_RESULT,
   );
-  buf.write1(FriendErrorNumber.SUCCESS);
+  buf.write1(SocialErrorNumber.SUCCESS);
   buf.writeUUID(targetAccountId);
   writeFriend(entry, buf);
   return buf;
@@ -89,8 +91,8 @@ export function makeUpdateFriendActiveStatus(accountId: string) {
   return buf;
 }
 
-export function makeDeleteFriendFailedResult(errno: FriendErrorNumber) {
-  assert(errno !== FriendErrorNumber.SUCCESS);
+export function makeDeleteFriendFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
 
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.DELETE_FRIEND_RESULT,
@@ -106,9 +108,58 @@ export function makeDeleteFriendSuccessResult(
   const buf = ByteBuffer.createWithOpcode(
     ChatClientOpcode.DELETE_FRIEND_RESULT,
   );
-  buf.write1(FriendErrorNumber.SUCCESS);
+  buf.write1(SocialErrorNumber.SUCCESS);
   buf.writeUUID(targetAccountId);
   buf.writeBoolean(half);
+  return buf;
+}
+
+export function makeAddEnemyFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
+
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ADD_ENEMY_RESULT);
+  buf.write1(errno);
+  return buf;
+}
+
+export function makeAddEnemySuccessResult(entry: EnemyEntry) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.ADD_ENEMY_RESULT);
+  buf.write1(SocialErrorNumber.SUCCESS);
+  writeEnemy(entry, buf);
+  return buf;
+}
+
+export function makeModifyEnemyFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
+
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MODIFY_ENEMY_RESULT);
+  buf.write1(errno);
+  return buf;
+}
+
+export function makeModifyEnemySuccessResult(
+  targetAccountId: string,
+  entry: EnemyEntry,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MODIFY_ENEMY_RESULT);
+  buf.write1(SocialErrorNumber.SUCCESS);
+  buf.writeUUID(targetAccountId);
+  writeEnemy(entry, buf);
+  return buf;
+}
+
+export function makeDeleteEnemyFailedResult(errno: SocialErrorNumber) {
+  assert(errno !== SocialErrorNumber.SUCCESS);
+
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DELETE_ENEMY_RESULT);
+  buf.write1(errno);
+  return buf;
+}
+
+export function makeDeleteEnemySuccessResult(targetAccountId: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DELETE_ENEMY_RESULT);
+  buf.write1(SocialErrorNumber.SUCCESS);
+  buf.writeUUID(targetAccountId);
   return buf;
 }
 

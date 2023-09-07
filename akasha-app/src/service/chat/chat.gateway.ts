@@ -9,9 +9,9 @@ import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatRoomChatMessagePairEntry,
   FriendActiveFlags,
-  FriendErrorNumber,
   FriendModifyFlags,
   RoomErrorNumber,
+  SocialErrorNumber,
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
 } from "@common/chat-payloads";
@@ -180,7 +180,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       groupName,
       activeFlags,
     );
-    if (result.errno !== FriendErrorNumber.SUCCESS) {
+    if (result.errno !== SocialErrorNumber.SUCCESS) {
       return builder.makeAddFriendFailedResult(result.errno);
     }
     assert(targetAccountId !== null);
@@ -227,7 +227,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       groupName,
       activeFlags,
     );
-    if (result.errno !== FriendErrorNumber.SUCCESS) {
+    if (result.errno !== SocialErrorNumber.SUCCESS) {
       return builder.makeModifyFriendFailedResult(result.errno);
     }
     const { friend } = result;
@@ -253,7 +253,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       targetAccountId,
     );
-    if (errno !== FriendErrorNumber.SUCCESS) {
+    if (errno !== SocialErrorNumber.SUCCESS) {
       return builder.makeDeleteFriendFailedResult(errno);
     }
     assert(forward === undefined || reverse !== undefined);
@@ -279,15 +279,41 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleAddEnemy(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
-    const viaUUID = payload.readBoolean();
-    if (viaUUID) {
-      const targetAccountId = payload.readUUID();
-      void targetAccountId; //FIXME: service
-    } else {
+    const lookup = payload.readBoolean();
+    let targetAccountId: string | null;
+    if (lookup) {
       const targetNickName = payload.readString();
+      if (!NICK_NAME_REGEX.test(targetNickName)) {
+        throw new PacketHackException(
+          `Illegal targetNickName [${targetNickName}]`,
+        );
+      }
       const targetNickTag = payload.read4Unsigned();
-      void targetNickName, targetNickTag; //FIXME: service
+      targetAccountId = await this.chatService.getAccountIdByNick(
+        targetNickName,
+        targetNickTag,
+      );
+    } else {
+      targetAccountId = payload.readUUID();
     }
+    const memo = payload.readString();
+
+    const result = await this.chatService.addEnemy(
+      client.accountId,
+      targetAccountId,
+      memo,
+    );
+    if (result.errno !== SocialErrorNumber.SUCCESS) {
+      return builder.makeAddEnemyFailedResult(result.errno);
+    }
+    assert(targetAccountId !== null);
+    const { enemy } = result;
+    void this.server.unicast(
+      client.accountId,
+      builder.makeAddEnemySuccessResult(enemy),
+    );
+
+    return undefined;
   }
 
   @SubscribeMessage(ChatServerOpcode.MODIFY_ENEMY)
@@ -295,9 +321,23 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
-    void targetAccountId; //FIXME: service
     const memo = payload.readString();
-    void memo; //FIXME: service
+
+    const result = await this.chatService.modifyEnemy(
+      client.accountId,
+      targetAccountId,
+      memo,
+    );
+    if (result.errno !== SocialErrorNumber.SUCCESS) {
+      return builder.makeModifyEnemyFailedResult(result.errno);
+    }
+    const { enemy } = result;
+    void this.server.unicast(
+      client.accountId,
+      builder.makeModifyEnemySuccessResult(targetAccountId, enemy),
+    );
+
+    return undefined;
   }
 
   @SubscribeMessage(ChatServerOpcode.DELETE_ENEMY)
@@ -305,7 +345,21 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const targetAccountId = payload.readUUID();
-    void targetAccountId; //FIXME: service
+
+    const [errno, forward] = await this.chatService.deleteEnemy(
+      client.accountId,
+      targetAccountId,
+    );
+    if (errno !== SocialErrorNumber.SUCCESS) {
+      return builder.makeDeleteEnemyFailedResult(errno);
+    }
+    assert(forward === undefined);
+    void this.server.unicast(
+      targetAccountId,
+      builder.makeDeleteEnemySuccessResult(client.accountId),
+    );
+
+    return undefined;
   }
 
   @SubscribeMessage(ChatServerOpcode.PUBLIC_ROOM_LIST_REQUEST)
