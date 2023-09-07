@@ -21,6 +21,7 @@ import { AccountsService } from "@/user/accounts/accounts.service";
 import {
   ActiveStatus,
   BanCategory,
+  Chat,
   ChatBan,
   ChatMember,
   Friend,
@@ -148,7 +149,16 @@ type ChatLeaveRoomResult =
       errno: RoomErrorNumber.SUCCESS;
       chatId: string;
       accountId: string;
-      ban: ChatBanSummaryEntry | null;
+    }
+  | ChatRoomFailed;
+
+/// ChatBanResult
+type ChatBanResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      chatId: string;
+      accountId: string;
+      ban: ChatBanSummaryEntry;
     }
   | ChatRoomFailed;
 
@@ -157,6 +167,15 @@ type ChatMessageResult =
   | {
       errno: RoomErrorNumber.SUCCESS;
       message: ChatMessageEntry;
+    }
+  | ChatRoomFailed;
+
+/// ChatMemberResult
+type ChatMemberResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      chatId: string;
+      accountId: string;
     }
   | ChatRoomFailed;
 
@@ -287,9 +306,9 @@ export class ChatService {
     if (targetAccountId === accountId) {
       return { errno: FriendErrorNumber.ERROR_SELF_FRIEND };
     }
-    let data: Friend;
+    let friend: Friend;
     try {
-      data = await this.prisma.friend.create({
+      friend = await this.prisma.friend.create({
         data: {
           accountId,
           friendAccountId: targetAccountId,
@@ -308,7 +327,7 @@ export class ChatService {
     }
     return {
       errno: FriendErrorNumber.SUCCESS,
-      friend: toFriendEntry(data),
+      friend: toFriendEntry(friend),
     };
   }
 
@@ -318,9 +337,9 @@ export class ChatService {
     groupName: string | undefined,
     activeFlags: number | undefined,
   ): Promise<FriendResult> {
-    let data: Friend;
+    let friend: Friend;
     try {
-      data = await this.prisma.friend.update({
+      friend = await this.prisma.friend.update({
         data: {
           groupName,
           activeFlags:
@@ -343,7 +362,7 @@ export class ChatService {
     }
     return {
       errno: FriendErrorNumber.SUCCESS,
-      friend: toFriendEntry(data),
+      friend: toFriendEntry(friend),
     };
   }
 
@@ -473,7 +492,7 @@ export class ChatService {
 
   async createNewRoom(
     ownerAccountId: string,
-    room: Prisma.ChatCreateInput,
+    roomOptions: Prisma.ChatCreateInput,
     members: Prisma.ChatMemberCreateManyChatInput[],
   ): Promise<ChatCreateRoomResult> {
     return this.prisma.$transaction(async (tx) => {
@@ -482,11 +501,11 @@ export class ChatService {
         return inspect;
       }
 
-      let data: ChatRoomForEntry;
+      let room: ChatRoomForEntry;
       try {
-        data = await tx.chat.create({
+        room = await tx.chat.create({
           data: {
-            ...room,
+            ...roomOptions,
             members: {
               createMany: { data: members },
             },
@@ -501,12 +520,12 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_UNKNOWN };
       }
 
-      const memberSet = new Set<string>(data.members.map((e) => e.accountId));
-      this.memberCache.set(data.id, memberSet);
+      const memberSet = new Set<string>(room.members.map((e) => e.accountId));
+      this.memberCache.set(room.id, memberSet);
 
       return {
         errno: RoomErrorNumber.SUCCESS,
-        room: toChatRoomEntry(data),
+        room: toChatRoomEntry(room),
       };
     });
   }
@@ -530,14 +549,14 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
       }
 
-      const chat = await tx.chat.findUniqueOrThrow({
+      const room = await tx.chat.findUniqueOrThrow({
         where: { id: chatId },
         select: { isSecret: true, password: true, limit: true },
       });
-      if (chat.isSecret && password !== chat.password) {
+      if (room.isSecret && password !== room.password) {
         return { errno: RoomErrorNumber.ERROR_WRONG_PASSWORD };
       }
-      if (memberSet.size >= chat.limit) {
+      if (memberSet.size >= room.limit) {
         return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
@@ -614,7 +633,7 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_ENEMY };
       }
 
-      const chat = await tx.chat.findUniqueOrThrow({
+      const room = await tx.chat.findUniqueOrThrow({
         where: { id: chatId },
         select: { isSecret: true, password: true, limit: true },
       });
@@ -623,13 +642,13 @@ export class ChatService {
         select: { role: true },
       });
       if (
-        chat.isSecret &&
-        chat.password !== "" &&
+        room.isSecret &&
+        room.password !== "" &&
         !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
       ) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
-      if (memberSet.size >= chat.limit) {
+      if (memberSet.size >= room.limit) {
         return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
@@ -660,7 +679,7 @@ export class ChatService {
     reason: string,
     memo: string,
     timespanSecs: number | null,
-  ): Promise<ChatLeaveRoomResult> {
+  ): Promise<ChatBanResult> {
     return this.prisma.$transaction(async (tx) => {
       const inspect = await this.prepareInspect(tx, accountId);
       if (inspect !== undefined) {
@@ -729,7 +748,7 @@ export class ChatService {
     reason: string,
     memo: string,
     timespanSecs: number | null,
-  ): Promise<ChatLeaveRoomResult> {
+  ): Promise<ChatBanResult> {
     return this.prisma.$transaction(async (tx) => {
       const inspect = await this.prepareInspect(tx, accountId);
       if (inspect !== undefined) {
@@ -782,14 +801,19 @@ export class ChatService {
               : null,
         },
       });
-      return {
-        ...this.deleteChatMember(tx, chatId, targetAccountId),
-        ban: toBanSummaryEntry(ban),
-      };
+
+      const result = await this.deleteChatMember(tx, chatId, targetAccountId);
+      if (result.errno === RoomErrorNumber.SUCCESS) {
+        return {
+          ...result,
+          ban: toBanSummaryEntry(ban),
+        };
+      }
+      return result;
     });
   }
 
-  async unban(accountId: string, banId: string): Promise<ChatLeaveRoomResult> {
+  async unbanMember(accountId: string, banId: string): Promise<ChatBanResult> {
     return this.prisma.$transaction(async (tx) => {
       const inspect = await this.prepareInspect(tx, accountId);
       if (inspect !== undefined) {
@@ -916,6 +940,171 @@ export class ChatService {
     return memberSet;
   }
 
+  async changeMemberRole(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+    role: RoleNumber,
+  ): Promise<ChatMemberResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (member.role !== Role.ADMINISTRATOR) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (role === getRoleNumber(targetMember.role)) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+      const updatedTargetMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        data: { role: getRoleFromNumber(role) },
+        select: { chatId: true, accountId: true },
+      });
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        ...updatedTargetMember,
+      };
+    });
+  }
+
+  async changeAdministrator(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+  ): Promise<ChatMemberResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (member.role !== Role.ADMINISTRATOR) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (
+        !(
+          targetMember.role === Role.MANAGER ||
+          targetMember.role === Role.ADMINISTRATOR
+        )
+      ) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+      const updatedMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId } },
+        data: { role: targetMember.role },
+      });
+      void updatedMember;
+      const updatedTargetMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        data: { role: member.role },
+        select: { chatId: true, accountId: true },
+      });
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        ...updatedTargetMember,
+      };
+    });
+  }
+
+  async removeRoom(
+    chatId: string,
+    accountId: string,
+  ): Promise<ChatMemberResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (memberSet.size === 1) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { chatId: true, accountId: true, role: true },
+      });
+      if (member.role !== Role.ADMINISTRATOR) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+
+      let room: Chat;
+      try {
+        room = await tx.chat.delete({ where: { id: member.chatId } });
+        //NOTE: chat_members & chat_messages are expected to be deleted by `ON DELETE CASCADE`
+      } catch (e) {
+        ChatService.logUnknownError(e);
+        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      }
+
+      this.memberCache.set(room.id, null);
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId: room.id,
+        accountId: member.accountId,
+      };
+    });
+  }
+
   async prepareInspect(
     tx: PrismaTransactionClient,
     accountId: string,
@@ -935,9 +1124,9 @@ export class ChatService {
     accountId: string,
     role: RoleNumber,
   ): Promise<ChatEnterRoomResult> {
-    let data: ChatMemberWithRoom;
+    let member: ChatMemberWithRoom;
     try {
-      data = await tx.chatMember.create({
+      member = await tx.chatMember.create({
         ...chatMemberWithRoom,
         data: {
           accountId,
@@ -963,8 +1152,8 @@ export class ChatService {
 
     return {
       errno: RoomErrorNumber.SUCCESS,
-      room: toChatRoomEntry(data.chat),
-      member: toChatMemberEntry(data),
+      room: toChatRoomEntry(member.chat),
+      member: toChatMemberEntry(member),
     };
   }
 
@@ -978,9 +1167,9 @@ export class ChatService {
       cache.delete(accountId);
     }
 
-    let data: ChatMember;
+    let member: ChatMember;
     try {
-      data = await tx.chatMember.delete({
+      member = await tx.chatMember.delete({
         where: { chatId_accountId: { chatId, accountId } },
       });
     } catch (e) {
@@ -995,9 +1184,8 @@ export class ChatService {
 
     return {
       errno: RoomErrorNumber.SUCCESS,
-      chatId: data.chatId,
-      accountId: data.accountId,
-      ban: null,
+      chatId: member.chatId,
+      accountId: member.accountId,
     };
   }
 
@@ -1050,7 +1238,10 @@ export class ChatService {
         chatId,
         accountId,
         category,
-        expireTimestamp: { gt: new Date() },
+        OR: [
+          { expireTimestamp: null },
+          { expireTimestamp: { gte: new Date() } },
+        ],
       },
     });
 
