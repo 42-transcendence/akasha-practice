@@ -7,7 +7,7 @@ import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 import { ServerOptions, WebSocketServer as Server } from "ws";
 import { Logger } from "@nestjs/common";
 import { ServiceGatewayBase } from "@/service/service-gateway";
-import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
+// import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
 import { GameServerOpcode, GameClientOpcode } from "@common/game-opcodes";
@@ -18,7 +18,7 @@ import { copy, getScore, physicsEngine } from "./game-physics-engine";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",
-  verifyClient: verifyClientViaQueryParam("token"),
+  // verifyClient: verifyClientViaQueryParam("token"),
   WebSocket: GameWebSocket,
 })
 export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
