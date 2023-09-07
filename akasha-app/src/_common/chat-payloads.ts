@@ -130,6 +130,14 @@ export function fromChatRoomModeFlags(modeFlags: number): {
   };
 }
 
+/// RoomModifyFlags
+export const enum RoomModifyFlags {
+  MODIFY_TITLE = 1 << 0,
+  MODIFY_MODE_FLAGS = 1 << 1,
+  MODIFY_PASSWORD = 1 << 2,
+  MODIFY_LIMIT = 1 << 3,
+}
+
 /// ChatRoomChatMessagePairEntry
 export type ChatRoomChatMessagePairEntry = {
   chatId: ChatEntity["id"];

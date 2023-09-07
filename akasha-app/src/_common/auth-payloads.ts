@@ -1,4 +1,4 @@
-import { JsonValue, RoleNumber } from "./generated/types";
+import { JsonValue, Role, RoleNumber } from "./generated/types";
 import { hasProperty } from "akasha-lib";
 import { BanSummaryPayload } from "./profile-payloads";
 
@@ -9,6 +9,19 @@ export const enum AuthLevel {
   BLOCKED = 99,
   REGULAR = 100,
   COMPLETED = 101,
+}
+
+/// RoleLevel
+export function getRoleLevel(role: Role) {
+  switch (role) {
+    case Role.USER:
+      return 1;
+    case Role.MANAGER:
+      return 10;
+    case Role.ADMINISTRATOR:
+      return 100;
+  }
+  return 0;
 }
 
 /// AuthPayload

@@ -11,6 +11,7 @@ import {
   FriendActiveFlags,
   FriendModifyFlags,
   RoomErrorNumber,
+  RoomModifyFlags,
   SocialErrorNumber,
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
@@ -24,7 +25,7 @@ import {
 } from "@common/chat-constants";
 import * as builder from "./chat-payload-builder";
 import { ChatServer } from "./chat.server";
-import { ActiveStatusNumber, Role } from "@common/generated/types";
+import { ActiveStatusNumber, Role, RoleNumber } from "@common/generated/types";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 
 function validateBcryptSalt(value: string): boolean {
@@ -526,8 +527,8 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleInviteUser(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
-    const chatId: string = payload.readUUID();
-    const targetAccountId: string = payload.readUUID();
+    const chatId = payload.readUUID();
+    const targetAccountId = payload.readUUID();
 
     const result = await this.chatService.inviteRoomMember(
       chatId,
@@ -572,20 +573,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       client.accountId,
       content,
     );
-    if (result.errno !== RoomErrorNumber.SUCCESS) {
-      if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
-        assert(result.bans !== null);
-        return builder.makeChatMessageFailedCauseBanned(result.bans);
-      }
-      return builder.makeChatMessageFailed(result.errno);
+    if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
+      assert(result.bans !== null);
+      return builder.makeChatMessageFailedCauseBanned(result.bans);
     }
-    const { message } = result;
-    this.server.multicastToRoom(
-      chatId,
-      builder.makeChatMessagePayload(message),
-    );
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { message } = result;
+      this.server.multicastToRoom(
+        chatId,
+        builder.makeChatMessagePayload(message),
+      );
+    }
 
-    return undefined;
+    return builder.makeChatMessageResult(result.errno);
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)
@@ -602,12 +602,128 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
   }
 
-  @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
-  async handleMuteMember(client: ChatWebSocket, payload: ByteBuffer) {
+  @SubscribeMessage(ChatServerOpcode.CHANGE_ROOM_PROPERTY)
+  async handleChangeRoomProperty(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    void chatId; //FIXME: service
+    const modifyFlags = payload.read1();
+    let title: string | undefined;
+    if ((modifyFlags & RoomModifyFlags.MODIFY_TITLE) !== 0) {
+      title = payload.readString();
+      if (!CHAT_ROOM_TITLE_REGEX.test(title)) {
+        throw new PacketHackException(`Illegal title [${title}]`);
+      }
+    }
+    let modeFlags: ReturnType<typeof fromChatRoomModeFlags> | undefined;
+    if ((modifyFlags & RoomModifyFlags.MODIFY_MODE_FLAGS) !== 0) {
+      modeFlags = fromChatRoomModeFlags(payload.read1());
+    }
+    let password: string | undefined;
+    if ((modifyFlags & RoomModifyFlags.MODIFY_PASSWORD) !== 0) {
+      password = payload.readString();
+      if (password !== "") {
+        if (!validateBcryptSalt(password)) {
+          throw new PacketHackException(`Illegal password [${password}]`);
+        }
+      }
+    }
+    let limit: number | undefined;
+    if ((modifyFlags & RoomModifyFlags.MODIFY_LIMIT) !== 0) {
+      limit = payload.read2Unsigned();
+      if (limit == 0 || limit > MAX_CHAT_MEMBER_CAPACITY) {
+        throw new PacketHackException(`Illegal limit [${limit}]`);
+      }
+    }
+
+    const result = await this.chatService.updateRoom(chatId, client.accountId, {
+      title,
+      ...modeFlags,
+      password,
+      limit,
+    });
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { room } = result;
+      void this.server.multicastToRoom(chatId, builder.makeUpdateRoom(room));
+    }
+
+    return builder.makeChangeRoomPropertyResult(result.errno, chatId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.CHANGE_MEMBER_ROLE)
+  async handleChangeMemberRole(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const chatId = payload.readUUID();
+    const targetAccountId = payload.readUUID();
+    const targetRole = payload.read1();
+    if (targetRole !== RoleNumber.USER && targetRole !== RoleNumber.MANAGER) {
+      throw new PacketHackException(`Illegal targetRole [${targetRole}]`);
+    }
+
+    const result = await this.chatService.changeMemberRole(
+      chatId,
+      client.accountId,
+      targetAccountId,
+      targetRole,
+    );
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, member } = result;
+      void this.server.multicastToRoom(
+        chatId,
+        builder.makeUpdateRoomMember(chatId, member),
+      );
+
+      void this.server.sendNotice(
+        chatId,
+        client.accountId,
+        member.role === RoleNumber.MANAGER
+          ? `${member.accountId}님이 매니저로 임명되었습니다.` //FIXME: content to SearchParams
+          : `${member.accountId}님이 매니저에서 해임되었습니다.`,
+      );
+    }
+
+    return builder.makeChangeMemberRoleResult(
+      result.errno,
+      chatId,
+      targetAccountId,
+      targetRole,
+    );
+  }
+
+  @SubscribeMessage(ChatServerOpcode.HANDOVER_ROOM_OWNER)
+  async handleHandoverRoomOwner(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const chatId = payload.readUUID();
+    const targetAccountId = payload.readUUID();
+
+    const result = await this.chatService.changeAdministrator(
+      chatId,
+      client.accountId,
+      targetAccountId,
+    );
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, members } = result;
+      for (const member of members) {
+        void this.server.multicastToRoom(
+          chatId,
+          builder.makeUpdateRoomMember(chatId, member),
+        );
+      }
+
+      void this.server.sendNotice(
+        chatId,
+        client.accountId,
+        `${targetAccountId}님이 새로운 방장이 되었습니다.`, //FIXME: content to SearchParams
+      );
+    }
+
+    return builder.makeHandoverRoomOwnerResult(
+      result.errno,
+      chatId,
+      targetAccountId,
+    );
   }
 
   @SubscribeMessage(ChatServerOpcode.KICK_MEMBER)
@@ -615,6 +731,104 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
-    void chatId; //FIXME: service
+    const targetAccountId = payload.readUUID();
+    const reason = payload.readString();
+    const memo = payload.readString();
+    const timespanSecs = payload.readNullable(payload.read4Unsigned);
+
+    const result = await this.chatService.kickRoomMember(
+      chatId,
+      client.accountId,
+      targetAccountId,
+      reason,
+      memo,
+      timespanSecs,
+    );
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, accountId, ban } = result;
+      void this.server.unicast(accountId, builder.makeKickNotify(chatId, ban));
+      void this.server.unicast(accountId, builder.makeRemoveRoom(chatId));
+      void this.server.multicastToRoom(
+        chatId,
+        builder.makeRemoveRoomMember(chatId, accountId),
+      );
+
+      void this.server.sendNotice(
+        chatId,
+        client.accountId,
+        `${client.accountId}님에 의해 ${accountId}님이 강제로 퇴장당했습니다.`, //FIXME: content to SearchParams
+      );
+    }
+
+    return builder.makeKickMemberResult(result.errno, chatId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
+  async handleMuteMember(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const chatId = payload.readUUID();
+    const targetAccountId = payload.readUUID();
+    const reason = payload.readString();
+    const memo = payload.readString();
+    const timespanSecs = payload.readNullable(payload.read4Unsigned);
+
+    const result = await this.chatService.muteRoomMember(
+      chatId,
+      client.accountId,
+      targetAccountId,
+      reason,
+      memo,
+      timespanSecs,
+    );
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, accountId, ban } = result;
+      void this.server.unicast(accountId, builder.makeMuteNotify(chatId, ban));
+
+      void this.server.sendNotice(
+        chatId,
+        client.accountId,
+        `${client.accountId}님이 ${accountId}님의 채팅을 금지했습니다.`, //FIXME: content to SearchParams
+      );
+    }
+
+    return builder.makeMuteMemberResult(result.errno, chatId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.BAN_LIST_REQUEST)
+  async handleBanListRequest(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const chatId = payload.readUUID();
+
+    if (!(await this.chatService.isManager(chatId, client.accountId))) {
+      return undefined;
+    }
+
+    const bans = await this.chatService.getChatBannedForManager(chatId);
+
+    return builder.makeBanList(bans);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.UNBAN_MEMBER)
+  async handleUnbanMember(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const banId = payload.readString();
+
+    const result = await this.chatService.unbanMember(client.accountId, banId);
+    if (result.errno === RoomErrorNumber.SUCCESS) {
+      const { chatId, accountId, ban } = result;
+
+      void this.server.sendNotice(
+        chatId,
+        client.accountId,
+        `${client.accountId}님이 ${accountId}님에 대한 처분을 취소했습니다: ${
+          ban.category
+        }, ${ban.reason}, ${ban.expireTimestamp?.toString() ?? "PERMANENT"}`, //FIXME: content to SearchParams
+      );
+    }
+
+    return builder.makeUnbanMemberResult(result.errno, banId);
   }
 }

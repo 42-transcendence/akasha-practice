@@ -43,6 +43,7 @@ import {
   getRoleNumber,
 } from "@common/generated/types";
 import { fromBitsString, toBitsString } from "akasha-lib";
+import { getRoleLevel } from "@common/auth-payloads";
 
 /// FriendForEntry
 function toFriendEntry(friend: Friend): FriendEntry {
@@ -86,6 +87,19 @@ function toChatRoomEntry(
     ...chat,
     members: chat.members.map((e) => toChatMemberEntry(e)),
     lastMessageId: lastMessageId,
+  };
+}
+
+/// ChatRoomForViewEntry
+const chatRoomForViewEntry = Prisma.validator<Prisma.ChatDefaultArgs>()({
+  include: { members: { select: { chatId: true, accountId: true } } },
+});
+type ChatRoomForViewEntry = Prisma.ChatGetPayload<typeof chatRoomForViewEntry>;
+
+function toChatRoomViewEntry(chat: ChatRoomForViewEntry): ChatRoomViewEntry {
+  return {
+    ...chat,
+    memberCount: chat.members.length,
   };
 }
 
@@ -160,16 +174,6 @@ type ChatLeaveRoomResult =
     }
   | ChatRoomFailed;
 
-/// ChatBanResult
-type ChatBanResult =
-  | {
-      errno: RoomErrorNumber.SUCCESS;
-      chatId: string;
-      accountId: string;
-      ban: ChatBanSummaryEntry;
-    }
-  | ChatRoomFailed;
-
 /// ChatMessageResult
 type ChatMessageResult =
   | {
@@ -178,12 +182,39 @@ type ChatMessageResult =
     }
   | ChatRoomFailed;
 
+/// ChatRoomResult
+type ChatRoomResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      room: ChatRoomViewEntry;
+    }
+  | ChatRoomFailed;
+
 /// ChatMemberResult
 type ChatMemberResult =
   | {
       errno: RoomErrorNumber.SUCCESS;
       chatId: string;
+      member: ChatRoomMemberEntry;
+    }
+  | ChatRoomFailed;
+
+/// ChatMembersResult
+type ChatMembersResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      chatId: string;
+      members: ChatRoomMemberEntry[];
+    }
+  | ChatRoomFailed;
+
+/// ChatBanResult
+type ChatBanResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      chatId: string;
       accountId: string;
+      ban: ChatBanSummaryEntry;
     }
   | ChatRoomFailed;
 
@@ -583,13 +614,10 @@ export class ChatService {
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
     const rooms = await this.prisma.chat.findMany({
       where: { isPrivate: false },
-      include: { members: { select: { chatId: true, accountId: true } } },
+      ...chatRoomForViewEntry,
     });
 
-    return rooms.map((e) => ({
-      ...e,
-      memberCount: e.members.length,
-    }));
+    return rooms.map((e) => toChatRoomViewEntry(e));
   }
 
   async createNewRoom(
@@ -691,7 +719,7 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
       }
 
       const member = await tx.chatMember.findUniqueOrThrow({
@@ -746,7 +774,7 @@ export class ChatService {
       if (
         room.isSecret &&
         room.password !== "" &&
-        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
+        getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)
       ) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
@@ -807,16 +835,14 @@ export class ChatService {
         where: { chatId_accountId: { chatId, accountId } },
         select: { role: true },
       });
-      if (
-        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
-      ) {
+      if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
-      if (targetMember.role === Role.ADMINISTRATOR) {
+      if (getRoleLevel(member.role) < getRoleLevel(targetMember.role)) {
         return { errno: RoomErrorNumber.ERROR_RESTRICTED };
       }
 
@@ -876,15 +902,16 @@ export class ChatService {
         where: { chatId_accountId: { chatId, accountId } },
         select: { role: true },
       });
-      if (
-        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
-      ) {
+      if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
       const targetMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: targetAccountId } },
         select: { role: true },
       });
+      if (getRoleLevel(member.role) < getRoleLevel(targetMember.role)) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
       if (targetMember.role === Role.ADMINISTRATOR) {
         return { errno: RoomErrorNumber.ERROR_RESTRICTED };
       }
@@ -944,19 +971,14 @@ export class ChatService {
         where: { chatId_accountId: { chatId, accountId } },
         select: { role: true },
       });
-      if (
-        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
-      ) {
+      if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
       const managerMember = await tx.chatMember.findUniqueOrThrow({
         where: { chatId_accountId: { chatId, accountId: managerAccountId } },
         select: { role: true },
       });
-      if (
-        member.role !== Role.ADMINISTRATOR &&
-        managerMember.role === Role.ADMINISTRATOR
-      ) {
+      if (getRoleLevel(member.role) < getRoleLevel(managerMember.role)) {
         return { errno: RoomErrorNumber.ERROR_RESTRICTED };
       }
 
@@ -965,6 +987,217 @@ export class ChatService {
         chatId,
         accountId: targetAccountId,
         ban: toBanSummaryEntry(ban),
+      };
+    });
+  }
+
+  async updateRoom(
+    chatId: string,
+    accountId: string,
+    roomOptions: Prisma.ChatUpdateInput,
+  ): Promise<ChatRoomResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (getRoleLevel(member.role) < getRoleLevel(Role.MANAGER)) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+
+      let room: ChatRoomForViewEntry;
+      try {
+        room = await tx.chat.update({
+          where: { id: chatId },
+          data: roomOptions,
+          ...chatRoomForViewEntry,
+        });
+      } catch (e) {
+        ChatService.logUnknownError(e);
+        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      }
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        room: toChatRoomViewEntry(room),
+      };
+    });
+  }
+
+  async changeMemberRole(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+    role: RoleNumber,
+  ): Promise<ChatMemberResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (role === getRoleNumber(targetMember.role)) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+      const updatedTargetMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        data: { role: getRoleFromNumber(role) },
+        select: { ...chatMemberForEntry.select, chatId: true },
+      });
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId: updatedTargetMember.chatId,
+        member: toChatMemberEntry(updatedTargetMember),
+      };
+    });
+  }
+
+  async changeAdministrator(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+  ): Promise<ChatMembersResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (getRoleLevel(targetMember.role) < getRoleLevel(Role.MANAGER)) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+      const updatedMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId } },
+        data: { role: targetMember.role },
+        ...chatMemberForEntry,
+      });
+      const updatedTargetMember = await tx.chatMember.update({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        data: { role: member.role },
+        select: { ...chatMemberForEntry.select, chatId: true },
+      });
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId: updatedTargetMember.chatId,
+        members: [
+          toChatMemberEntry(updatedMember),
+          toChatMemberEntry(updatedTargetMember),
+        ],
+      };
+    });
+  }
+
+  async removeRoom(
+    chatId: string,
+    accountId: string,
+  ): Promise<ChatLeaveRoomResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (memberSet.size === 1) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { chatId: true, accountId: true, role: true },
+      });
+      if (getRoleLevel(member.role) < getRoleLevel(Role.ADMINISTRATOR)) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+
+      let room: Chat;
+      try {
+        room = await tx.chat.delete({ where: { id: member.chatId } });
+        //NOTE: chat_members & chat_messages are expected to be deleted by `ON DELETE CASCADE`
+      } catch (e) {
+        ChatService.logUnknownError(e);
+        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      }
+
+      this.memberCache.set(room.id, null);
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId: room.id,
+        accountId: member.accountId,
       };
     });
   }
@@ -1040,171 +1273,6 @@ export class ChatService {
         : null;
     this.memberCache.set(chatId, memberSet);
     return memberSet;
-  }
-
-  async changeMemberRole(
-    chatId: string,
-    accountId: string,
-    targetAccountId: string,
-    role: RoleNumber,
-  ): Promise<ChatMemberResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const inspect = await this.prepareInspect(tx, accountId);
-      if (inspect !== undefined) {
-        return inspect;
-      }
-
-      const memberSet = await this.getChatMemberSet(chatId, tx);
-      if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
-      }
-      if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
-      }
-      if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
-      }
-
-      if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
-      }
-
-      const member = await tx.chatMember.findUniqueOrThrow({
-        where: { chatId_accountId: { chatId, accountId } },
-        select: { role: true },
-      });
-      if (member.role !== Role.ADMINISTRATOR) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
-      }
-      const targetMember = await tx.chatMember.findUniqueOrThrow({
-        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
-        select: { role: true },
-      });
-      if (role === getRoleNumber(targetMember.role)) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
-      }
-      const updatedTargetMember = await tx.chatMember.update({
-        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
-        data: { role: getRoleFromNumber(role) },
-        select: { chatId: true, accountId: true },
-      });
-
-      return {
-        errno: RoomErrorNumber.SUCCESS,
-        ...updatedTargetMember,
-      };
-    });
-  }
-
-  async changeAdministrator(
-    chatId: string,
-    accountId: string,
-    targetAccountId: string,
-  ): Promise<ChatMemberResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const inspect = await this.prepareInspect(tx, accountId);
-      if (inspect !== undefined) {
-        return inspect;
-      }
-
-      const memberSet = await this.getChatMemberSet(chatId, tx);
-      if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
-      }
-      if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
-      }
-      if (!memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
-      }
-
-      if (accountId === targetAccountId) {
-        return { errno: RoomErrorNumber.ERROR_SELF };
-      }
-
-      const member = await tx.chatMember.findUniqueOrThrow({
-        where: { chatId_accountId: { chatId, accountId } },
-        select: { role: true },
-      });
-      if (member.role !== Role.ADMINISTRATOR) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
-      }
-      const targetMember = await tx.chatMember.findUniqueOrThrow({
-        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
-        select: { role: true },
-      });
-      if (
-        !(
-          targetMember.role === Role.MANAGER ||
-          targetMember.role === Role.ADMINISTRATOR
-        )
-      ) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
-      }
-      const updatedMember = await tx.chatMember.update({
-        where: { chatId_accountId: { chatId, accountId } },
-        data: { role: targetMember.role },
-      });
-      void updatedMember;
-      const updatedTargetMember = await tx.chatMember.update({
-        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
-        data: { role: member.role },
-        select: { chatId: true, accountId: true },
-      });
-
-      return {
-        errno: RoomErrorNumber.SUCCESS,
-        ...updatedTargetMember,
-      };
-    });
-  }
-
-  async removeRoom(
-    chatId: string,
-    accountId: string,
-  ): Promise<ChatMemberResult> {
-    return this.prisma.$transaction(async (tx) => {
-      const inspect = await this.prepareInspect(tx, accountId);
-      if (inspect !== undefined) {
-        return inspect;
-      }
-
-      const memberSet = await this.getChatMemberSet(chatId, tx);
-      if (memberSet === null) {
-        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
-      }
-      if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_UNJOINED };
-      }
-      if (memberSet.size === 1) {
-        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
-      }
-
-      const member = await tx.chatMember.findUniqueOrThrow({
-        where: { chatId_accountId: { chatId, accountId } },
-        select: { chatId: true, accountId: true, role: true },
-      });
-      if (member.role !== Role.ADMINISTRATOR) {
-        return { errno: RoomErrorNumber.ERROR_PERMISSION };
-      }
-
-      let room: Chat;
-      try {
-        room = await tx.chat.delete({ where: { id: member.chatId } });
-        //NOTE: chat_members & chat_messages are expected to be deleted by `ON DELETE CASCADE`
-      } catch (e) {
-        ChatService.logUnknownError(e);
-        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
-      }
-
-      this.memberCache.set(room.id, null);
-
-      return {
-        errno: RoomErrorNumber.SUCCESS,
-        chatId: room.id,
-        accountId: member.accountId,
-      };
-    });
   }
 
   async prepareInspect(
@@ -1354,5 +1422,16 @@ export class ChatService {
     const bans = await this.prisma.chatBan.findMany({ where: { chatId } });
 
     return bans.map((e) => toBanDetailEntry(e));
+  }
+
+  async isManager(chatId: string, accountId: string): Promise<boolean> {
+    const member = await this.prisma.chatMember.findUnique({
+      where: { chatId_accountId: { chatId, accountId } },
+      select: { role: true },
+    });
+
+    return (
+      member !== null && getRoleLevel(member.role) >= getRoleLevel(Role.MANAGER)
+    );
   }
 }

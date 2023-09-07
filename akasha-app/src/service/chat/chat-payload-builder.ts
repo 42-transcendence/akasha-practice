@@ -1,5 +1,7 @@
 import { ChatClientOpcode } from "@common/chat-opcodes";
 import {
+  ChatBanDetailEntry,
+  ChatBanSummaryEntry,
   ChatMessageEntry,
   ChatRoomChatMessagePairEntry,
   ChatRoomEntry,
@@ -10,6 +12,7 @@ import {
   RoomErrorNumber,
   SocialErrorNumber,
   SocialPayload,
+  writeChatBanDetail,
   writeChatBanSummary,
   writeChatMessage,
   writeChatRoom,
@@ -21,6 +24,7 @@ import {
   writeSocialPayload,
 } from "@common/chat-payloads";
 import { BanSummaryPayload } from "@common/profile-payloads";
+import { RoleNumber } from "@common/generated/types";
 import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 
 export function makeInitializePayload(
@@ -205,6 +209,12 @@ export function makeEnterRoomFailedCauseBanned(
   return buf;
 }
 
+export function makeUpdateRoom(room: ChatRoomViewEntry) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.UPDATE_ROOM);
+  writeChatRoomView(room, buf);
+  return buf;
+}
+
 export function makeRemoveRoom(chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM);
   buf.writeUUID(chatId);
@@ -240,6 +250,16 @@ export function makeInsertRoomMember(
   return buf;
 }
 
+export function makeUpdateRoomMember(
+  chatId: string,
+  member: ChatRoomMemberEntry,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.UPDATE_ROOM_MEMBER);
+  buf.writeUUID(chatId);
+  writeChatRoomMember(member, buf);
+  return buf;
+}
+
 export function makeRemoveRoomMember(chatId: string, memberAccountId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM_MEMBER);
   buf.writeUUID(chatId);
@@ -253,17 +273,14 @@ export function makeChatMessagePayload(message: ChatMessageEntry) {
   return buf;
 }
 
-export function makeChatMessageFailed(errno: RoomErrorNumber) {
-  assert(errno !== RoomErrorNumber.SUCCESS);
-
-  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_FAILED);
+export function makeChatMessageResult(errno: RoomErrorNumber) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_RESULT);
   buf.write1(errno);
   return buf;
 }
 
 export function makeChatMessageFailedCauseBanned(bans: BanSummaryPayload[]) {
-  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_FAILED);
-  buf.write1(RoomErrorNumber.ERROR_CHAT_BANNED);
+  const buf = makeChatMessageResult(RoomErrorNumber.ERROR_CHAT_BANNED);
   buf.writeArray(bans, writeChatBanSummary);
   return buf;
 }
@@ -271,5 +288,88 @@ export function makeChatMessageFailedCauseBanned(bans: BanSummaryPayload[]) {
 export function makeSyncCursorPayload(pair: ChatRoomChatMessagePairEntry) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SYNC_CURSOR);
   writeChatRoomChatMessagePair(pair, buf);
+  return buf;
+}
+
+export function makeChangeRoomPropertyResult(
+  errno: RoomErrorNumber,
+  chatId: string,
+) {
+  const buf = ByteBuffer.createWithOpcode(
+    ChatClientOpcode.CHANGE_ROOM_PROPERTY_RESULT,
+  );
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  return buf;
+}
+
+export function makeChangeMemberRoleResult(
+  errno: RoomErrorNumber,
+  chatId: string,
+  targetAccountId: string,
+  targetRole: RoleNumber,
+) {
+  const buf = ByteBuffer.createWithOpcode(
+    ChatClientOpcode.CHANGE_MEMBER_ROLE_RESULT,
+  );
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  buf.writeUUID(targetAccountId);
+  buf.write1(targetRole);
+  return buf;
+}
+
+export function makeHandoverRoomOwnerResult(
+  errno: RoomErrorNumber,
+  chatId: string,
+  targetAccountId: string,
+) {
+  const buf = ByteBuffer.createWithOpcode(
+    ChatClientOpcode.HANDOVER_ROOM_OWNER_RESULT,
+  );
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  buf.writeUUID(targetAccountId);
+  return buf;
+}
+
+export function makeKickMemberResult(errno: RoomErrorNumber, chatId: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.KICK_MEMBER_RESULT);
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  return buf;
+}
+
+export function makeKickNotify(chatId: string, ban: ChatBanSummaryEntry) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.KICK_NOTIFY);
+  buf.writeUUID(chatId);
+  writeChatBanSummary(ban, buf);
+  return buf;
+}
+
+export function makeMuteMemberResult(errno: RoomErrorNumber, chatId: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MUTE_MEMBER_RESULT);
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  return buf;
+}
+
+export function makeMuteNotify(chatId: string, ban: ChatBanSummaryEntry) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MUTE_NOTIFY);
+  buf.writeUUID(chatId);
+  writeChatBanSummary(ban, buf);
+  return buf;
+}
+
+export function makeBanList(bans: ChatBanDetailEntry[]) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.BAN_LIST);
+  buf.writeArray(bans, writeChatBanDetail);
+  return buf;
+}
+
+export function makeUnbanMemberResult(errno: RoomErrorNumber, banId: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.UNBAN_MEMBER_RESULT);
+  buf.write1(errno);
+  buf.writeString(banId);
   return buf;
 }
