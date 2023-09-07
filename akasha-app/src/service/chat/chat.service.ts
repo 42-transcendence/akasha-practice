@@ -214,6 +214,7 @@ type ChatBanResult =
       errno: RoomErrorNumber.SUCCESS;
       chatId: string;
       accountId: string;
+      banId: string;
       ban: ChatBanSummaryEntry;
     }
   | ChatRoomFailed;
@@ -345,6 +346,10 @@ export class ChatService {
     if (targetAccountId === accountId) {
       return { errno: SocialErrorNumber.ERROR_SELF };
     }
+    if (await this.isSimplexEnemy(accountId, targetAccountId)) {
+      return { errno: SocialErrorNumber.ERROR_DENIED };
+    }
+
     let friend: Friend;
     try {
       friend = await this.prisma.friend.create({
@@ -470,13 +475,9 @@ export class ChatService {
       select: {
         friends: {
           select: { friendAccountId: true },
-          where: { friendAccountId: friendAccountId },
+          where: { friendAccountId },
         },
         friendReferences: {
-          select: { accountId: true },
-          where: { accountId: friendAccountId },
-        },
-        enemyReferences: {
           select: { accountId: true },
           where: { accountId: friendAccountId },
         },
@@ -485,8 +486,7 @@ export class ChatService {
     return (
       account !== null &&
       account.friends.length !== 0 &&
-      account.friendReferences.length !== 0 &&
-      account.enemyReferences.length === 0
+      account.friendReferences.length !== 0
     );
   }
 
@@ -500,20 +500,15 @@ export class ChatService {
       select: {
         friends: true,
         friendReferences: { select: { accountId: true } },
-        enemyReferences: { select: { accountId: true } },
       },
     });
 
     const reverses = new Set<string>(
       account.friendReferences.map((e) => e.accountId),
     );
-    const reverseEnemies = new Set<string>(
-      account.enemyReferences.map((e) => e.accountId),
-    );
 
     return account.friends
       .filter((e) => reverses.has(e.friendAccountId))
-      .filter((e) => !reverseEnemies.has(e.friendAccountId))
       .map((e) => toFriendEntry(e));
   }
 
@@ -528,6 +523,7 @@ export class ChatService {
     if (targetAccountId === accountId) {
       return { errno: SocialErrorNumber.ERROR_SELF };
     }
+
     let enemy: Enemy;
     try {
       enemy = await this.prisma.enemy.create({
@@ -609,6 +605,50 @@ export class ChatService {
       return [SocialErrorNumber.ERROR_NOT_FOUND, undefined];
     }
     return [SocialErrorNumber.SUCCESS, forward !== null ? forward : undefined];
+  }
+
+  async isSimplexEnemy(
+    accountId: string,
+    enemyAccountId: string,
+    tx?: PrismaTransactionClient | undefined,
+  ): Promise<boolean> {
+    tx ??= this.prisma;
+    const account = await tx.account.findUnique({
+      where: { id: accountId },
+      select: {
+        enemies: {
+          select: { enemyAccountId: true },
+          where: { enemyAccountId },
+        },
+        enemyReferences: {
+          select: { accountId: true },
+          where: { accountId: enemyAccountId },
+        },
+      },
+    });
+    return (
+      account !== null &&
+      (account.enemies.length !== 0 || account.enemyReferences.length !== 0)
+    );
+  }
+
+  async getSimplexEnemies(
+    accountId: string,
+    tx?: PrismaTransactionClient | undefined,
+  ): Promise<Set<string>> {
+    tx ??= this.prisma;
+    const account = await tx.account.findUniqueOrThrow({
+      where: { id: accountId },
+      select: {
+        enemies: { select: { enemyAccountId: true } },
+        enemyReferences: { select: { accountId: true } },
+      },
+    });
+
+    const forwards = account.enemies.map((e) => e.enemyAccountId);
+    const reverses = account.enemyReferences.map((e) => e.accountId);
+
+    return new Set<string>([...forwards, ...reverses]);
   }
 
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
@@ -760,6 +800,9 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_SELF };
       }
       if (!(await this.isDuplexFriend(accountId, targetAccountId, tx))) {
+        return { errno: RoomErrorNumber.ERROR_NOT_FRIEND };
+      }
+      if (await this.isSimplexEnemy(accountId, targetAccountId, tx)) {
         return { errno: RoomErrorNumber.ERROR_ENEMY };
       }
 
@@ -864,6 +907,7 @@ export class ChatService {
         errno: RoomErrorNumber.SUCCESS,
         chatId,
         accountId: targetAccountId,
+        banId: ban.id,
         ban: toBanSummaryEntry(ban),
       };
     });
@@ -935,6 +979,7 @@ export class ChatService {
       if (result.errno === RoomErrorNumber.SUCCESS) {
         return {
           ...result,
+          banId: ban.id,
           ban: toBanSummaryEntry(ban),
         };
       }
@@ -982,10 +1027,17 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_RESTRICTED };
       }
 
+      //NOTE: Soft delete
+      void (await tx.chatBan.update({
+        where: { id: banId },
+        data: { expireTimestamp: new Date() },
+      }));
+
       return {
         errno: RoomErrorNumber.SUCCESS,
         chatId,
         accountId: targetAccountId,
+        banId: ban.id,
         ban: toBanSummaryEntry(ban),
       };
     });

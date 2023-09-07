@@ -408,8 +408,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         (e) => e.friendAccountId,
       ),
     );
+    const ownerSimplexEnemySet =
+      await this.chatService.getSimplexEnemies(ownerAccountId);
     const memberAccountIdList = targetAccountIdList.filter(
-      (e) => e === ownerAccountId || ownerDuplexFriendSet.has(e),
+      (e) =>
+        e === ownerAccountId ||
+        (ownerDuplexFriendSet.has(e) && !ownerSimplexEnemySet.has(e)),
     );
 
     const result = await this.chatService.createNewRoom(
@@ -442,7 +446,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         chatId,
         ownerAccountId,
-        `${ownerAccountId}님이 새로운 채팅방을 만들었습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "create"],
+          ["title", title],
+          ["member", ownerAccountId],
+        ]).toString(),
       );
     }
 
@@ -485,7 +493,10 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         room.id,
         member.accountId,
-        `${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "enter"],
+          ["member", member.accountId],
+        ]).toString(),
       );
     }
 
@@ -510,13 +521,16 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       );
       void this.server.multicastToRoom(
         chatId,
-        builder.makeRemoveRoomMember(chatId, client.accountId),
+        builder.makeRemoveRoomMember(chatId, accountId),
       );
 
       void this.server.sendNotice(
         chatId,
         accountId,
-        `${client.accountId}님이 퇴장했습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "leave"],
+          ["member", accountId],
+        ]).toString(),
       );
     }
 
@@ -554,7 +568,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         room.id,
         member.accountId,
-        `${client.accountId}님의 초대로 ${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "invite"],
+          ["member", member.accountId],
+          ["source", client.accountId],
+        ]).toString(),
       );
     }
 
@@ -645,6 +663,18 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if (result.errno === RoomErrorNumber.SUCCESS) {
       const { room } = result;
       void this.server.multicastToRoom(chatId, builder.makeUpdateRoom(room));
+
+      if (title !== undefined) {
+        void this.server.sendNotice(
+          chatId,
+          client.accountId,
+          new URLSearchParams([
+            ["type", "update"],
+            ["title", title],
+            ["member", client.accountId],
+          ]).toString(),
+        );
+      }
     }
 
     return builder.makeChangeRoomPropertyResult(result.errno, chatId);
@@ -677,9 +707,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         chatId,
         client.accountId,
-        member.role === RoleNumber.MANAGER
-          ? `${member.accountId}님이 매니저로 임명되었습니다.` //FIXME: content to SearchParams
-          : `${member.accountId}님이 매니저에서 해임되었습니다.`,
+        new URLSearchParams([
+          ["type", member.role === RoleNumber.MANAGER ? "promote" : "demote"],
+          ["member", member.accountId],
+          ["source", client.accountId],
+        ]).toString(),
       );
     }
 
@@ -715,7 +747,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         chatId,
         client.accountId,
-        `${targetAccountId}님이 새로운 방장이 되었습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "handover"],
+          ["member", targetAccountId],
+          ["source", client.accountId],
+        ]).toString(),
       );
     }
 
@@ -745,7 +781,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       timespanSecs,
     );
     if (result.errno === RoomErrorNumber.SUCCESS) {
-      const { chatId, accountId, ban } = result;
+      const { chatId, accountId, banId, ban } = result;
       void this.server.unicast(accountId, builder.makeKickNotify(chatId, ban));
       void this.server.unicast(accountId, builder.makeRemoveRoom(chatId));
       void this.server.multicastToRoom(
@@ -756,7 +792,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         chatId,
         client.accountId,
-        `${client.accountId}님에 의해 ${accountId}님이 강제로 퇴장당했습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "kick"],
+          ["member", accountId],
+          ["source", client.accountId],
+          ["ban", banId],
+        ]).toString(),
       );
     }
 
@@ -782,13 +823,18 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       timespanSecs,
     );
     if (result.errno === RoomErrorNumber.SUCCESS) {
-      const { chatId, accountId, ban } = result;
+      const { chatId, accountId, banId, ban } = result;
       void this.server.unicast(accountId, builder.makeMuteNotify(chatId, ban));
 
       void this.server.sendNotice(
         chatId,
         client.accountId,
-        `${client.accountId}님이 ${accountId}님의 채팅을 금지했습니다.`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "mute"],
+          ["member", accountId],
+          ["source", client.accountId],
+          ["ban", banId],
+        ]).toString(),
       );
     }
 
@@ -823,9 +869,13 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       void this.server.sendNotice(
         chatId,
         client.accountId,
-        `${client.accountId}님이 ${accountId}님에 대한 처분을 취소했습니다: ${
-          ban.category
-        }, ${ban.reason}, ${ban.expireTimestamp?.toString() ?? "PERMANENT"}`, //FIXME: content to SearchParams
+        new URLSearchParams([
+          ["type", "unban"],
+          ["member", accountId],
+          ["source", client.accountId],
+          ["ban", banId],
+          ["ban[expire]", ban.expireTimestamp?.toString() ?? "__PERMANENT__"],
+        ]).toString(),
       );
     }
 
