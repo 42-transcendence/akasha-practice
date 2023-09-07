@@ -24,11 +24,7 @@ import {
 } from "@common/chat-constants";
 import * as builder from "./chat-payload-builder";
 import { ChatServer } from "./chat.server";
-import {
-  ActiveStatusNumber,
-  MessageTypeNumber,
-  Role,
-} from "@common/generated/types";
+import { ActiveStatusNumber, Role } from "@common/generated/types";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 
 function validateBcryptSalt(value: string): boolean {
@@ -387,6 +383,12 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         chatId,
         builder.makeInsertRoom(room, messages),
       );
+
+      void this.server.sendNotice(
+        chatId,
+        ownerAccountId,
+        `${ownerAccountId}님이 새로운 채팅방을 만들었습니다.`, //FIXME: content to SearchParams
+      );
     }
 
     return builder.makeCreateRoomResult(result.errno, chatId);
@@ -425,14 +427,17 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         member.accountId,
       );
 
-      void this.server.sendChatMessage(
+      void this.server.sendNotice(
         room.id,
         member.accountId,
         `${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
-        MessageTypeNumber.NOTICE,
       );
     }
 
+    if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
+      assert(result.bans !== null);
+      return builder.makeEnterRoomFailedCauseBanned(chatId, result.bans);
+    }
     return builder.makeEnterRoomResult(result.errno, chatId);
   }
 
@@ -453,11 +458,10 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         builder.makeRemoveRoomMember(chatId, client.accountId),
       );
 
-      void this.server.sendChatMessage(
+      void this.server.sendNotice(
         chatId,
         accountId,
         `${client.accountId}님이 퇴장했습니다.`, //FIXME: content to SearchParams
-        MessageTypeNumber.NOTICE,
       );
     }
 
@@ -492,36 +496,42 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         member.accountId,
       );
 
-      void this.server.sendChatMessage(
+      void this.server.sendNotice(
         room.id,
         member.accountId,
         `${client.accountId}님의 초대로 ${member.accountId}님이 입장했습니다.`, //FIXME: content to SearchParams
-        MessageTypeNumber.NOTICE,
       );
     }
 
     return builder.makeInviteRoomResult(result.errno, chatId, targetAccountId);
   }
 
-  @SubscribeMessage(ChatServerOpcode.CHAT_MESSAGE)
+  @SubscribeMessage(ChatServerOpcode.SEND_MESSAGE)
   async handleChatMessage(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");
 
     const chatId = payload.readUUID();
     const content = payload.readString();
 
-    //FIXME: 없는 방, 채팅금지 상태
-    //FIXME: 내용이 malicious
-    const message = await this.chatService.createNewChatMessage(
+    const result = await this.chatService.trySendMessage(
       chatId,
       client.accountId,
       content,
-      MessageTypeNumber.REGULAR,
     );
+    if (result.errno !== RoomErrorNumber.SUCCESS) {
+      if (result.errno === RoomErrorNumber.ERROR_CHAT_BANNED) {
+        assert(result.bans !== null);
+        return builder.makeChatMessageFailedCauseBanned(result.bans);
+      }
+      return builder.makeChatMessageFailed(result.errno);
+    }
+    const { message } = result;
     this.server.multicastToRoom(
       chatId,
       builder.makeChatMessagePayload(message),
     );
+
+    return undefined;
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR)

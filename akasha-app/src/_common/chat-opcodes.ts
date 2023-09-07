@@ -13,7 +13,7 @@ export const enum ChatServerOpcode {
   ENTER_ROOM,
   LEAVE_ROOM,
   INVITE_USER,
-  CHAT_MESSAGE,
+  SEND_MESSAGE,
   SYNC_CURSOR,
   MUTE_MEMBER,
   KICK_MEMBER,
@@ -42,5 +42,6 @@ export const enum ChatClientOpcode {
   ROOM_ADMIN,
   ROOM_ADMIN_MODE,
   CHAT_MESSAGE,
+  SEND_MESSAGE_FAILED,
   SYNC_CURSOR,
 }

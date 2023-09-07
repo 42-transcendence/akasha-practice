@@ -1,4 +1,4 @@
-import { AccountEntity, BanCategoryNumber } from "./generated/types";
+import { AccountEntity, BanCategoryNumber, BanEntity } from "./generated/types";
 
 /// AccountProfilePublicPayload
 export type AccountProfilePublicPayload = Pick<
@@ -14,8 +14,9 @@ export type AccountProfileProtectedPayload = AccountProfilePublicPayload &
 export type AccountProfilePrivatePayload = AccountProfileProtectedPayload;
 
 /// BanSummaryPayload
-export type BanSummaryPayload = {
+export type BanSummaryPayload = Pick<
+  BanEntity,
+  "category" | "reason" | "expireTimestamp"
+> & {
   category: BanCategoryNumber;
-  reason: string;
-  expireTimestamp: Date | null;
 };

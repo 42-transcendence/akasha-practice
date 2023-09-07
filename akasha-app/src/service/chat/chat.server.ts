@@ -4,6 +4,7 @@ import { ByteBuffer, assert } from "akasha-lib";
 import { ChatService } from "./chat.service";
 import { ActiveStatusNumber, MessageTypeNumber } from "@common/generated/types";
 import * as builder from "./chat-payload-builder";
+import { ChatMessageEntry } from "@common/chat-payloads";
 
 @Injectable()
 export class ChatServer {
@@ -143,18 +144,23 @@ export class ChatServer {
     return ActiveStatusNumber.ONLINE;
   }
 
-  async sendChatMessage(
+  async sendNotice(
     chatId: string,
     accountId: string,
     content: string,
-    messageType: MessageTypeNumber,
-  ): Promise<void> {
+  ): Promise<ChatMessageEntry | null> {
     const message = await this.service.createNewChatMessage(
       chatId,
       accountId,
       content,
-      messageType,
+      MessageTypeNumber.NOTICE,
     );
-    void this.multicastToRoom(chatId, builder.makeChatMessagePayload(message));
+    if (message !== null) {
+      void this.multicastToRoom(
+        chatId,
+        builder.makeChatMessagePayload(message),
+      );
+    }
+    return message;
   }
 }

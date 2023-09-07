@@ -9,6 +9,7 @@ import {
   FriendErrorNumber,
   RoomErrorNumber,
   SocialPayload,
+  writeChatBanSummary,
   writeChatMessage,
   writeChatRoom,
   writeChatRoomChatMessagePair,
@@ -17,6 +18,7 @@ import {
   writeFriend,
   writeSocialPayload,
 } from "@common/chat-payloads";
+import { BanSummaryPayload } from "@common/profile-payloads";
 import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 
 export function makeInitializePayload(
@@ -143,6 +145,15 @@ export function makeEnterRoomResult(errno: RoomErrorNumber, chatId: string) {
   return buf;
 }
 
+export function makeEnterRoomFailedCauseBanned(
+  chatId: string,
+  bans: BanSummaryPayload[],
+) {
+  const buf = makeEnterRoomResult(RoomErrorNumber.ERROR_CHAT_BANNED, chatId);
+  buf.writeArray(bans, writeChatBanSummary);
+  return buf;
+}
+
 export function makeRemoveRoom(chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REMOVE_ROOM);
   buf.writeUUID(chatId);
@@ -188,6 +199,21 @@ export function makeRemoveRoomMember(chatId: string, memberAccountId: string) {
 export function makeChatMessagePayload(message: ChatMessageEntry) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_MESSAGE);
   writeChatMessage(message, buf);
+  return buf;
+}
+
+export function makeChatMessageFailed(errno: RoomErrorNumber) {
+  assert(errno !== RoomErrorNumber.SUCCESS);
+
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_FAILED);
+  buf.write1(errno);
+  return buf;
+}
+
+export function makeChatMessageFailedCauseBanned(bans: BanSummaryPayload[]) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_MESSAGE_FAILED);
+  buf.write1(RoomErrorNumber.ERROR_CHAT_BANNED);
+  buf.writeArray(bans, writeChatBanSummary);
   return buf;
 }
 

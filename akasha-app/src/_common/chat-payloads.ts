@@ -1,4 +1,6 @@
 import {
+  BanCategoryNumber,
+  ChatBanEntity,
   ChatEntity,
   ChatMemberEntity,
   ChatMessageEntity,
@@ -89,7 +91,8 @@ export const enum RoomErrorNumber {
   SUCCESS,
   ERROR_NO_ROOM,
   ERROR_NO_MEMBER,
-  ERROR_ALREADY_ROOM_MEMBER,
+  ERROR_UNJOINED,
+  ERROR_ALREADY_MEMBER,
   ERROR_PERMISSION,
   ERROR_RESTRICTED,
   ERROR_SELF,
@@ -253,4 +256,65 @@ export function writeChatMessage(obj: ChatMessageEntry, buf: ByteBuffer) {
   buf.writeString(obj.content);
   buf.write1(obj.messageType);
   buf.writeDate(obj.timestamp);
+}
+
+/// ChatBanSummaryEntry
+export type ChatBanSummaryEntry = Pick<
+  ChatBanEntity,
+  "category" | "reason" | "expireTimestamp"
+> & {
+  category: BanCategoryNumber;
+};
+
+export function readChatBanSummary(buf: ByteBuffer): ChatBanSummaryEntry {
+  const category = buf.read1();
+  const reason = buf.readString();
+  const expireTimestamp = buf.readNullable(buf.readDate);
+  return { category, reason, expireTimestamp };
+}
+
+export function writeChatBanSummary(obj: ChatBanSummaryEntry, buf: ByteBuffer) {
+  buf.write1(obj.category);
+  buf.writeString(obj.reason);
+  buf.writeNullable(obj.expireTimestamp, buf.writeDate);
+}
+
+/// ChatBanDetailEntry
+export type ChatBanDetailEntry = ChatBanEntity & {
+  category: BanCategoryNumber;
+};
+
+export function readChatBanDetail(buf: ByteBuffer): ChatBanDetailEntry {
+  const id = buf.readString();
+  const chatId = buf.readUUID();
+  const accountId = buf.readUUID();
+  const managerAccountId = buf.readUUID();
+  const category = buf.read1();
+  const reason = buf.readString();
+  const memo = buf.readString();
+  const expireTimestamp = buf.readNullable(buf.readDate);
+  const bannedTimestamp = buf.readDate();
+  return {
+    id,
+    chatId,
+    accountId,
+    managerAccountId,
+    category,
+    reason,
+    memo,
+    expireTimestamp,
+    bannedTimestamp,
+  };
+}
+
+export function writeChatBanDetail(obj: ChatBanDetailEntry, buf: ByteBuffer) {
+  buf.writeString(obj.id);
+  buf.writeUUID(obj.chatId);
+  buf.writeUUID(obj.accountId);
+  buf.writeUUID(obj.managerAccountId);
+  buf.write1(obj.category);
+  buf.writeString(obj.reason);
+  buf.writeString(obj.memo);
+  buf.writeNullable(obj.expireTimestamp, buf.writeDate);
+  buf.writeDate(obj.bannedTimestamp);
 }

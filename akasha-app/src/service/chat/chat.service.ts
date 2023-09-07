@@ -4,6 +4,8 @@ import {
 } from "@/prisma/prisma.service";
 import { Injectable, Logger } from "@nestjs/common";
 import {
+  ChatBanDetailEntry,
+  ChatBanSummaryEntry,
   ChatMessageEntry,
   ChatRoomChatMessagePairEntry,
   ChatRoomEntry,
@@ -31,6 +33,7 @@ import {
   RoleNumber,
   getActiveStatusFromNumber,
   getActiveStatusNumber,
+  getBanCategoryNumber,
   getMessageTypeFromNumber,
   getMessageTypeNumber,
   getRoleFromNumber,
@@ -93,14 +96,37 @@ type ChatMemberWithRoom = Prisma.ChatMemberGetPayload<
   typeof chatMemberWithRoom
 >;
 
+/// BanForEntry
+function toBanSummaryEntry(ban: ChatBan): ChatBanSummaryEntry {
+  return {
+    ...ban,
+    category: getBanCategoryNumber(ban.category),
+  };
+}
+
+function toBanDetailEntry(ban: ChatBan): ChatBanDetailEntry {
+  return {
+    ...ban,
+    category: getBanCategoryNumber(ban.category),
+  };
+}
+
 /// FriendResult
 type FriendResult =
   | { errno: FriendErrorNumber.SUCCESS; friend: FriendEntry }
   | { errno: Exclude<FriendErrorNumber, FriendErrorNumber.SUCCESS> };
 
-type ChatRoomFailed = {
-  errno: Exclude<RoomErrorNumber, RoomErrorNumber.SUCCESS>;
-};
+type ChatRoomFailed =
+  | {
+      errno: Exclude<
+        RoomErrorNumber,
+        RoomErrorNumber.SUCCESS | RoomErrorNumber.ERROR_CHAT_BANNED
+      >;
+    }
+  | {
+      errno: RoomErrorNumber.ERROR_CHAT_BANNED;
+      bans: ChatBanSummaryEntry[] | null;
+    };
 
 /// ChatCreateRoomResult
 type ChatCreateRoomResult =
@@ -122,6 +148,15 @@ type ChatLeaveRoomResult =
       errno: RoomErrorNumber.SUCCESS;
       chatId: string;
       accountId: string;
+      ban: ChatBanSummaryEntry | null;
+    }
+  | ChatRoomFailed;
+
+/// ChatMessageResult
+type ChatMessageResult =
+  | {
+      errno: RoomErrorNumber.SUCCESS;
+      message: ChatMessageEntry;
     }
   | ChatRoomFailed;
 
@@ -256,8 +291,8 @@ export class ChatService {
     try {
       data = await this.prisma.friend.create({
         data: {
-          account: { connect: { id: accountId } },
-          friendAccount: { connect: { id: targetAccountId } },
+          accountId,
+          friendAccountId: targetAccountId,
           groupName,
           activeFlags: toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE),
         },
@@ -279,7 +314,7 @@ export class ChatService {
 
   async modifyFriend(
     accountId: string,
-    targetAccountId: string,
+    friendAccountId: string,
     groupName: string | undefined,
     activeFlags: number | undefined,
   ): Promise<FriendResult> {
@@ -294,10 +329,7 @@ export class ChatService {
               : undefined,
         },
         where: {
-          accountId_friendAccountId: {
-            accountId,
-            friendAccountId: targetAccountId,
-          },
+          accountId_friendAccountId: { accountId, friendAccountId },
         },
       });
     } catch (e) {
@@ -317,7 +349,7 @@ export class ChatService {
 
   async deleteFriend(
     accountId: string,
-    targetAccountId: string,
+    friendAccountId: string,
   ): Promise<
     [FriendErrorNumber, FriendEntry | undefined, FriendEntry | undefined]
   > {
@@ -328,17 +360,14 @@ export class ChatService {
       data = await this.prisma.$transaction([
         this.prisma.friend.findUnique({
           where: {
-            accountId_friendAccountId: {
-              accountId: accountId,
-              friendAccountId: targetAccountId,
-            },
+            accountId_friendAccountId: { accountId, friendAccountId },
           },
         }),
         this.prisma.friend.findUnique({
           where: {
             accountId_friendAccountId: {
               friendAccountId: accountId,
-              accountId: targetAccountId,
+              accountId: friendAccountId,
             },
           },
         }),
@@ -346,12 +375,12 @@ export class ChatService {
           where: {
             OR: [
               {
-                accountId: accountId,
-                friendAccountId: targetAccountId,
+                accountId,
+                friendAccountId,
               },
               {
                 friendAccountId: accountId,
-                accountId: targetAccountId,
+                accountId: friendAccountId,
               },
             ],
           },
@@ -374,7 +403,7 @@ export class ChatService {
 
   async isDuplexFriend(
     accountId: string,
-    targetAccountId: string,
+    friendAccountId: string,
     tx?: PrismaTransactionClient | undefined,
   ): Promise<boolean> {
     tx ??= this.prisma;
@@ -383,15 +412,15 @@ export class ChatService {
       select: {
         friends: {
           select: { friendAccountId: true },
-          where: { friendAccountId: targetAccountId },
+          where: { friendAccountId: friendAccountId },
         },
         friendReferences: {
           select: { accountId: true },
-          where: { accountId: targetAccountId },
+          where: { accountId: friendAccountId },
         },
         enemyReferences: {
           select: { accountId: true },
-          where: { accountId: targetAccountId },
+          where: { accountId: friendAccountId },
         },
       },
     });
@@ -442,100 +471,6 @@ export class ChatService {
     }));
   }
 
-  //FIXME: 공통 루틴은 트랜잭션을 통해서 호출할 수 있는 함수(insert(tx, ...), remove(tx, ...)), sendChatMessage(tx?, ...)로 분리하여 만들고,
-  //TODO: 상세한 루틴 create(...), enter(...), leave(...), invite(...), kick(...)에 대하여 더 자세한 구현은 매번 함수를 만든다.
-  /**
-방을 만드려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 방을 만들 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-방에 입장하려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 방에 입장할 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_ALREADY_ROOM_MEMBER] - 이미 들어와 있는 방입니다.
- [ERROR_WRONG_PASSWORD]			 - 비밀번호가 틀렸습니다.
- [ERROR_EXCEED_LIMIT]				 - 꽉찬 방입니다.
- [ERROR_CHAT_BANNED]				 - 방에서 정지당했습니다. [이유도 포함]
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-방에 초대하려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 방에 누군가를 초대할 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]					 - 내가 소속된 방이 아닙니다.
- [ERROR_ALREADY_ROOM_MEMBER] - (대상이) 이미 들어와 있는 방입니다.
- [ERROR_ENEMY]							 - 대상이 나를 차단했습니다.
- [ERROR_PERMISSION]					 - 비밀번호가 틀렸습니다. (관리자가 아니라서 비밀번호를 알 수 없습니다)
- [ERROR_EXCEED_LIMIT]				 - 꽉찬 방입니다.
- [ERROR_CHAT_BANNED]				 - (대상이) 방에서 정지당했습니다. [이유 _미_포함]
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-방에서 퇴장하려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 방에서 나갈 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]					 - 내가 소속된 방이 아닙니다.
- [ERROR_RESTRICTED]					 - 방장은 나갈 수 없습니다.
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-방에서 강퇴하려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 누군가를 강퇴할 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_PERMISSION]					 - 관리자가 아니어서 강퇴할 권한이 없습니다.
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]					 - 내가 소속된 방이 아닙니다.
- [ERROR_NO_MEMBER]					 - 방에 존재하지 않는 멤버입니다.
- [ERROR_RESTRICTED]					 - 나보다 상위 수준의 멤버를 강퇴할 수 없습니다.
- [ERROR_SELF]								 - 스스로를 강퇴할 수 없습니다.
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-방에서 나가진 이유 (신규 옵코드 필요!! (보내기 전용))
- - 평범하게 나갔습니다. (아무것도 안보낸다.)
- - 강퇴당했습니다. [이유도 포함]
- - 방이 해체되었습니다.
-
-메시지를 보내려고 한다.
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 채팅을 보낼 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]					 - 내가 소속된 방이 아닙니다.
- [ERROR_CHAT_BANNED]				 - 방에서 채팅 정지당했습니다. [이유도 포함]
- [ERROR_RESTRICTED]					 - 지금은 보낼 수 없습니다. 잠시 후 다시 시도하세요.
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-관리자 승급(강등): (신규 옵코드 필요!!)
- [SUCCESS]									 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]				 - 당신은 관리자를 승급(강등)시킬 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]						 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]					 - 내가 소속된 방이 아닙니다.
- [ERROR_NO_MEMBER]					 - 방에 존재하지 않는 멤버입니다.
- [ERROR_PERMISSION]					 - 소유자가 아니어서 관리자를 승급(강등)시킬 권한이 없습니다.
- [ERROR_RESTRICTED]					 - 이미 승급(강등)되어 있는 멤버입니다.
- [ERROR_SELF]								 - 스스로를 승급(강등)할 수 없습니다.
- [ERROR_UNKNOWN]						 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-채팅방 양도: (신규 옵코드 필요!!)
- [SUCCESS]								 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]			 - 당신은 채팅방을 양도할 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]					 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]				 - 내가 소속된 방이 아닙니다.
- [ERROR_NO_MEMBER]				 - 방에 존재하지 않는 멤버입니다.
- [ERROR_PERMISSION]				 - 소유자가 아니어서 채팅방을 양도할 권한이 없습니다.
- [ERROR_RESTRICTED]				 - 매니저가 아닌 유저에게 채팅방을 양도할 수 없습니다.
- [ERROR_SELF]							 - 스스로에게 양도할 수 없습니다.
- [ERROR_UNKNOWN]					 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-
-채팅방 해체: (신규 옵코드 필요!!) -- memberCache를 null로 업데이트 필요
- [SUCCESS]								 - 성공했습니다.
- [ERROR_ACCOUNT_BAN]			 - 당신은 채팅방을 해체할 수 없습니다. (계정의 활동정지의 의미)
- [ERROR_NO_ROOM]					 - 존재하지 않는 방입니다.
- [ERROR_NO_MEMBER]				 - 내가 소속된 방이 아닙니다.
- [ERROR_PERMISSION]				 - 소유자가 아니어서 채팅방을 해체할 권한이 없습니다.
- [ERROR_RESTRICTED]				 - 나를 제외한 멤버가 남아있으면 채팅방을 해체할 수 없습니다.
- [ERROR_UNKNOWN]					 - 알 수 없는 오류로 실패했습니다. (DB Fail)
-  */
   async createNewRoom(
     ownerAccountId: string,
     room: Prisma.ChatCreateInput,
@@ -592,7 +527,7 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_NO_ROOM };
       }
       if (memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_ALREADY_ROOM_MEMBER };
+        return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
       }
 
       const chat = await tx.chat.findUniqueOrThrow({
@@ -606,15 +541,14 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
-      const bans = await this.loadChatBanned(
-        tx,
+      const bans = await this.getChatBanned(
         chatId,
         accountId,
         BanCategory.ACCESS,
+        tx,
       );
       if (bans.length !== 0) {
-        //TODO: return with `bans`
-        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED };
+        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans };
       }
 
       return this.insertChatMember(tx, chatId, accountId, RoleNumber.USER);
@@ -667,10 +601,10 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_NO_ROOM };
       }
       if (!memberSet.has(accountId)) {
-        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
       }
       if (memberSet.has(targetAccountId)) {
-        return { errno: RoomErrorNumber.ERROR_ALREADY_ROOM_MEMBER };
+        return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
       }
 
       if (accountId === targetAccountId) {
@@ -691,8 +625,7 @@ export class ChatService {
       if (
         chat.isSecret &&
         chat.password !== "" &&
-        member.role !== Role.MANAGER &&
-        member.role !== Role.ADMINISTRATOR
+        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
       ) {
         return { errno: RoomErrorNumber.ERROR_PERMISSION };
       }
@@ -700,15 +633,15 @@ export class ChatService {
         return { errno: RoomErrorNumber.ERROR_EXCEED_LIMIT };
       }
 
-      const bans = await this.loadChatBanned(
-        tx,
+      const bans = await this.getChatBanned(
         chatId,
         targetAccountId,
         BanCategory.ACCESS,
+        tx,
       );
       if (bans.length !== 0) {
         //NOTE: Do NOT with `bans`
-        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED };
+        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans: null };
       }
 
       return this.insertChatMember(
@@ -717,6 +650,245 @@ export class ChatService {
         targetAccountId,
         RoleNumber.USER,
       );
+    });
+  }
+
+  async muteRoomMember(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+    reason: string,
+    memo: string,
+    timespanSecs: number | null,
+  ): Promise<ChatLeaveRoomResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (
+        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
+      ) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (targetMember.role === Role.ADMINISTRATOR) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+
+      const ban = await this.prisma.chatBan.create({
+        data: {
+          chatId,
+          accountId: targetAccountId,
+          managerAccountId: accountId,
+          category: BanCategory.COMMIT,
+          reason,
+          memo,
+          expireTimestamp:
+            timespanSecs !== null
+              ? new Date(Date.now() + timespanSecs * 1000)
+              : null,
+        },
+      });
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId,
+        accountId: targetAccountId,
+        ban: toBanSummaryEntry(ban),
+      };
+    });
+  }
+
+  async kickRoomMember(
+    chatId: string,
+    accountId: string,
+    targetAccountId: string,
+    reason: string,
+    memo: string,
+    timespanSecs: number | null,
+  ): Promise<ChatLeaveRoomResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+      if (!memberSet.has(targetAccountId)) {
+        return { errno: RoomErrorNumber.ERROR_NO_MEMBER };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (
+        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
+      ) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const targetMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: targetAccountId } },
+        select: { role: true },
+      });
+      if (targetMember.role === Role.ADMINISTRATOR) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+
+      const ban = await this.prisma.chatBan.create({
+        data: {
+          chatId,
+          accountId: targetAccountId,
+          managerAccountId: accountId,
+          category: BanCategory.ACCESS,
+          reason,
+          memo,
+          expireTimestamp:
+            timespanSecs !== null
+              ? new Date(Date.now() + timespanSecs * 1000)
+              : null,
+        },
+      });
+      return {
+        ...this.deleteChatMember(tx, chatId, targetAccountId),
+        ban: toBanSummaryEntry(ban),
+      };
+    });
+  }
+
+  async unban(accountId: string, banId: string): Promise<ChatLeaveRoomResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const ban = await tx.chatBan.findUnique({ where: { id: banId } });
+      if (ban === null) {
+        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      }
+      const { chatId, accountId: targetAccountId, managerAccountId } = ban;
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+
+      if (accountId === targetAccountId) {
+        return { errno: RoomErrorNumber.ERROR_SELF };
+      }
+
+      const member = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId } },
+        select: { role: true },
+      });
+      if (
+        !(member.role === Role.MANAGER || member.role === Role.ADMINISTRATOR)
+      ) {
+        return { errno: RoomErrorNumber.ERROR_PERMISSION };
+      }
+      const managerMember = await tx.chatMember.findUniqueOrThrow({
+        where: { chatId_accountId: { chatId, accountId: managerAccountId } },
+        select: { role: true },
+      });
+      if (
+        member.role !== Role.ADMINISTRATOR &&
+        managerMember.role === Role.ADMINISTRATOR
+      ) {
+        return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+      }
+
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        chatId,
+        accountId: targetAccountId,
+        ban: toBanSummaryEntry(ban),
+      };
+    });
+  }
+
+  async trySendMessage(
+    chatId: string,
+    accountId: string,
+    content: string,
+  ): Promise<ChatMessageResult> {
+    if (content === "") {
+      return { errno: RoomErrorNumber.ERROR_RESTRICTED };
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const inspect = await this.prepareInspect(tx, accountId);
+      if (inspect !== undefined) {
+        return inspect;
+      }
+
+      const memberSet = await this.getChatMemberSet(chatId, tx);
+      if (memberSet === null) {
+        return { errno: RoomErrorNumber.ERROR_NO_ROOM };
+      }
+      if (!memberSet.has(accountId)) {
+        return { errno: RoomErrorNumber.ERROR_UNJOINED };
+      }
+
+      const bans = await this.getChatBanned(
+        chatId,
+        accountId,
+        BanCategory.COMMIT,
+        tx,
+      );
+      if (bans.length !== 0) {
+        return { errno: RoomErrorNumber.ERROR_CHAT_BANNED, bans };
+      }
+
+      const message = await this.createNewChatMessage(
+        chatId,
+        accountId,
+        content,
+        MessageTypeNumber.REGULAR,
+      );
+      if (message === null) {
+        return { errno: RoomErrorNumber.ERROR_UNKNOWN };
+      }
+      return {
+        errno: RoomErrorNumber.SUCCESS,
+        message,
+      };
     });
   }
 
@@ -768,8 +940,8 @@ export class ChatService {
       data = await tx.chatMember.create({
         ...chatMemberWithRoom,
         data: {
-          account: { connect: { id: accountId } },
-          chat: { connect: { id: chatId } },
+          accountId,
+          chatId,
           role: getRoleFromNumber(role),
         },
       });
@@ -777,7 +949,7 @@ export class ChatService {
       if (e instanceof Prisma.PrismaClientKnownRequestError) {
         if (e.code === "P2025") {
           // An operation failed because it depends on one or more records that were required but not found. {cause}
-          return { errno: RoomErrorNumber.ERROR_ALREADY_ROOM_MEMBER };
+          return { errno: RoomErrorNumber.ERROR_ALREADY_MEMBER };
         }
       }
       ChatService.logUnknownError(e);
@@ -825,6 +997,7 @@ export class ChatService {
       errno: RoomErrorNumber.SUCCESS,
       chatId: data.chatId,
       accountId: data.accountId,
+      ban: null,
     };
   }
 
@@ -833,20 +1006,26 @@ export class ChatService {
     accountId: string,
     content: string,
     messageType: MessageTypeNumber,
-  ): Promise<ChatMessageEntry> {
-    const message = await this.prisma.chatMessage.create({
-      data: {
-        chat: { connect: { id: chatId } },
-        account: { connect: { id: accountId } },
-        content,
-        messageType: getMessageTypeFromNumber(messageType),
-      },
-    });
-
-    return {
-      ...message,
-      messageType: getMessageTypeNumber(message.messageType),
-    };
+    tx?: PrismaTransactionClient | undefined,
+  ): Promise<ChatMessageEntry | null> {
+    tx ??= this.prisma;
+    try {
+      const message = await tx.chatMessage.create({
+        data: {
+          chatId,
+          accountId,
+          content,
+          messageType: getMessageTypeFromNumber(messageType),
+        },
+      });
+      return {
+        ...message,
+        messageType: getMessageTypeNumber(message.messageType),
+      };
+    } catch (e) {
+      ChatService.logUnknownError(e);
+      return null;
+    }
   }
 
   async updateLastMessageCursor(
@@ -859,13 +1038,14 @@ export class ChatService {
     }));
   }
 
-  async loadChatBanned(
-    tx: PrismaTransactionClient,
+  async getChatBanned(
     chatId: string,
     accountId: string,
     category: BanCategory,
-  ): Promise<ChatBan[]> {
-    return await tx.chatBan.findMany({
+    tx?: PrismaTransactionClient | undefined,
+  ): Promise<ChatBanSummaryEntry[]> {
+    tx ??= this.prisma;
+    const bans = await tx.chatBan.findMany({
       where: {
         chatId,
         accountId,
@@ -873,37 +1053,13 @@ export class ChatService {
         expireTimestamp: { gt: new Date() },
       },
     });
+
+    return bans.map((e) => toBanSummaryEntry(e));
   }
 
-  async createChatBan(
-    chatId: string,
-    targetAccountId: string,
-    managerAccountId: string,
-    category: BanCategory,
-    reason: string,
-    memo: string,
-    expireTimestamp: Date | null,
-  ): Promise<ChatBan> {
-    const ban = await this.prisma.chatBan.create({
-      data: {
-        chat: { connect: { id: chatId } },
-        account: { connect: { id: targetAccountId } },
-        managerAccount: { connect: { id: managerAccountId } },
-        category,
-        reason,
-        memo,
-        expireTimestamp,
-      },
-    });
+  async getChatBannedForManager(chatId: string): Promise<ChatBanDetailEntry[]> {
+    const bans = await this.prisma.chatBan.findMany({ where: { chatId } });
 
-    return ban;
-  }
-
-  async deleteChatBan(chatBanId: string): Promise<ChatBan> {
-    const ban = await this.prisma.chatBan.delete({
-      where: { id: chatBanId },
-    });
-
-    return ban;
+    return bans.map((e) => toBanDetailEntry(e));
   }
 }
