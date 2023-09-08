@@ -22,6 +22,7 @@ export const enum ChatServerOpcode {
   MUTE_MEMBER,
   BAN_LIST_REQUEST,
   UNBAN_MEMBER,
+  DESTROY_ROOM,
   LOAD_DIRECTS,
   SEND_DIRECT,
 }
@@ -59,6 +60,7 @@ export const enum ChatClientOpcode {
   MUTE_NOTIFY,
   BAN_LIST,
   UNBAN_MEMBER_RESULT,
+  DESTROY_ROOM_RESULT,
   DIRECTS_LIST,
   CHAT_DIRECT,
   SEND_DIRECT_RESULT,

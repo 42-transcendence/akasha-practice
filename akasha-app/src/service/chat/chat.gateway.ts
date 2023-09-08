@@ -882,6 +882,21 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     return builder.makeUnbanMemberResult(result.errno, banId);
   }
 
+  @SubscribeMessage(ChatServerOpcode.DESTROY_ROOM)
+  async handleDestroyRoom(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const chatId = payload.readUUID();
+
+    const result = await this.chatService.removeRoom(chatId, client.accountId);
+    if (result.errno === ChatErrorNumber.SUCCESS) {
+      const { chatId, accountId } = result;
+      void this.server.unicast(accountId, builder.makeRemoveRoom(chatId));
+    }
+
+    return builder.makeDestroyRoomResult(result.errno, chatId);
+  }
+
   @SubscribeMessage(ChatServerOpcode.LOAD_DIRECTS)
   async handleLoadDirects(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(client.handshakeState, "Invalid state");

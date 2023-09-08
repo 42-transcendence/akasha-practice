@@ -1536,6 +1536,7 @@ export class ChatService {
       }
 
       if (accountId === targetAccountId) {
+        //NOTE: self direct chat
         return { errno: ChatErrorNumber.ERROR_SELF };
       }
       if (!(await this.isDuplexFriend(accountId, targetAccountId, tx))) {

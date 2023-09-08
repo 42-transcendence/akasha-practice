@@ -380,6 +380,13 @@ export function makeUnbanMemberResult(errno: ChatErrorNumber, banId: string) {
   return buf;
 }
 
+export function makeDestroyRoomResult(errno: ChatErrorNumber, chatId: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DESTROY_ROOM_RESULT);
+  buf.write1(errno);
+  buf.writeUUID(chatId);
+  return buf;
+}
+
 export function makeDirectsList(
   targetAccountId: string,
   messages: ChatDirectEntry[],
