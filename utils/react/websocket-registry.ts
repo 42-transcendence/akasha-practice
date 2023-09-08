@@ -68,8 +68,8 @@ export type WebSocketListenProps = {
 
 class WebSocketEntry {
   webSocket: WebSocket | undefined;
+  webSocketRef: typeof this.webSocket;
   lastState: SocketState = { number: SocketStateNumber.INITIAL };
-  lastMessage: ArrayBuffer | undefined;
 }
 
 export class WebSocketRegistry {
@@ -118,8 +118,8 @@ export class WebSocketRegistry {
           number: SocketStateNumber.CLOSED,
           ...ev,
         };
+        value.webSocketRef = undefined;
         value.lastState = state;
-        value.lastMessage = undefined;
 
         for (const listener of listeners) {
           listener.handleClose?.(ev);
@@ -142,8 +142,6 @@ export class WebSocketRegistry {
 
       webSocket.addEventListener("message", (ev) => {
         const message = ev.data as ArrayBuffer;
-
-        value.lastMessage = message;
 
         for (const listener of listeners) {
           if (listener.filter?.(message) ?? true) {
@@ -180,8 +178,8 @@ export class WebSocketRegistry {
           number: SocketStateNumber.OPEN,
         };
 
+        value.webSocketRef = webSocket;
         value.lastState = state;
-        value.lastMessage = undefined;
 
         for (const listener of listeners) {
           listener.webSocketRef.current = webSocket;
@@ -210,13 +208,8 @@ export class WebSocketRegistry {
 
     const entry = this.registry.get(key);
     if (entry !== undefined) {
-      props.webSocketRef.current = entry.webSocket;
+      props.webSocketRef.current = entry.webSocketRef;
       props.setSocketState(entry.lastState);
-
-      const message = entry.lastMessage;
-      if (message !== undefined && (props.filter?.(message) ?? true)) {
-        props.setLastMessage(message);
-      }
     }
 
     value.add(props);
