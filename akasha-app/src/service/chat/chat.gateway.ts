@@ -116,17 +116,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         );
     }
 
-    const prevActiveStatus = await this.chatService.getActiveStatus(
-      client.accountId,
-    );
-    if (prevActiveStatus !== activeStatus) {
-      this.chatService.setActiveStatus(client.accountId, activeStatus);
-      if (
-        (prevActiveStatus === ActiveStatusNumber.INVISIBLE) !==
-        (activeStatus === ActiveStatusNumber.INVISIBLE)
-      ) {
-        this.chatService.setActiveTimestamp(client.accountId, true);
-      }
+    if (
+      await this.chatService.setActiveStatus(client.accountId, activeStatus)
+    ) {
       void this.server.multicastToFriend(
         client.accountId,
         builder.makeUpdateFriendActiveStatus(client.accountId),
@@ -929,7 +921,25 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       targetAccountId,
       fetchedMessageId ?? undefined,
     );
-    return builder.makeDirectsList(targetAccountId, messages);
+    const lastMessageId = await this.chatService.loadLastDirectCursor(
+      client.accountId,
+      targetAccountId,
+    );
+    return builder.makeDirectsList(targetAccountId, messages, lastMessageId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR_DIRECT)
+  async handleSyncCursorDirect(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const pair = readChatRoomChatMessagePair(payload);
+
+    await this.chatService.updateLastDirectCursor(client.accountId, pair);
+    void this.server.unicast(
+      client.accountId,
+      builder.makeSyncCursorDirectPayload(pair),
+      client,
+    );
   }
 
   @SubscribeMessage(ChatServerOpcode.SEND_DIRECT)
@@ -946,9 +956,14 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     );
     if (result.errno === ChatErrorNumber.SUCCESS) {
       const { message } = result;
-      const payload = builder.makeChatDirectPayload(message);
-      void this.server.unicast(client.accountId, payload);
-      void this.server.unicast(targetAccountId, payload);
+      void this.server.unicast(
+        client.accountId,
+        builder.makeChatDirectPayload(targetAccountId, message),
+      );
+      void this.server.unicast(
+        targetAccountId,
+        builder.makeChatDirectPayload(client.accountId, message),
+      );
     }
 
     return builder.makeSendMessageResult(result.errno, targetAccountId);

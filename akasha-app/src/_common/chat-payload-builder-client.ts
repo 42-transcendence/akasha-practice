@@ -285,6 +285,15 @@ export function makeLoadDirectsRequest(
   return buf;
 }
 
+export function makeSyncCursorDirect(
+  targetAccountId: string,
+  messageId: string,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.SYNC_CURSOR_DIRECT);
+  writeChatRoomChatMessagePair({ chatId: targetAccountId, messageId }, buf);
+  return buf;
+}
+
 export function makeSendDirectRequest(
   targetAccountId: string,
   content: string,

@@ -22,8 +22,6 @@ import {
   writeEnemy,
   writeFriend,
   writeSocialPayload,
-  ChatDirectEntry,
-  writeChatDirect,
 } from "@common/chat-payloads";
 import { BanSummaryPayload } from "@common/profile-payloads";
 import { RoleNumber } from "@common/generated/types";
@@ -389,17 +387,31 @@ export function makeDestroyRoomResult(errno: ChatErrorNumber, chatId: string) {
 
 export function makeDirectsList(
   targetAccountId: string,
-  messages: ChatDirectEntry[],
+  messages: ChatMessageEntry[],
+  lastMessageId: string | null,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DIRECTS_LIST);
   buf.writeUUID(targetAccountId);
-  buf.writeArray(messages, writeChatDirect);
+  buf.writeArray(messages, writeChatMessage);
+  buf.writeNullable(lastMessageId, buf.writeUUID, NULL_UUID);
   return buf;
 }
 
-export function makeChatDirectPayload(message: ChatDirectEntry) {
+export function makeChatDirectPayload(
+  targetAccountId: string,
+  message: ChatMessageEntry,
+) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.CHAT_DIRECT);
-  writeChatDirect(message, buf);
+  buf.writeUUID(targetAccountId);
+  writeChatMessage(message, buf);
+  return buf;
+}
+
+export function makeSyncCursorDirectPayload(
+  pair: ChatRoomChatMessagePairEntry,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SYNC_CURSOR_DIRECT);
+  writeChatRoomChatMessagePair(pair, buf);
   return buf;
 }
 

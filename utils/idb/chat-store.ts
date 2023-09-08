@@ -92,26 +92,31 @@ function getDirectDB(
   accountId: string,
   targetId: string
 ): Promise<IDBDatabase> {
-  return IDBCP.getOrOpen(`${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`, {
-    onUpgradeNeeded(db: IDBDatabase) {
-      try {
-        db.deleteObjectStore("messages");
-      } catch {
-        //NOTE: ignore
-      }
-      const messages = db.createObjectStore("messages", {
-        keyPath: "id",
-      });
-      // accountId
-      // content
-      // messageType
-      messages.createIndex("timestamp", "timestamp", { unique: false });
-    },
-  });
+  return IDBCP.getOrOpen(
+    `${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`,
+    {
+      onUpgradeNeeded(db: IDBDatabase) {
+        try {
+          db.deleteObjectStore("messages");
+        } catch {
+          //NOTE: ignore
+        }
+        const messages = db.createObjectStore("messages", {
+          keyPath: "id",
+        });
+        // accountId
+        // content
+        // messageType
+        messages.createIndex("timestamp", "timestamp", { unique: false });
+      },
+    }
+  );
 }
 
 function removeDirectDB(accountId: string, targetId: string): Promise<boolean> {
-  return IDBCP.delete(`${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`);
+  return IDBCP.delete(
+    `${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`
+  );
 }
 
 export type MemberSchema = {
@@ -709,6 +714,52 @@ export class ChatStore {
       directAllByAccountGet.onsuccess = () => {
         const directArray = directAllByAccountGet.result as DirectSchema[];
         resolve(new Set<string>(directArray.map((e) => e["target"])));
+      };
+    });
+  }
+
+  static async getDirectFetchedMessageId(
+    chatId: string
+  ): Promise<string | null> {
+    const db = await getMetadataDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["directs"], "readonly");
+      tx.onerror = () => reject(new Error());
+
+      const directs = tx.objectStore("directs");
+      const directGet = directs.get(chatId);
+      directGet.onsuccess = () => {
+        const direct = directGet.result as DirectSchema | undefined;
+        if (direct !== undefined) {
+          resolve(direct["fetchedMessageId"]);
+        } else {
+          reject(new Error());
+        }
+      };
+    });
+  }
+
+  static async setDirectFetchedMessageId(
+    chatId: string,
+    fetchedMessageId: string
+  ): Promise<void> {
+    const db = await getMetadataDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(["directs"], "readwrite");
+      tx.onerror = () => reject(new Error());
+
+      const directs = tx.objectStore("directs");
+      const directGet = directs.get(chatId);
+      directGet.onsuccess = () => {
+        const direct = directGet.result as DirectSchema | undefined;
+        if (direct !== undefined) {
+          direct["fetchedMessageId"] = fetchedMessageId;
+          const directPut = directs.put(direct);
+
+          directPut.onsuccess = () => resolve();
+        } else {
+          reject(new Error());
+        }
       };
     });
   }

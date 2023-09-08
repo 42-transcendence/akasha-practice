@@ -292,16 +292,19 @@ model ChatBan {
 }
 
 model ChatDirect {
-  id                   String   @id @default(uuid()) @db.Uuid
-  sourceAccount        Account  @relation("SentChatDirects", fields: [sourceAccountId], references: [id], onDelete: Cascade)
-  sourceAccountId      String   @db.Uuid
-  destinationAccount   Account  @relation("ReceivedChatDirects", fields: [destinationAccountId], references: [id], onDelete: Cascade)
-  destinationAccountId String   @db.Uuid
+  id                   String      @id @default(uuid()) @db.Uuid
+  sourceAccount        Account     @relation("SentChatDirects", fields: [sourceAccountId], references: [id], onDelete: Cascade)
+  sourceAccountId      String      @db.Uuid
+  destinationAccount   Account     @relation("ReceivedChatDirects", fields: [destinationAccountId], references: [id], onDelete: Cascade)
+  destinationAccountId String      @db.Uuid
   content              String
-  timestamp            DateTime @default(now())
+  messageType          MessageType @default(REGULAR)
+  timestamp            DateTime    @default(now())
+  isLastMessage        Boolean     @default(false)
 
   @@index([sourceAccountId, destinationAccountId])
   @@index([timestamp(ops: TimestampMinMaxOps)], type: Brin)
+  @@index(isLastMessage)
   @@map("chat_directs")
   @@schema("services")
 }

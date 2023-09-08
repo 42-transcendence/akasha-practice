@@ -17,7 +17,6 @@ import {
   ChatErrorNumber,
   SocialErrorNumber,
   SocialPayload,
-  ChatDirectEntry,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import {
@@ -25,7 +24,9 @@ import {
   BanCategory,
   Chat,
   ChatBan,
+  ChatDirect,
   ChatMember,
+  ChatMessage,
   Enemy,
   Friend,
   Prisma,
@@ -36,7 +37,6 @@ import {
   MessageTypeNumber,
   RoleNumber,
   getActiveStatusFromNumber,
-  getActiveStatusNumber,
   getBanCategoryNumber,
   getMessageTypeFromNumber,
   getMessageTypeNumber,
@@ -113,6 +113,26 @@ const chatMemberWithRoom = Prisma.validator<Prisma.ChatMemberDefaultArgs>()({
 type ChatMemberWithRoom = Prisma.ChatMemberGetPayload<
   typeof chatMemberWithRoom
 >;
+
+/// MessageForEntry
+function toChatMessage(message: ChatMessage): ChatMessageEntry {
+  return {
+    ...message,
+    messageType: getMessageTypeNumber(message.messageType),
+  };
+}
+
+function toChatMessageFromDirect(
+  targetAccountId: string,
+  direct: ChatDirect,
+): ChatMessageEntry {
+  return {
+    ...direct,
+    chatId: targetAccountId,
+    accountId: direct.sourceAccountId,
+    messageType: getMessageTypeNumber(direct.messageType),
+  };
+}
 
 /// BanForEntry
 function toBanSummaryEntry(ban: ChatBan): ChatBanSummaryEntry {
@@ -220,14 +240,6 @@ type ChatBanResult =
     }
   | ChatRoomFailed;
 
-/// ChatDirectResult
-type ChatDirectResult =
-  | {
-      errno: ChatErrorNumber.SUCCESS;
-      message: ChatDirectEntry;
-    }
-  | ChatRoomFailed;
-
 @Injectable()
 export class ChatService {
   protected static readonly logger = new Logger(ChatService.name);
@@ -253,27 +265,29 @@ export class ChatService {
     return this.accounts.findAccountIdByNick(name, tag);
   }
 
-  // forward
-  async getActiveStatus(accountId: string) {
-    const activeStatusRaw = await this.accounts.findActiveStatus(accountId);
-    return activeStatusRaw !== null
-      ? getActiveStatusNumber(activeStatusRaw)
-      : null;
+  async setActiveStatus(
+    accountId: string,
+    activeStatusNumber: ActiveStatusNumber,
+  ): Promise<boolean> {
+    const activeStatus = getActiveStatusFromNumber(activeStatusNumber);
+    const prevActiveStatus = await this.accounts.findActiveStatus(accountId);
+    if (prevActiveStatus !== activeStatus) {
+      await this.accounts.updateActiveStatus(accountId, activeStatus);
+      if (
+        (prevActiveStatus === ActiveStatus.INVISIBLE) !==
+        (activeStatus === ActiveStatus.INVISIBLE)
+      ) {
+        await this.accounts.updateActiveTimestamp(accountId);
+      }
+      return true;
+    }
+    return false;
   }
 
-  // forward
-  async setActiveStatus(accountId: string, activeStatus: ActiveStatusNumber) {
-    return this.accounts.updateActiveStatus(
-      accountId,
-      getActiveStatusFromNumber(activeStatus),
-    );
-  }
-
-  // forward
-  async setActiveTimestamp(accountId: string, force: boolean) {
+  async setActiveTimestampExceptInvisible(accountId: string) {
     return this.accounts.updateActiveTimestamp(
       accountId,
-      force ? undefined : ActiveStatus.INVISIBLE,
+      ActiveStatus.INVISIBLE,
     );
   }
 
@@ -304,10 +318,7 @@ export class ChatService {
         : undefined),
     });
 
-    return messages.map((e) => ({
-      ...e,
-      messageType: getMessageTypeNumber(e.messageType),
-    }));
+    return messages.map((e) => toChatMessage(e));
   }
 
   async loadSocial(accountId: string): Promise<SocialPayload> {
@@ -393,15 +404,15 @@ export class ChatService {
     let friend: Friend;
     try {
       friend = await this.prisma.friend.update({
+        where: {
+          accountId_friendAccountId: { accountId, friendAccountId },
+        },
         data: {
           groupName,
           activeFlags:
             activeFlags !== undefined
               ? toBitsString(activeFlags, FRIEND_ACTIVE_FLAGS_SIZE)
               : undefined,
-        },
-        where: {
-          accountId_friendAccountId: { accountId, friendAccountId },
         },
       });
     } catch (e) {
@@ -565,11 +576,11 @@ export class ChatService {
     let enemy: Enemy;
     try {
       enemy = await this.prisma.enemy.update({
-        data: {
-          memo,
-        },
         where: {
           accountId_enemyAccountId: { accountId, enemyAccountId },
+        },
+        data: {
+          memo,
         },
       });
     } catch (e) {
@@ -1437,10 +1448,7 @@ export class ChatService {
           messageType: getMessageTypeFromNumber(messageType),
         },
       });
-      return {
-        ...message,
-        messageType: getMessageTypeNumber(message.messageType),
-      };
+      return toChatMessage(message);
     } catch (e) {
       ChatService.logUnknownError(e);
       return null;
@@ -1500,7 +1508,7 @@ export class ChatService {
     accountId: string,
     targetAccountId: string,
     lastMessageId: string | undefined,
-  ): Promise<ChatDirectEntry[]> {
+  ): Promise<ChatMessageEntry[]> {
     const directs = await this.prisma.chatDirect.findMany({
       where: {
         OR: [
@@ -1517,14 +1525,51 @@ export class ChatService {
         : undefined),
     });
 
-    return directs;
+    return directs.map((e) => toChatMessageFromDirect(targetAccountId, e));
+  }
+
+  async loadLastDirectCursor(
+    accountId: string,
+    targetAccountId: string,
+  ): Promise<string | null> {
+    const message = await this.prisma.chatDirect.findFirst({
+      where: {
+        sourceAccountId: targetAccountId,
+        destinationAccountId: accountId,
+        isLastMessage: true,
+      },
+      orderBy: { timestamp: Prisma.SortOrder.desc },
+      select: { id: true },
+    });
+
+    return message?.id ?? null;
+  }
+
+  async updateLastDirectCursor(
+    accountId: string,
+    pair: ChatRoomChatMessagePairEntry,
+  ): Promise<void> {
+    void (await this.prisma.$transaction([
+      this.prisma.chatDirect.updateMany({
+        where: { isLastMessage: true },
+        data: { isLastMessage: false },
+      }),
+      this.prisma.chatDirect.update({
+        where: {
+          sourceAccountId: pair.chatId,
+          destinationAccountId: accountId,
+          id: pair.messageId,
+        },
+        data: { isLastMessage: true },
+      }),
+    ]));
   }
 
   async trySendDirect(
     accountId: string,
     targetAccountId: string,
     content: string,
-  ): Promise<ChatDirectResult> {
+  ): Promise<ChatMessageResult> {
     if (content === "") {
       return { errno: ChatErrorNumber.ERROR_RESTRICTED };
     }
@@ -1556,7 +1601,7 @@ export class ChatService {
         });
         return {
           errno: ChatErrorNumber.SUCCESS,
-          message,
+          message: toChatMessageFromDirect(targetAccountId, message),
         };
       } catch (e) {
         ChatService.logUnknownError(e);

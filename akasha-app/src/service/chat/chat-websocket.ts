@@ -49,11 +49,13 @@ export class ChatWebSocket extends ServiceWebSocketBase {
   socketActiveStatus = ActiveStatusNumber.ONLINE;
 
   async onFirstConnection() {
-    this.chatService.setActiveTimestamp(this.accountId, false);
+    //NOTE: OFFLINE -> ONLINE
+    this.chatService.setActiveTimestampExceptInvisible(this.accountId);
   }
 
   async onLastDisconnect() {
-    this.chatService.setActiveTimestamp(this.accountId, false);
+    //NOTE: ONLINE -> OFFLINE
+    this.chatService.setActiveTimestampExceptInvisible(this.accountId);
   }
 
   async initialize(fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[]) {
