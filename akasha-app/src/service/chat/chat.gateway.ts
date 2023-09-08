@@ -518,6 +518,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const result = await this.chatService.leaveRoom(chatId, client.accountId);
     if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId } = result;
+      client.sendPayload(builder.makeLeaveRoomResult(result.errno, chatId));
       void this.server.unicast(
         client.accountId,
         builder.makeRemoveRoom(chatId),
@@ -535,6 +536,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
           ["member", accountId],
         ]).toString(),
       );
+
+      //NOTE: Already sent
+      return undefined;
     }
 
     return builder.makeLeaveRoomResult(result.errno, chatId);
@@ -902,7 +906,11 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const result = await this.chatService.removeRoom(chatId, client.accountId);
     if (result.errno === ChatErrorNumber.SUCCESS) {
       const { chatId, accountId } = result;
+      client.sendPayload(builder.makeDestroyRoomResult(result.errno, chatId));
       void this.server.unicast(accountId, builder.makeRemoveRoom(chatId));
+
+      //NOTE: Already sent
+      return undefined;
     }
 
     return builder.makeDestroyRoomResult(result.errno, chatId);
