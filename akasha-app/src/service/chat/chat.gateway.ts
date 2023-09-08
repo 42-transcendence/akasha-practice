@@ -221,6 +221,9 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if ((modifyFlags & FriendModifyFlags.MODIFY_ACTIVE_FLAGS) !== 0) {
       activeFlags = payload.read1();
     }
+    if (groupName === undefined && activeFlags === undefined) {
+      throw new PacketHackException(`Illegal modifyFlags [${modifyFlags}]`);
+    }
 
     const result = await this.chatService.modifyFriend(
       client.accountId,
@@ -652,6 +655,14 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       if (limit == 0 || limit > MAX_CHAT_MEMBER_CAPACITY) {
         throw new PacketHackException(`Illegal limit [${limit}]`);
       }
+    }
+    if (
+      title === undefined &&
+      modeFlags === undefined &&
+      password === undefined &&
+      limit === undefined
+    ) {
+      throw new PacketHackException(`Illegal modifyFlags [${modifyFlags}]`);
     }
 
     const result = await this.chatService.updateRoom(chatId, client.accountId, {

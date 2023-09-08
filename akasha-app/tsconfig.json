@@ -14,8 +14,8 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": false,
     "paths": {
-      "@/*": ["./src/*"],
-      "@common/*": ["./src/_common/*"]
+      "@common/*": ["./src/_common/*"],
+      "@/*": ["./src/*"]
     },
     
     /* Type Checking */
