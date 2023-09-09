@@ -53,7 +53,7 @@ export type DirectSchema = {
   fetchedMessageId: string | null;
 };
 
-function getRoomDB(chatId: string): Promise<IDBDatabase> {
+function getDB(chatId: string): Promise<IDBDatabase> {
   return IDBCP.getOrOpen(`${DB_NAME_PREFIX}chat-${chatId}`, {
     onUpgradeNeeded(db: IDBDatabase) {
       try {
@@ -80,43 +80,12 @@ function getRoomDB(chatId: string): Promise<IDBDatabase> {
   });
 }
 
-function removeRoomDB(chatId: string): Promise<boolean> {
+function removeDB(chatId: string): Promise<boolean> {
   return IDBCP.delete(`${DB_NAME_PREFIX}chat-${chatId}`);
 }
 
 export function makeDirectChatKey(accountId: string, targetId: string): string {
   return `${accountId}_${targetId}`;
-}
-
-function getDirectDB(
-  accountId: string,
-  targetId: string
-): Promise<IDBDatabase> {
-  return IDBCP.getOrOpen(
-    `${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`,
-    {
-      onUpgradeNeeded(db: IDBDatabase) {
-        try {
-          db.deleteObjectStore("messages");
-        } catch {
-          //NOTE: ignore
-        }
-        const messages = db.createObjectStore("messages", {
-          keyPath: "id",
-        });
-        // accountId
-        // content
-        // messageType
-        messages.createIndex("timestamp", "timestamp", { unique: false });
-      },
-    }
-  );
-}
-
-function removeDirectDB(accountId: string, targetId: string): Promise<boolean> {
-  return IDBCP.delete(
-    `${DB_NAME_PREFIX}chat-${makeDirectChatKey(accountId, targetId)}`
-  );
 }
 
 export type MemberSchema = {
@@ -163,7 +132,7 @@ export class ChatStore {
           } satisfies RoomSchema);
 
           roomAdd.onsuccess = () =>
-            getRoomDB(chatId)
+            getDB(chatId)
               .then(() => resolve(true))
               .catch(() => resolve(false));
         } else {
@@ -211,7 +180,7 @@ export class ChatStore {
             const roomDelete = rooms.delete(chatId);
 
             roomDelete.onsuccess = () =>
-              removeRoomDB(chatId)
+              removeDB(chatId)
                 .then(() => resolve(true))
                 .catch(() => resolve(false));
           }
@@ -341,7 +310,7 @@ export class ChatStore {
     chatId: string,
     member: MemberSchema
   ): Promise<boolean> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["members"], "readwrite");
       tx.onerror = () => resolve(false);
@@ -357,7 +326,7 @@ export class ChatStore {
     chatId: string,
     accountId: string
   ): Promise<boolean> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["members"], "readwrite");
       tx.onerror = () => resolve(false);
@@ -372,7 +341,7 @@ export class ChatStore {
   static async getMemberDictionary(
     chatId: string
   ): Promise<Map<string, MemberSchema>> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["members"], "readonly");
       tx.onerror = () => reject(new Error());
@@ -395,7 +364,7 @@ export class ChatStore {
     chatId: string,
     accountId: string
   ): Promise<MemberSchema | null> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["members"], "readonly");
       tx.onerror = () => resolve(null);
@@ -436,7 +405,7 @@ export class ChatStore {
   }
 
   static async truncateMember(chatId: string): Promise<boolean> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["members"], "readwrite");
       tx.onerror = () => resolve(false);
@@ -455,7 +424,7 @@ export class ChatStore {
     chatId: string,
     message: MessageSchema
   ): Promise<boolean> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["messages"], "readwrite");
       tx.onerror = () => resolve(false);
@@ -471,7 +440,7 @@ export class ChatStore {
     chatId: string,
     messageList: MessageSchema[]
   ): Promise<boolean> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve) => {
       const tx = db.transaction(["messages"], "readwrite");
       tx.onerror = () => resolve(false);
@@ -496,7 +465,7 @@ export class ChatStore {
   }
 
   static async getLatestMessage(chatId: string): Promise<MessageSchema | null> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
       tx.onerror = () => reject(new Error());
@@ -522,7 +491,7 @@ export class ChatStore {
     chatId: string,
     messageId: string
   ): Promise<number> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
       tx.onerror = () => reject(new Error());
@@ -552,7 +521,7 @@ export class ChatStore {
     messageId: string,
     limit?: number | undefined
   ): Promise<MessageSchema[]> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
       tx.onerror = () => reject(new Error());
@@ -631,7 +600,7 @@ export class ChatStore {
   }
 
   static async getAllMessages(chatId: string): Promise<MessageSchema[]> {
-    const db = await getRoomDB(chatId);
+    const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
       tx.onerror = () => reject(new Error());
@@ -678,7 +647,7 @@ export class ChatStore {
       } satisfies DirectSchema);
 
       directAdd.onsuccess = () =>
-        getDirectDB(accountId, targetId)
+        getDB(makeDirectChatKey(accountId, targetId))
           .then(() => resolve(true))
           .catch(() => resolve(false));
     });
@@ -697,7 +666,7 @@ export class ChatStore {
       const directDelete = directs.delete([accountId, targetId]);
 
       directDelete.onsuccess = () =>
-        removeDirectDB(accountId, targetId)
+        removeDB(makeDirectChatKey(accountId, targetId))
           .then(() => resolve(true))
           .catch(() => resolve(false));
     });
@@ -719,7 +688,8 @@ export class ChatStore {
   }
 
   static async getDirectFetchedMessageId(
-    chatId: string
+    accountId: string,
+    targetId: string
   ): Promise<string | null> {
     const db = await getMetadataDB();
     return new Promise((resolve, reject) => {
@@ -727,7 +697,7 @@ export class ChatStore {
       tx.onerror = () => reject(new Error());
 
       const directs = tx.objectStore("directs");
-      const directGet = directs.get(chatId);
+      const directGet = directs.get([accountId, targetId]);
       directGet.onsuccess = () => {
         const direct = directGet.result as DirectSchema | undefined;
         if (direct !== undefined) {
@@ -740,7 +710,8 @@ export class ChatStore {
   }
 
   static async setDirectFetchedMessageId(
-    chatId: string,
+    accountId: string,
+    targetId: string,
     fetchedMessageId: string
   ): Promise<void> {
     const db = await getMetadataDB();
@@ -749,7 +720,7 @@ export class ChatStore {
       tx.onerror = () => reject(new Error());
 
       const directs = tx.objectStore("directs");
-      const directGet = directs.get(chatId);
+      const directGet = directs.get([accountId, targetId]);
       directGet.onsuccess = () => {
         const direct = directGet.result as DirectSchema | undefined;
         if (direct !== undefined) {

@@ -91,13 +91,13 @@ export class ChatWebSocket extends ServiceWebSocketBase {
     );
     const directMessageMap = new Map<string, ChatMessageEntry[]>();
     for (const directRoom of directRoomList) {
-      const chatId = directRoom.targetAccountId;
+      const targetAccountId = directRoom.targetAccountId;
       directMessageMap.set(
-        chatId,
+        targetAccountId,
         await this.chatService.loadDirectMessagesAfter(
           this.accountId,
-          chatId,
-          fetchedMessageIdMapDirect.get(chatId),
+          targetAccountId,
+          fetchedMessageIdMapDirect.get(targetAccountId),
         ),
       );
     }

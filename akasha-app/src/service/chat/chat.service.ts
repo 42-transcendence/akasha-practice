@@ -686,6 +686,7 @@ export class ChatService {
           ],
         },
       });
+
       const targetAccountIdSet = new Set<string>(
         rooms.map((e) =>
           accountId === e.sourceAccountId
@@ -693,6 +694,7 @@ export class ChatService {
             : e.sourceAccountId,
         ),
       );
+
       const result = new Array<ChatDirectEntry>();
       for (const targetAccountId of targetAccountIdSet) {
         const message = await tx.chatDirect.findFirst({
@@ -707,6 +709,7 @@ export class ChatService {
         const lastMessageId = message?.id ?? null;
         result.push({ targetAccountId, lastMessageId });
       }
+
       return result;
     });
   }
@@ -824,7 +827,12 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans };
       }
 
-      return await this.insertChatMember(tx, chatId, accountId, RoleNumber.USER);
+      return await this.insertChatMember(
+        tx,
+        chatId,
+        accountId,
+        RoleNumber.USER,
+      );
     });
   }
 
