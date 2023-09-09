@@ -166,8 +166,9 @@ export class WebSocketRegistry {
             }
           };
           if (data instanceof Promise) {
-            data.then(sendHandshake).catch(() => {
+            data.then(sendHandshake).catch((e) => {
               //NOTE: do not handle error
+              throw e;
             });
           } else {
             sendHandshake(data);

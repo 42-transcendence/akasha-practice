@@ -128,8 +128,9 @@ export function useWebSocket(
       }
     };
     if (response instanceof Promise) {
-      response.then(sendResponse).catch(() => {
+      response.then(sendResponse).catch((e) => {
         //NOTE: do not handle error
+        throw e;
       });
     } else {
       sendResponse(response);
