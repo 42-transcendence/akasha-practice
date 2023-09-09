@@ -42,10 +42,9 @@ export class ProfileController {
 
   @Get("public/:targetId")
   async getPublicProfile(
-    @Auth() auth: AuthPayload,
     @Param("targetId", ParseUUIDPipe) targetId: string,
   ): Promise<AccountProfilePublicPayload> {
-    return await this.profileService.getPublicProfile(auth, targetId);
+    return await this.profileService.getPublicProfile(targetId);
   }
 
   @Get("protected/:targetId")
@@ -63,6 +62,11 @@ export class ProfileController {
     return await this.profileService.getPrivateProfile(auth);
   }
 
+  @Get("check-nick")
+  async checkNick(@Body() body: NickNameModel): Promise<boolean> {
+    return await this.profileService.checkNick(body.name);
+  }
+
   @Post("nick")
   async addNick(
     @Auth() auth: AuthPayload,
@@ -73,12 +77,10 @@ export class ProfileController {
 
   @Get("lookup")
   async lookup(
-    @Auth() auth: AuthPayload,
     @Query("name", NickNamePipe) name: string,
     @Query("tag", ParseIntPipe) tag: number,
   ): Promise<string> {
     const id: string | null = await this.profileService.lookupIdByNick(
-      auth,
       name,
       tag,
     );
@@ -130,7 +132,7 @@ export class ProfileController {
     return await this.profileService.enableOTP(auth, clientOTP);
   }
 
-  @Post("otp")
+  @Delete("otp")
   async disableOTP(
     @Auth() auth: AuthPayload,
     @Query("otp") clientOTP: string | undefined,

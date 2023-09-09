@@ -92,7 +92,8 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const fetchedMessageIdPairsDirect: ChatRoomChatMessagePairEntry[] =
       payload.readArray(readChatRoomChatMessagePair);
 
-    const init = await client.initialize(
+    const init = await this.chatService.loadInitializePayload(
+      client.accountId,
       fetchedMessageIdPairs,
       fetchedMessageIdPairsDirect,
     );

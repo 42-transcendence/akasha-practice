@@ -292,6 +292,58 @@ export class ChatService {
     );
   }
 
+  async loadInitializePayload(
+    accountId: string,
+    fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[],
+    fetchedMessageIdPairsDirect: ChatRoomChatMessagePairEntry[],
+  ) {
+    const chatRoomList: ChatRoomEntry[] =
+      await this.loadJoinedRoomList(accountId);
+
+    const fetchedMessageIdMap = fetchedMessageIdPairs.reduce(
+      (map, e) => map.set(e.chatId, e.messageId),
+      new Map<string, string>(),
+    );
+    const chatMessageMap = new Map<string, ChatMessageEntry[]>();
+    for (const chatRoom of chatRoomList) {
+      const chatId = chatRoom.id;
+      chatMessageMap.set(
+        chatId,
+        await this.loadMessagesAfter(chatId, fetchedMessageIdMap.get(chatId)),
+      );
+    }
+
+    const directRoomList: ChatDirectEntry[] =
+      await this.loadDirectRoomList(accountId);
+
+    const fetchedMessageIdMapDirect = fetchedMessageIdPairsDirect.reduce(
+      (map, e) => map.set(e.chatId, e.messageId),
+      new Map<string, string>(),
+    );
+    const directMessageMap = new Map<string, ChatMessageEntry[]>();
+    for (const directRoom of directRoomList) {
+      const targetAccountId = directRoom.targetAccountId;
+      directMessageMap.set(
+        targetAccountId,
+        await this.loadDirectMessagesAfter(
+          accountId,
+          targetAccountId,
+          fetchedMessageIdMapDirect.get(targetAccountId),
+        ),
+      );
+    }
+
+    const socialPayload: SocialPayload = await this.loadSocial(accountId);
+
+    return {
+      chatRoomList,
+      chatMessageMap,
+      directRoomList,
+      directMessageMap,
+      socialPayload,
+    };
+  }
+
   async loadSocial(accountId: string): Promise<SocialPayload> {
     const account = await this.prisma.account.findUniqueOrThrow({
       where: { id: accountId },
@@ -1315,7 +1367,7 @@ export class ChatService {
       if (!memberSet.has(accountId)) {
         return { errno: ChatErrorNumber.ERROR_UNJOINED };
       }
-      if (memberSet.size === 1) {
+      if (memberSet.size !== 1) {
         return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 

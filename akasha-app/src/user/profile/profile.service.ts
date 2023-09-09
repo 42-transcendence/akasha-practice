@@ -42,19 +42,15 @@ export class ProfileService {
   ) {}
 
   async getPublicProfile(
-    payload: AuthPayload,
     targetAccountId: string,
   ): Promise<AccountProfilePublicPayload> {
-    if (payload.auth_level === AuthLevel.COMPLETED) {
-      const targetAccount: AccountPublic | null =
-        await this.accounts.findAccountPublic(targetAccountId);
-      if (targetAccount === null) {
-        throw new NotFoundException();
-      }
-
-      return { ...targetAccount };
+    const targetAccount: AccountPublic | null =
+      await this.accounts.findAccountPublic(targetAccountId);
+    if (targetAccount === null) {
+      throw new NotFoundException();
     }
-    throw new ForbiddenException();
+
+    return { ...targetAccount };
   }
 
   async getProtectedProfile(
@@ -133,15 +129,8 @@ export class ProfileService {
     throw new ForbiddenException();
   }
 
-  async lookupIdByNick(
-    payload: AuthPayload,
-    name: string,
-    tag: number,
-  ): Promise<string | null> {
-    if (payload.auth_level === AuthLevel.COMPLETED) {
-      return await this.accounts.findAccountIdByNick(name, tag);
-    }
-    throw new ForbiddenException();
+  async lookupIdByNick(name: string, tag: number): Promise<string | null> {
+    return await this.accounts.findAccountIdByNick(name, tag);
   }
 
   async getInertOTP(payload: AuthPayload): Promise<OTPSecret> {
@@ -221,12 +210,20 @@ export class ProfileService {
     return chatActiveStatus;
   }
 
+  async checkNick(name: string): Promise<boolean> {
+    if (!NICK_NAME_REGEX.test(name)) {
+      return false;
+    }
+
+    return true;
+  }
+
   async registerNick(
     payload: AuthPayload,
     name: string,
   ): Promise<AccountNickNameAndTag> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      if (!NICK_NAME_REGEX.test(name)) {
+      if (!(await this.checkNick(name))) {
         throw new BadRequestException();
       }
 

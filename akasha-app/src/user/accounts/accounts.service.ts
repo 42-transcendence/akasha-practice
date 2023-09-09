@@ -22,6 +22,7 @@ import {
   SecretParamsView,
   isSecretParams,
 } from "@common/auth-payloads";
+import { DEFAULT_SKILL_RATING } from "@common/game-constants";
 
 /// AccountPublic
 const accountPublic = Prisma.validator<Prisma.AccountDefaultArgs>()({
@@ -132,13 +133,11 @@ export class AccountsService {
         changedTimestamp: new Date(),
         activeStatus: ActiveStatus.ONLINE,
         activeTimestamp: new Date(),
-        record: { create: { skillRating: 500 } }, //FIXME: Magic Number
+        record: { create: { skillRating: DEFAULT_SKILL_RATING } },
       },
       include: {
         otpSecret: true,
-        bans: {
-          where: activeAccessBanCondition(),
-        },
+        bans: { where: activeAccessBanCondition() },
       },
     });
   }
@@ -148,9 +147,7 @@ export class AccountsService {
       where: { id },
       include: {
         otpSecret: true,
-        bans: {
-          where: activeAccessBanCondition(),
-        },
+        bans: { where: activeAccessBanCondition() },
       },
     });
   }
@@ -420,7 +417,8 @@ export class AccountsService {
         });
         return changedAccount.avatarKey;
       } else {
-        // 3-B. Expect account to have been updated by `ON DELETE SET NULL`
+        // 3-B. Delete Avatar On Account
+        //NOTE: Expect account to have been updated by `ON DELETE SET DEFAULT`
         return null;
       }
     });

@@ -464,7 +464,10 @@ export class ChatStore {
     });
   }
 
-  static async getLatestMessage(chatId: string): Promise<MessageSchema | null> {
+  static async getLatestMessage(
+    chatId: string,
+    messageType?: number | undefined
+  ): Promise<MessageSchema | null> {
     const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
@@ -479,6 +482,13 @@ export class ChatStore {
         const cursor = messageAllReverseByTimestampCursor.result;
         if (cursor !== null) {
           const message = cursor.value as MessageSchema;
+          if (
+            messageType !== undefined &&
+            message.messageType !== messageType
+          ) {
+            cursor.continue();
+            return;
+          }
           resolve(message);
         } else {
           resolve(null);
@@ -489,7 +499,7 @@ export class ChatStore {
 
   static async countAfterMessage(
     chatId: string,
-    messageId: string
+    messageId: string | null
   ): Promise<number> {
     const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
@@ -497,6 +507,13 @@ export class ChatStore {
       tx.onerror = () => reject(new Error());
 
       const messages = tx.objectStore("messages");
+
+      if (messageId === null) {
+        const messageCount = messages.count();
+        messageCount.onsuccess = () => resolve(messageCount.result);
+        return;
+      }
+
       const messageGet = messages.get(messageId);
 
       messageGet.onsuccess = () => {
@@ -599,7 +616,10 @@ export class ChatStore {
     return this.getContinueMessages(true, chatId, messageId, limit);
   }
 
-  static async getAllMessages(chatId: string): Promise<MessageSchema[]> {
+  static async getAllMessages(
+    chatId: string,
+    limit?: number | undefined
+  ): Promise<MessageSchema[]> {
     const db = await getDB(chatId);
     return new Promise((resolve, reject) => {
       const tx = db.transaction(["messages"], "readonly");
@@ -615,7 +635,10 @@ export class ChatStore {
       const messageAllByTimestamp = new Array<MessageSchema>();
       messageAllByTimestampCursor.onsuccess = () => {
         const cursor = messageAllByTimestampCursor.result;
-        if (cursor !== null) {
+        if (
+          cursor !== null &&
+          (limit === undefined || messageAllByTimestamp.length < limit)
+        ) {
           const message = cursor.value as MessageSchema;
           messageAllByTimestamp.push(message);
           cursor.continue();
