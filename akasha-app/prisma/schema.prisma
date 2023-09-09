@@ -302,6 +302,8 @@ model ChatDirect {
   timestamp            DateTime    @default(now())
   isLastMessage        Boolean     @default(false)
 
+  @@index(sourceAccountId)
+  @@index(destinationAccountId)
   @@index([sourceAccountId, destinationAccountId])
   @@index([timestamp(ops: TimestampMinMaxOps)], type: Brin)
   @@index(isLastMessage)

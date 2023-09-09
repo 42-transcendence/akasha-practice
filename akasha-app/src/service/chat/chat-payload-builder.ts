@@ -22,6 +22,8 @@ import {
   writeEnemy,
   writeFriend,
   writeSocialPayload,
+  writeChatDirect,
+  ChatDirectEntry,
 } from "@common/chat-payloads";
 import { BanSummaryPayload } from "@common/profile-payloads";
 import { RoleNumber } from "@common/generated/types";
@@ -30,12 +32,20 @@ import { ByteBuffer, NULL_UUID, assert } from "akasha-lib";
 export function makeInitializePayload(
   chatRoomList: ChatRoomEntry[],
   chatMessageMap: Map<string, ChatMessageEntry[]>,
+  directRoomList: ChatDirectEntry[],
+  directMessageMap: Map<string, ChatMessageEntry[]>,
   socialPayload: SocialPayload,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.INITIALIZE);
   buf.writeArray(chatRoomList, writeChatRoom);
   buf.writeLength(chatMessageMap.size);
   for (const [key, val] of chatMessageMap) {
+    buf.writeUUID(key);
+    buf.writeArray(val, writeChatMessage);
+  }
+  buf.writeArray(directRoomList, writeChatDirect);
+  buf.writeLength(directMessageMap.size);
+  for (const [key, val] of directMessageMap) {
     buf.writeUUID(key);
     buf.writeArray(val, writeChatMessage);
   }
@@ -382,18 +392,6 @@ export function makeDestroyRoomResult(errno: ChatErrorNumber, chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DESTROY_ROOM_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
-  return buf;
-}
-
-export function makeDirectsList(
-  targetAccountId: string,
-  messages: ChatMessageEntry[],
-  lastMessageId: string | null,
-) {
-  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.DIRECTS_LIST);
-  buf.writeUUID(targetAccountId);
-  buf.writeArray(messages, writeChatMessage);
-  buf.writeNullable(lastMessageId, buf.writeUUID, NULL_UUID);
   return buf;
 }
 

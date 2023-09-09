@@ -89,12 +89,19 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
 
     const fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[] =
       payload.readArray(readChatRoomChatMessagePair);
+    const fetchedMessageIdPairsDirect: ChatRoomChatMessagePairEntry[] =
+      payload.readArray(readChatRoomChatMessagePair);
 
-    const init = await client.initialize(fetchedMessageIdPairs);
+    const init = await client.initialize(
+      fetchedMessageIdPairs,
+      fetchedMessageIdPairsDirect,
+    );
 
     return builder.makeInitializePayload(
       init.chatRoomList,
       init.chatMessageMap,
+      init.directRoomList,
+      init.directMessageMap,
       init.socialPayload,
     );
   }
@@ -906,26 +913,6 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     }
 
     return builder.makeDestroyRoomResult(result.errno, chatId);
-  }
-
-  @SubscribeMessage(ChatServerOpcode.LOAD_DIRECTS)
-  async handleLoadDirects(client: ChatWebSocket, payload: ByteBuffer) {
-    this.assertClient(client.handshakeState, "Invalid state");
-
-    const targetAccountId = payload.readUUID();
-    const fetchedMessageId = payload.readNullable(payload.readUUID, NULL_UUID);
-
-    //TODO: cache
-    const messages = await this.chatService.loadDirectsAfter(
-      client.accountId,
-      targetAccountId,
-      fetchedMessageId ?? undefined,
-    );
-    const lastMessageId = await this.chatService.loadLastDirectCursor(
-      client.accountId,
-      targetAccountId,
-    );
-    return builder.makeDirectsList(targetAccountId, messages, lastMessageId);
   }
 
   @SubscribeMessage(ChatServerOpcode.SYNC_CURSOR_DIRECT)

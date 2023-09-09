@@ -63,7 +63,7 @@ export class ProfileService {
   ): Promise<AccountProfileProtectedPayload> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
       if (payload.user_id === targetAccountId) {
-        return this.getPrivateProfile(payload);
+        return await this.getPrivateProfile(payload);
       }
 
       const activeFlags = await this.accounts.findFriendActiveFlags(
@@ -139,7 +139,7 @@ export class ProfileService {
     tag: number,
   ): Promise<string | null> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      return this.accounts.findAccountIdByNick(name, tag);
+      return await this.accounts.findAccountIdByNick(name, tag);
     }
     throw new ForbiddenException();
   }
@@ -169,14 +169,20 @@ export class ProfileService {
 
   async enableOTP(payload: AuthPayload, clientOTP: string): Promise<void> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      return this.accounts.updateOTPSecretAtomic(payload.user_id, clientOTP);
+      return await this.accounts.updateOTPSecretAtomic(
+        payload.user_id,
+        clientOTP,
+      );
     }
     throw new ForbiddenException();
   }
 
   async disableOTP(payload: AuthPayload, clientOTP: string): Promise<void> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
-      return this.accounts.deleteOTPSecretAtomic(payload.user_id, clientOTP);
+      return await this.accounts.deleteOTPSecretAtomic(
+        payload.user_id,
+        clientOTP,
+      );
     }
     throw new ForbiddenException();
   }

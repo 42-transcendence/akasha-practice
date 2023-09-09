@@ -1,6 +1,7 @@
 import {
   BanCategoryNumber,
   ChatBanEntity,
+  ChatDirectEntity,
   ChatEntity,
   ChatMemberEntity,
   ChatMessageEntity,
@@ -327,4 +328,21 @@ export function writeChatBanDetail(obj: ChatBanDetailEntry, buf: ByteBuffer) {
   buf.writeString(obj.memo);
   buf.writeNullable(obj.expireTimestamp, buf.writeDate);
   buf.writeDate(obj.bannedTimestamp);
+}
+
+/// ChatDirectEntry
+export type ChatDirectEntry = {
+  targetAccountId: ChatDirectEntity["destinationAccountId"];
+  lastMessageId: ChatDirectEntity["id"] | null;
+};
+
+export function readChatDirect(buf: ByteBuffer): ChatDirectEntry {
+  const targetAccountId = buf.readUUID();
+  const lastMessageId = buf.readNullable(buf.readUUID, NULL_UUID);
+  return { targetAccountId, lastMessageId };
+}
+
+export function writeChatDirect(obj: ChatDirectEntry, buf: ByteBuffer) {
+  buf.writeUUID(obj.targetAccountId);
+  buf.writeNullable(obj.lastMessageId, buf.writeUUID, NULL_UUID);
 }

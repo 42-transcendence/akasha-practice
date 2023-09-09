@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/unbound-method */
-import { ByteBuffer, NULL_UUID } from "akasha-lib";
+import { ByteBuffer } from "akasha-lib";
 import type { ChatRoomChatMessagePairEntry } from "@common/chat-payloads";
 import {
   writeChatRoomChatMessagePair,
@@ -12,9 +12,11 @@ import type { ActiveStatusNumber, RoleNumber } from "@common/generated/types";
 
 export function makeHandshakePayload(
   fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[],
+  fetchedMessageIdPairsDirect: ChatRoomChatMessagePairEntry[],
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.HANDSHAKE);
   buf.writeArray(fetchedMessageIdPairs, writeChatRoomChatMessagePair);
+  buf.writeArray(fetchedMessageIdPairsDirect, writeChatRoomChatMessagePair);
   return buf;
 }
 
@@ -272,16 +274,6 @@ export function makeUnbanMemberRequest(banId: string) {
 export function makeDestroyRoomRequest(chatId: string) {
   const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.DESTROY_ROOM);
   buf.writeUUID(chatId);
-  return buf;
-}
-
-export function makeLoadDirectsRequest(
-  targetAccountId: string,
-  fetchedMessageId: string | null,
-) {
-  const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.LOAD_DIRECTS);
-  buf.writeUUID(targetAccountId);
-  buf.writeNullable(fetchedMessageId, buf.writeUUID, NULL_UUID);
   return buf;
 }
 

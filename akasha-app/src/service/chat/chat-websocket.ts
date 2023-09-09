@@ -2,6 +2,7 @@ import { assert } from "akasha-lib";
 import { ServiceWebSocketBase } from "@/service/service-socket";
 import { ChatService } from "./chat.service";
 import {
+  ChatDirectEntry,
   ChatMessageEntry,
   ChatRoomChatMessagePairEntry,
   ChatRoomEntry,
@@ -58,7 +59,10 @@ export class ChatWebSocket extends ServiceWebSocketBase {
     this.chatService.setActiveTimestampExceptInvisible(this.accountId);
   }
 
-  async initialize(fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[]) {
+  async initialize(
+    fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[],
+    fetchedMessageIdPairsDirect: ChatRoomChatMessagePairEntry[],
+  ) {
     const chatRoomList: ChatRoomEntry[] =
       await this.chatService.loadJoinedRoomList(this.accountId);
 
@@ -78,9 +82,35 @@ export class ChatWebSocket extends ServiceWebSocketBase {
       );
     }
 
+    const directRoomList: ChatDirectEntry[] =
+      await this.chatService.loadDirectRoomList(this.accountId);
+
+    const fetchedMessageIdMapDirect = fetchedMessageIdPairsDirect.reduce(
+      (map, e) => map.set(e.chatId, e.messageId),
+      new Map<string, string>(),
+    );
+    const directMessageMap = new Map<string, ChatMessageEntry[]>();
+    for (const directRoom of directRoomList) {
+      const chatId = directRoom.targetAccountId;
+      directMessageMap.set(
+        chatId,
+        await this.chatService.loadDirectMessagesAfter(
+          this.accountId,
+          chatId,
+          fetchedMessageIdMapDirect.get(chatId),
+        ),
+      );
+    }
+
     const socialPayload: SocialPayload = await this.chatService.loadSocial(
       this.accountId,
     );
-    return { chatRoomList, chatMessageMap, socialPayload };
+    return {
+      chatRoomList,
+      chatMessageMap,
+      directRoomList,
+      directMessageMap,
+      socialPayload,
+    };
   }
 }

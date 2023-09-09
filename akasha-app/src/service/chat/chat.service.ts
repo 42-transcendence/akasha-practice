@@ -17,6 +17,7 @@ import {
   ChatErrorNumber,
   SocialErrorNumber,
   SocialPayload,
+  ChatDirectEntry,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import {
@@ -285,40 +286,10 @@ export class ChatService {
   }
 
   async setActiveTimestampExceptInvisible(accountId: string) {
-    return this.accounts.updateActiveTimestamp(
+    return await this.accounts.updateActiveTimestamp(
       accountId,
       ActiveStatus.INVISIBLE,
     );
-  }
-
-  async loadJoinedRoomList(accountId: string): Promise<ChatRoomEntry[]> {
-    const members = await this.prisma.chatMember.findMany({
-      where: { accountId },
-      select: {
-        chat: chatRoomForEntry,
-        lastMessageId: true,
-      },
-    });
-
-    return members.map((e) => toChatRoomEntry(e.chat, e.lastMessageId));
-  }
-
-  async loadMessagesAfter(
-    chatId: string,
-    lastMessageId: string | undefined,
-  ): Promise<ChatMessageEntry[]> {
-    const messages = await this.prisma.chatMessage.findMany({
-      where: { chatId },
-      orderBy: { timestamp: Prisma.SortOrder.asc },
-      ...(lastMessageId !== undefined
-        ? {
-            skip: 1,
-            cursor: { id: lastMessageId },
-          }
-        : undefined),
-    });
-
-    return messages.map((e) => toChatMessage(e));
   }
 
   async loadSocial(accountId: string): Promise<SocialPayload> {
@@ -434,7 +405,11 @@ export class ChatService {
     accountId: string,
     friendAccountId: string,
   ): Promise<
-    [SocialErrorNumber, FriendEntry | undefined, FriendEntry | undefined]
+    [
+      errno: SocialErrorNumber,
+      forward: FriendEntry | undefined,
+      reverse: FriendEntry | undefined,
+    ]
   > {
     //XXX: Prisma가 DELETE RETURNING을 deleteMany에서 지원하지 않았음.
     //XXX: Prisma가 DeleteUniqueIfExists 따위를 지원하지 않았음.
@@ -493,20 +468,18 @@ export class ChatService {
     const account = await tx.account.findUnique({
       where: { id: accountId },
       select: {
-        friends: {
-          select: { friendAccountId: true },
-          where: { friendAccountId },
-        },
-        friendReferences: {
-          select: { accountId: true },
-          where: { accountId: friendAccountId },
+        _count: {
+          select: {
+            friends: { where: { friendAccountId } },
+            friendReferences: { where: { accountId: friendAccountId } },
+          },
         },
       },
     });
     return (
       account !== null &&
-      account.friends.length !== 0 &&
-      account.friendReferences.length !== 0
+      account._count.friends !== 0 &&
+      account._count.friendReferences !== 0
     );
   }
 
@@ -636,19 +609,17 @@ export class ChatService {
     const account = await tx.account.findUnique({
       where: { id: accountId },
       select: {
-        enemies: {
-          select: { enemyAccountId: true },
-          where: { enemyAccountId },
-        },
-        enemyReferences: {
-          select: { accountId: true },
-          where: { accountId: enemyAccountId },
+        _count: {
+          select: {
+            enemies: { where: { enemyAccountId } },
+            enemyReferences: { where: { accountId: enemyAccountId } },
+          },
         },
       },
     });
     return (
       account !== null &&
-      (account.enemies.length !== 0 || account.enemyReferences.length !== 0)
+      (account._count.enemies !== 0 || account._count.enemyReferences !== 0)
     );
   }
 
@@ -669,6 +640,99 @@ export class ChatService {
     const reverses = account.enemyReferences.map((e) => e.accountId);
 
     return new Set<string>([...forwards, ...reverses]);
+  }
+
+  async loadJoinedRoomList(accountId: string): Promise<ChatRoomEntry[]> {
+    const members = await this.prisma.chatMember.findMany({
+      where: { accountId },
+      select: {
+        chat: chatRoomForEntry,
+        lastMessageId: true,
+      },
+    });
+
+    return members.map((e) => toChatRoomEntry(e.chat, e.lastMessageId));
+  }
+
+  async loadMessagesAfter(
+    chatId: string,
+    lastMessageId: string | undefined,
+  ): Promise<ChatMessageEntry[]> {
+    const messages = await this.prisma.chatMessage.findMany({
+      where: { chatId },
+      orderBy: { timestamp: Prisma.SortOrder.asc },
+      ...(lastMessageId !== undefined
+        ? {
+            skip: 1,
+            cursor: { id: lastMessageId },
+          }
+        : undefined),
+    });
+
+    return messages.map((e) => toChatMessage(e));
+  }
+
+  async loadDirectRoomList(accountId: string): Promise<ChatDirectEntry[]> {
+    return this.prisma.$transaction(async (tx) => {
+      const rooms = await tx.chatDirect.groupBy({
+        by: [
+          Prisma.ChatDirectScalarFieldEnum.sourceAccountId,
+          Prisma.ChatDirectScalarFieldEnum.destinationAccountId,
+        ],
+        where: {
+          OR: [
+            { sourceAccountId: accountId },
+            { destinationAccountId: accountId },
+          ],
+        },
+      });
+      const targetAccountIdSet = new Set<string>(
+        rooms.map((e) =>
+          accountId === e.sourceAccountId
+            ? e.destinationAccountId
+            : e.sourceAccountId,
+        ),
+      );
+      const result = new Array<ChatDirectEntry>();
+      for (const targetAccountId of targetAccountIdSet) {
+        const message = await tx.chatDirect.findFirst({
+          where: {
+            sourceAccountId: targetAccountId,
+            destinationAccountId: accountId,
+            isLastMessage: true,
+          },
+          orderBy: { timestamp: Prisma.SortOrder.desc },
+          select: { id: true },
+        });
+        const lastMessageId = message?.id ?? null;
+        result.push({ targetAccountId, lastMessageId });
+      }
+      return result;
+    });
+  }
+
+  async loadDirectMessagesAfter(
+    accountId: string,
+    targetAccountId: string,
+    lastMessageId: string | undefined,
+  ): Promise<ChatMessageEntry[]> {
+    const directs = await this.prisma.chatDirect.findMany({
+      where: {
+        OR: [
+          { sourceAccountId: accountId, destinationAccountId: targetAccountId },
+          { sourceAccountId: targetAccountId, destinationAccountId: accountId },
+        ],
+      },
+      orderBy: { timestamp: Prisma.SortOrder.asc },
+      ...(lastMessageId !== undefined
+        ? {
+            skip: 1,
+            cursor: { id: lastMessageId },
+          }
+        : undefined),
+    });
+
+    return directs.map((e) => toChatMessageFromDirect(targetAccountId, e));
   }
 
   async loadPublicRoomList(): Promise<ChatRoomViewEntry[]> {
@@ -760,7 +824,7 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans };
       }
 
-      return this.insertChatMember(tx, chatId, accountId, RoleNumber.USER);
+      return await this.insertChatMember(tx, chatId, accountId, RoleNumber.USER);
     });
   }
 
@@ -790,7 +854,7 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
-      return this.deleteChatMember(tx, chatId, accountId);
+      return await this.deleteChatMember(tx, chatId, accountId);
     });
   }
 
@@ -856,7 +920,7 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_CHAT_BANNED, bans: null };
       }
 
-      return this.insertChatMember(
+      return await this.insertChatMember(
         tx,
         chatId,
         targetAccountId,
@@ -1502,47 +1566,6 @@ export class ChatService {
     return (
       member !== null && getRoleLevel(member.role) >= getRoleLevel(Role.MANAGER)
     );
-  }
-
-  async loadDirectsAfter(
-    accountId: string,
-    targetAccountId: string,
-    lastMessageId: string | undefined,
-  ): Promise<ChatMessageEntry[]> {
-    const directs = await this.prisma.chatDirect.findMany({
-      where: {
-        OR: [
-          { sourceAccountId: accountId, destinationAccountId: targetAccountId },
-          { sourceAccountId: targetAccountId, destinationAccountId: accountId },
-        ],
-      },
-      orderBy: { timestamp: Prisma.SortOrder.asc },
-      ...(lastMessageId !== undefined
-        ? {
-            skip: 1,
-            cursor: { id: lastMessageId },
-          }
-        : undefined),
-    });
-
-    return directs.map((e) => toChatMessageFromDirect(targetAccountId, e));
-  }
-
-  async loadLastDirectCursor(
-    accountId: string,
-    targetAccountId: string,
-  ): Promise<string | null> {
-    const message = await this.prisma.chatDirect.findFirst({
-      where: {
-        sourceAccountId: targetAccountId,
-        destinationAccountId: accountId,
-        isLastMessage: true,
-      },
-      orderBy: { timestamp: Prisma.SortOrder.desc },
-      select: { id: true },
-    });
-
-    return message?.id ?? null;
   }
 
   async updateLastDirectCursor(

@@ -68,7 +68,7 @@ export class ProfileController {
     @Auth() auth: AuthPayload,
     @Body() body: NickNameModel,
   ): Promise<AccountNickNameAndTag> {
-    return this.profileService.registerNick(auth, body.name);
+    return await this.profileService.registerNick(auth, body.name);
   }
 
   @Get("lookup")
@@ -106,17 +106,17 @@ export class ProfileController {
     )
     file: Express.Multer.File,
   ): Promise<string | null> {
-    return this.profileService.updateAvatar(auth, file.buffer);
+    return await this.profileService.updateAvatar(auth, file.buffer);
   }
 
   @Delete("avatar")
   async removeAvatar(@Auth() auth: AuthPayload): Promise<string | null> {
-    return this.profileService.updateAvatar(auth, null);
+    return await this.profileService.updateAvatar(auth, null);
   }
 
   @Get("otp")
   async getInertOTP(@Auth() auth: AuthPayload): Promise<OTPSecret> {
-    return this.profileService.getInertOTP(auth);
+    return await this.profileService.getInertOTP(auth);
   }
 
   @Post("otp")
@@ -127,7 +127,7 @@ export class ProfileController {
     if (clientOTP === undefined) {
       throw new BadRequestException("Undefined OTP");
     }
-    return this.profileService.enableOTP(auth, clientOTP);
+    return await this.profileService.enableOTP(auth, clientOTP);
   }
 
   @Post("otp")
@@ -138,6 +138,6 @@ export class ProfileController {
     if (clientOTP === undefined) {
       throw new BadRequestException("Undefined OTP");
     }
-    return this.profileService.disableOTP(auth, clientOTP);
+    return await this.profileService.disableOTP(auth, clientOTP);
   }
 }
