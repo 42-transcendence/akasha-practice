@@ -24,6 +24,7 @@ import {
   writeSocialPayload,
   writeChatDirect,
   ChatDirectEntry,
+  ReportErrorNumber,
 } from "@common/chat-payloads";
 import { BanSummaryPayload } from "@common/profile-payloads";
 import { RoleNumber } from "@common/generated/types";
@@ -428,6 +429,16 @@ export function makeSendDirectResult(
   targetAccountId: string,
 ) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.SEND_DIRECT_RESULT);
+  buf.write1(errno);
+  buf.writeUUID(targetAccountId);
+  return buf;
+}
+
+export function makeReportUserResult(
+  errno: ReportErrorNumber,
+  targetAccountId: string,
+) {
+  const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.REPORT_USER_RESULT);
   buf.write1(errno);
   buf.writeUUID(targetAccountId);
   return buf;

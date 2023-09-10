@@ -92,6 +92,8 @@ model Account {
   enemyReferences       Enemy[]           @relation("EnemyReference")
   bans                  Ban[]             @relation("BanList")
   managedBanTargets     Ban[]             @relation("ManagedBanTarget")
+  reports               Report[]          @relation("ReportList")
+  reportReferences      Report[]          @relation("ReportReference")
   // Chat
   chatRooms             ChatMember[]
   chatMessages          ChatMessage[]
@@ -225,6 +227,19 @@ model Ban {
   bannedTimestamp  DateTime    @default(now())
 
   @@map("bans")
+  @@schema("services")
+}
+
+model Report {
+  id               String   @id @default(nanoid()) @db.VarChar(21)
+  account          Account  @relation("ReportList", fields: [accountId], references: [id], onDelete: Cascade)
+  accountId        String   @db.Uuid
+  targetAccount    Account  @relation("ReportReference", fields: [targetAccountId], references: [id], onDelete: Cascade)
+  targetAccountId  String   @db.Uuid
+  reason           String
+  createdTimestamp DateTime @default(now())
+
+  @@map("reports")
   @@schema("services")
 }
 

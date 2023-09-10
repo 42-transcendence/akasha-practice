@@ -295,3 +295,10 @@ export function makeSendDirectRequest(
   buf.writeString(content);
   return buf;
 }
+
+export function makeReportUser(targetAccountId: string, reason: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.REPORT_USER);
+  buf.writeUUID(targetAccountId);
+  buf.writeString(reason);
+  return buf;
+}

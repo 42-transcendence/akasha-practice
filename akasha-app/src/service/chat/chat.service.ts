@@ -18,6 +18,7 @@ import {
   SocialErrorNumber,
   SocialPayload,
   ChatDirectEntry,
+  ReportErrorNumber,
 } from "@common/chat-payloads";
 import { AccountsService } from "@/user/accounts/accounts.service";
 import {
@@ -240,6 +241,15 @@ type ChatBanResult =
       ban: ChatBanSummaryEntry;
     }
   | ChatRoomFailed;
+
+/// ReportResult
+type ReportResult =
+  | {
+      errno: ReportErrorNumber.SUCCESS;
+      reportId: string;
+      targetAccountId: string;
+    }
+  | { errno: Exclude<ReportErrorNumber, ReportErrorNumber.SUCCESS> };
 
 @Injectable()
 export class ChatService {
@@ -751,8 +761,16 @@ export class ChatService {
       for (const targetAccountId of targetAccountIdSet) {
         const message = await tx.chatDirect.findFirst({
           where: {
-            sourceAccountId: targetAccountId,
-            destinationAccountId: accountId,
+            OR: [
+              {
+                sourceAccountId: targetAccountId,
+                destinationAccountId: accountId,
+              },
+              {
+                sourceAccountId: accountId,
+                destinationAccountId: targetAccountId,
+              },
+            ],
             isLastMessage: true,
           },
           orderBy: { timestamp: Prisma.SortOrder.desc },
@@ -1041,7 +1059,7 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
-      const ban = await this.prisma.chatBan.create({
+      const ban = await tx.chatBan.create({
         data: {
           chatId,
           accountId: targetAccountId,
@@ -1112,7 +1130,7 @@ export class ChatService {
         return { errno: ChatErrorNumber.ERROR_RESTRICTED };
       }
 
-      const ban = await this.prisma.chatBan.create({
+      const ban = await tx.chatBan.create({
         data: {
           chatId,
           accountId: targetAccountId,
@@ -1479,7 +1497,7 @@ export class ChatService {
     return memberSet;
   }
 
-  async prepareInspect(
+  private async prepareInspect(
     tx: PrismaTransactionClient,
     accountId: string,
   ): Promise<ChatRoomFailed | undefined> {
@@ -1643,16 +1661,32 @@ export class ChatService {
     void (await this.prisma.$transaction([
       this.prisma.chatDirect.updateMany({
         where: {
-          sourceAccountId: pair.chatId,
-          destinationAccountId: accountId,
+          OR: [
+            {
+              sourceAccountId: pair.chatId,
+              destinationAccountId: accountId,
+            },
+            {
+              sourceAccountId: accountId,
+              destinationAccountId: pair.chatId,
+            },
+          ],
           isLastMessage: true,
         },
         data: { isLastMessage: false },
       }),
       this.prisma.chatDirect.updateMany({
         where: {
-          sourceAccountId: pair.chatId,
-          destinationAccountId: accountId,
+          OR: [
+            {
+              sourceAccountId: pair.chatId,
+              destinationAccountId: accountId,
+            },
+            {
+              sourceAccountId: accountId,
+              destinationAccountId: pair.chatId,
+            },
+          ],
           id: pair.messageId,
         },
         data: { isLastMessage: true },
@@ -1702,6 +1736,27 @@ export class ChatService {
         ChatService.logUnknownError(e);
         return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
+    });
+  }
+
+  async reportUser(
+    accountId: string,
+    targetAccountId: string,
+    reason: string,
+  ): Promise<ReportResult> {
+    return this.prisma.$transaction(async (tx) => {
+      const report = await tx.report.create({
+        data: {
+          accountId,
+          targetAccountId,
+          reason,
+        },
+      });
+      return {
+        errno: ReportErrorNumber.SUCCESS,
+        reportId: report.id,
+        targetAccountId: report.targetAccountId,
+      };
     });
   }
 }

@@ -15,6 +15,7 @@ import {
   SocialErrorNumber,
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
+  ReportErrorNumber,
 } from "@common/chat-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
@@ -955,5 +956,25 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     }
 
     return builder.makeSendMessageResult(result.errno, targetAccountId);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.REPORT_USER)
+  async handleReportUser(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const targetAccountId = payload.readUUID();
+    const reason = payload.readString();
+
+    const result = await this.chatService.reportUser(
+      client.accountId,
+      targetAccountId,
+      reason,
+    );
+    if (result.errno === ReportErrorNumber.SUCCESS) {
+      // const { reportId, targetAccountId } = result;
+      //TODO: 신고 관리 및 운영 기능
+    }
+
+    return builder.makeReportUserResult(result.errno, targetAccountId);
   }
 }

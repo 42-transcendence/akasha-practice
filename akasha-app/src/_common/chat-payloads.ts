@@ -346,3 +346,13 @@ export function writeChatDirect(obj: ChatDirectEntry, buf: ByteBuffer) {
   buf.writeUUID(obj.targetAccountId);
   buf.writeNullable(obj.lastMessageId, buf.writeUUID, NULL_UUID);
 }
+
+/// ReportErrorNumber
+export const enum ReportErrorNumber {
+  SUCCESS,
+  ERROR_NOT_BUSINESS_HOURS,
+  ERROR_UNDER_MAINTENANCE,
+  ERROR_EXCEED_DAILY,
+  ERROR_REFUSED,
+  ERROR_UNKNOWN,
+}
