@@ -1,16 +1,14 @@
-import {
-  SubscribeMessage,
-  WebSocketGateway,
-  WebSocketServer,
-} from "@nestjs/websockets";
+import { SubscribeMessage, WebSocketGateway } from "@nestjs/websockets";
 import { ByteBuffer } from "akasha-lib";
-import { ServerOptions, WebSocketServer as Server } from "ws";
+import { ServerOptions } from "ws";
 import { Logger } from "@nestjs/common";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
 import { GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
 import { GameServerOpcode, GameClientOpcode } from "@common/game-opcodes";
+import { GameServer } from "./game.server";
+import { PacketHackException } from "@/service/packet-hack-exception";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",
@@ -18,12 +16,11 @@ import { GameServerOpcode, GameClientOpcode } from "@common/game-opcodes";
   WebSocket: GameWebSocket,
 })
 export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
-  @WebSocketServer()
-  private readonly server!: Server;
-
-  constructor(private readonly gameService: GameService) {
+  constructor(
+    private readonly server: GameServer,
+    private readonly gameService: GameService,
+  ) {
     super();
-    void this.server;
   }
 
   override async handleServiceConnection(client: GameWebSocket): Promise<void> {
@@ -31,7 +28,7 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
       `Connection GameWebSocket[${client.remoteAddress} -> ${client.remoteURL}]`,
     );
 
-    client.injectGameService(this.gameService);
+    client.injectProviders(this.server, this.gameService);
   }
 
   override async handleServiceDisconnect(client: GameWebSocket): Promise<void> {
@@ -40,8 +37,15 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     );
   }
 
+  private assertClient(value: unknown, message: string): asserts value {
+    if (!value) {
+      throw new PacketHackException(message);
+    }
+  }
+
   @SubscribeMessage(GameServerOpcode.HANDSHAKE)
   handleHandshake(client: GameWebSocket, payload: ByteBuffer): ByteBuffer {
+    this.assertClient(!client.handshakeState, "Duplicate handshake");
     void client, payload;
     const buf = ByteBuffer.createWithOpcode(GameClientOpcode.INITIALIZE);
     buf.writeDate(new Date());

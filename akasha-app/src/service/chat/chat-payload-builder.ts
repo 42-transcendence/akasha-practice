@@ -347,10 +347,15 @@ export function makeHandoverRoomOwnerResult(
   return buf;
 }
 
-export function makeKickMemberResult(errno: ChatErrorNumber, chatId: string) {
+export function makeKickMemberResult(
+  errno: ChatErrorNumber,
+  chatId: string,
+  targetAccountId: string,
+) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.KICK_MEMBER_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
+  buf.writeUUID(targetAccountId);
   return buf;
 }
 
@@ -361,10 +366,15 @@ export function makeKickNotify(chatId: string, ban: ChatBanSummaryEntry) {
   return buf;
 }
 
-export function makeMuteMemberResult(errno: ChatErrorNumber, chatId: string) {
+export function makeMuteMemberResult(
+  errno: ChatErrorNumber,
+  chatId: string,
+  targetAccountId: string,
+) {
   const buf = ByteBuffer.createWithOpcode(ChatClientOpcode.MUTE_MEMBER_RESULT);
   buf.write1(errno);
   buf.writeUUID(chatId);
+  buf.writeUUID(targetAccountId);
   return buf;
 }
 

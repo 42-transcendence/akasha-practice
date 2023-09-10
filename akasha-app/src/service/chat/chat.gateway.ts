@@ -816,7 +816,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       );
     }
 
-    return builder.makeKickMemberResult(result.errno, chatId);
+    return builder.makeKickMemberResult(result.errno, chatId, targetAccountId);
   }
 
   @SubscribeMessage(ChatServerOpcode.MUTE_MEMBER)
@@ -853,7 +853,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       );
     }
 
-    return builder.makeMuteMemberResult(result.errno, chatId);
+    return builder.makeMuteMemberResult(result.errno, chatId, targetAccountId);
   }
 
   @SubscribeMessage(ChatServerOpcode.BAN_LIST_REQUEST)

@@ -1,21 +1,52 @@
 import { assert } from "akasha-lib";
 import { ServiceWebSocketBase } from "@/service/service-socket";
 import { GameService } from "./game.service";
+import { GameServer } from "./game.server";
+import { ActiveStatusNumber } from "@common/generated/types";
+import { AuthLevel } from "@common/auth-payloads";
 
 export class GameWebSocket extends ServiceWebSocketBase {
-  _backing_gameService: GameService | undefined = undefined;
+  private _backing_accountId: string | undefined;
+  get accountId(): string {
+    return (
+      assert(this._backing_accountId !== undefined), this._backing_accountId
+    );
+  }
+
+  private _backing_server: GameServer | undefined;
+  protected get server(): GameServer {
+    return assert(this._backing_server !== undefined), this._backing_server;
+  }
+
+  private _backing_gameService: GameService | undefined;
   protected get gameService(): GameService {
-    assert(this._backing_gameService !== undefined);
-
-    return this._backing_gameService;
-  }
-  private set gameService(value: GameService) {
-    assert(this._backing_gameService === undefined);
-
-    this._backing_gameService = value;
+    return (
+      assert(this._backing_gameService !== undefined), this._backing_gameService
+    );
   }
 
-  injectGameService(gameService: GameService): void {
-    this.gameService = gameService;
+  injectProviders(server: GameServer, gameService: GameService): void {
+    assert(this.auth.auth_level === AuthLevel.COMPLETED);
+    assert(
+      this._backing_server === undefined &&
+        this._backing_gameService === undefined,
+    );
+
+    this._backing_accountId = this.auth.user_id;
+    this._backing_server = server;
+    this._backing_gameService = gameService;
+
+    this.auth = undefined;
+  }
+
+  handshakeState = false;
+  socketActiveStatus = ActiveStatusNumber.ONLINE;
+
+  async onFirstConnection() {
+    //NOTE: OFFLINE -> ONLINE
+  }
+
+  async onLastDisconnect() {
+    //NOTE: ONLINE -> OFFLINE
   }
 }
