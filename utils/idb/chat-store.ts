@@ -88,6 +88,14 @@ export function makeDirectChatKey(accountId: string, targetId: string): string {
   return `${accountId}_${targetId}`;
 }
 
+export function isDirectChatKey(chatId: string): boolean {
+  return chatId.includes("_");
+}
+
+export function extractTargetFromDirectChatKey(chatId: string): string {
+  return chatId.split("_")[1];
+}
+
 export type MemberSchema = {
   accountId: string;
   role: number;

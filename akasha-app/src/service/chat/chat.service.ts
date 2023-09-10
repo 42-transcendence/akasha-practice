@@ -860,8 +860,16 @@ export class ChatService {
 
       const room = await tx.chat.findUniqueOrThrow({
         where: { id: chatId },
-        select: { isSecret: true, password: true, limit: true },
+        select: {
+          isPrivate: true,
+          isSecret: true,
+          password: true,
+          limit: true,
+        },
       });
+      if (room.isPrivate) {
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
+      }
       if (room.isSecret && password !== room.password) {
         return { errno: ChatErrorNumber.ERROR_WRONG_PASSWORD };
       }
@@ -1634,10 +1642,14 @@ export class ChatService {
   ): Promise<void> {
     void (await this.prisma.$transaction([
       this.prisma.chatDirect.updateMany({
-        where: { isLastMessage: true },
+        where: {
+          sourceAccountId: pair.chatId,
+          destinationAccountId: accountId,
+          isLastMessage: true,
+        },
         data: { isLastMessage: false },
       }),
-      this.prisma.chatDirect.update({
+      this.prisma.chatDirect.updateMany({
         where: {
           sourceAccountId: pair.chatId,
           destinationAccountId: accountId,
