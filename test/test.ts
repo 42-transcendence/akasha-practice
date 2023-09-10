@@ -38,8 +38,8 @@ const enum GameClientOpcode {
 
 
 function writePhysicsAttribute(payload: ByteBuffer, data: PhysicsAttribute) {
-	payload.write4(data.position.x);
-	payload.write4(data.position.y);
+	payload.write8Float(data.position.x);
+	payload.write8Float(data.position.y);
 	payload.write8Float(data.velocity.x);
 	payload.write8Float(data.velocity.y);
 }
@@ -51,8 +51,8 @@ function writeFrame(payload: ByteBuffer, frame: Frame) {
 	writePhysicsAttribute(payload, frame.paddle2);
 	payload.writeBoolean(frame.paddle2Hit);
 	writePhysicsAttribute(payload, frame.ball);
-	payload.write1(frame.player1Score);
-	payload.write1(frame.player2Score);
+	payload.write4(frame.player1Score);
+	payload.write4(frame.player2Score);
 }
 
 function writeFrames(payload: ByteBuffer, frames: Frame[]) {
@@ -63,8 +63,8 @@ function writeFrames(payload: ByteBuffer, frames: Frame[]) {
 }
 
 function readPhysicsAttribute(payload: ByteBuffer): PhysicsAttribute {
-	const posX = payload.read4();
-	const posY = payload.read4();
+	const posX = payload.read8Float();
+	const posY = payload.read8Float();
 	const velocX = payload.read8Float();
 	const velocY = payload.read8Float();
 	return { position: { x: posX, y: posY }, velocity: { x: velocX, y: velocY } };
@@ -77,8 +77,8 @@ function readFrame(payload: ByteBuffer): Frame {
 	const paddle2 = readPhysicsAttribute(payload);
 	const paddle2Hit = payload.readBoolean();
 	const ball = readPhysicsAttribute(payload);
-	const player1Score = payload.read1();
-	const player2Score = payload.read1();
+	const player1Score = payload.read4();
+	const player2Score = payload.read4();
 	return { id, paddle1, paddle1Hit, paddle2, paddle2Hit, ball, player1Score, player2Score };
 }
 
@@ -94,35 +94,41 @@ const Frames: { fixed: boolean, frame: Frame }[] = [];
 
 function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffer) {
 	const player: number = payload.read1();
-	const frame: Frame = readFrame(payload);
-	console.log(frame);
+	// const frame: Frame = readFrame(payload);
+	const frame: Frame = JSON.parse(payload.readString());
+	// physicsEngine(frame);
 	if (Frames.length === 0) {
 		Frames.push({ fixed: false, frame })
-		const buf = ByteBuffer.create(GameClientOpcode.SYNC);
-		writeFrame(buf, frame);
-		for (const _clinet of clients) {
-			if (_clinet !== client) {
-				_clinet.send(buf.toArray());
-				break;
-			}
-		}
+		// const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
+		// // writeFrame(buf, frame);
+		// buf.writeString(JSON.stringify(frame));
+		// for (const _clinet of clients) {
+		// 	if (_clinet !== client) {
+		// 		_clinet.send(buf.toArray());
+		// 		break;
+		// 	}
+		// }
 	}
 	else {
 		if (Frames[Frames.length - 1].frame.id < frame.id) {
+			console.log("1");
 			Frames.push({ fixed: false, frame: frame });
-			const buf = ByteBuffer.create(GameClientOpcode.SYNC);
-			writeFrame(buf, frame);
-			for (const _clinet of clients) {
-				if (_clinet !== client) {
-					_clinet.send(buf.toArray());
-					break;
-				}
-			}
+			// const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
+			// // writeFrame(buf, frame);
+			// buf.writeString(JSON.stringify(frame));
+			// for (const _clinet of clients) {
+			// 	if (_clinet !== client) {
+			// 		_clinet.send(buf.toArray());
+			// 		break;
+			// 	}
+			// }
 		}
 		else {
+			console.log("2");
 			const resyncFrames = syncFrame(player, Frames, frame);
-			const buf = ByteBuffer.create(GameClientOpcode.RESYNC);
-			writeFrames(buf, resyncFrames);
+			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC);
+			buf.writeString(JSON.stringify(resyncFrames));
+			// writeFrames(buf, resyncFrames);
 			for (const _clinet of clients) {
 				_clinet.send(buf.toArray());
 			}
@@ -248,5 +254,6 @@ webSocketServer.on('connection', (ws: any, request: any) => {
 
 	// 5) 연결 종료 이벤트 처리
 	ws.on('close', () => {
+		Frames.splice(0, Frames.length);
 	})
 });
