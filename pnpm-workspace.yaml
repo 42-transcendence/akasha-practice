@@ -1,0 +1,5 @@
+private: true
+workspaces:
+  - "akasha-app"
+  - "akasha-lib"
+  - "akasha-prisma-generator"
