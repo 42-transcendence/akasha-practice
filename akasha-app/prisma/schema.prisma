@@ -328,7 +328,7 @@ model ChatDirect {
 
 model Game {
   id          String       @id @default(uuid()) @db.Uuid
-  code        String       @unique @default(nanoid(2)) @db.VarChar(2)
+  code        String       @unique @default(nanoid(5)) @db.VarChar(5)
   title       String
   modeFlags   String       @db.Bit(16)
   password    String

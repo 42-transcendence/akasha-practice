@@ -1168,7 +1168,15 @@ export class ChatService {
       if (ban === null) {
         return { errno: ChatErrorNumber.ERROR_UNKNOWN };
       }
-      const { chatId, accountId: targetAccountId, managerAccountId } = ban;
+      const {
+        chatId,
+        accountId: targetAccountId,
+        managerAccountId,
+        expireTimestamp,
+      } = ban;
+      if (expireTimestamp !== null && expireTimestamp.getTime() < Date.now()) {
+        return { errno: ChatErrorNumber.ERROR_RESTRICTED };
+      }
 
       const memberSet = await this.getChatMemberSet(chatId, tx);
       if (memberSet === null) {
@@ -1638,7 +1646,15 @@ export class ChatService {
   }
 
   async getChatBannedForManager(chatId: string): Promise<ChatBanDetailEntry[]> {
-    const bans = await this.prisma.chatBan.findMany({ where: { chatId } });
+    const bans = await this.prisma.chatBan.findMany({
+      where: {
+        chatId,
+        OR: [
+          { expireTimestamp: null },
+          { expireTimestamp: { gte: new Date() } },
+        ],
+      },
+    });
 
     return bans.map((e) => toBanDetailEntry(e));
   }

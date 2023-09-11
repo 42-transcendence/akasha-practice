@@ -19,8 +19,6 @@ import {
 } from "@common/chat-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
-  CHAT_PASSWORD_BCRYPT_ALGORITHM,
-  CHAT_PASSWORD_BCRYPT_LOG_ROUNDS,
   CHAT_ROOM_TITLE_REGEX,
   MAX_CHAT_MEMBER_CAPACITY,
 } from "@common/chat-constants";
@@ -29,7 +27,8 @@ import { ChatServer } from "./chat.server";
 import { ActiveStatusNumber, Role, RoleNumber } from "@common/generated/types";
 import { NICK_NAME_REGEX } from "@common/profile-constants";
 
-function validateBcryptSalt(value: string): boolean {
+function validatePasswordHash(value: string): boolean {
+  /* NOTE: bcrypt
   if (!value.startsWith("$")) {
     return false;
   }
@@ -51,7 +50,18 @@ function validateBcryptSalt(value: string): boolean {
     return false;
   }
 
+  const salt = saltAndHash.substring(0, 22);
+  if (salt !== CHAT_PASSWORD_BCRYPT_SALT) {
+    return false;
+  }
+
+  const hash = saltAndHash.substring(22);
+  void hash;
+
   return true;
+  */
+
+  return value.length === 44;
 }
 
 @WebSocketGateway<ServerOptions>({
@@ -388,7 +398,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     let password: string = "";
     if (modeFlags.isSecret) {
       password = payload.readString();
-      if (!validateBcryptSalt(password)) {
+      if (!validatePasswordHash(password)) {
         throw new PacketHackException(`Illegal password [${password}]`);
       }
     }
@@ -468,7 +478,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     const chatId = payload.readUUID();
     const password = payload.readString();
     if (password !== "") {
-      if (!validateBcryptSalt(password)) {
+      if (!validatePasswordHash(password)) {
         throw new PacketHackException(`Illegal password [${password}]`);
       }
     }
@@ -649,7 +659,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if ((modifyFlags & RoomModifyFlags.MODIFY_PASSWORD) !== 0) {
       password = payload.readString();
       if (password !== "") {
-        if (!validateBcryptSalt(password)) {
+        if (!validatePasswordHash(password)) {
           throw new PacketHackException(`Illegal password [${password}]`);
         }
       }
