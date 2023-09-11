@@ -2,8 +2,8 @@ import { copy, getScore, physicsEngine } from "./game-physics-engine";
 import { ByteBuffer } from "./library/byte-buffer"
 import * as WebSocket from 'ws';
 
-const field = "normal";
-const gravitiesObj: GravityObj[] = [];
+const field = "ellipse";
+const gravitiesObj: GravityObj[] = makeGravitisObj();
 
 
 type PhysicsAttribute = {

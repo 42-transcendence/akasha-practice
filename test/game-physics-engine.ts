@@ -120,9 +120,7 @@ export function physicsEngine(frame: Frame, field: string, gravities: GravityObj
 	if (field === "ellipse") {
 		ellipseReflection(frame.ball)
 	}
-	else {
-		wallReflextion(frame.ball.position, frame.ball.velocity);
-	}
+	wallReflextion(frame.ball.position, frame.ball.velocity);
 	limitVelocity(frame.ball.velocity);
 	getScore(frame);
 }
