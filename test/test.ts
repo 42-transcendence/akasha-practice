@@ -1,4 +1,4 @@
-import { copy, getScore, physicsEngine } from "./game-physics-engine";
+import { copy, physicsEngine } from "./game-physics-engine";
 import { ByteBuffer } from "./library/byte-buffer"
 import * as WebSocket from 'ws';
 
@@ -15,6 +15,12 @@ type Frame = {
 	ball: PhysicsAttribute,
 	player1Score: number,
 	player2Score: number
+}
+
+type GravityObj = {
+	pos: { x: number, y: number },
+	radius: number,
+	force: number
 }
 
 const enum GameServerOpcode {
@@ -111,7 +117,6 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 	}
 	else {
 		if (Frames[Frames.length - 1].frame.id < frame.id) {
-			console.log("1");
 			Frames.push({ fixed: false, frame: frame });
 			// const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
 			// // writeFrame(buf, frame);
@@ -124,7 +129,6 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 			// }
 		}
 		else {
-			console.log("2");
 			const resyncFrames = syncFrame(player, Frames, frame);
 			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC);
 			buf.writeString(JSON.stringify(resyncFrames));
@@ -166,9 +170,9 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			if (frame.paddle1Hit === true || frame.paddle2Hit === true) {
 				frames[i].frame.ball = frame.ball;
 			}
-			getScore(frames[i].frame);
 			copy(ball.velocity, frames[i].frame.ball.velocity);
 			copy(ball.position, frames[i].frame.ball.position);
+			physicsEngine(frames[i].frame);
 			sendFrames.push(frames[i].frame);
 		}
 		else if (frames[i].frame.id > frame.id) {
@@ -202,12 +206,23 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 	return (sendFrames);
 }
 
+function makeRandom(min: number, max: number): number {
+	return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+function makeGravitisObj(): GravityObj[] {
+	const gravities: GravityObj[] = [];
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(200, 960) }, radius: makeRandom(40, 50), force: makeRandom(0, 1) });
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(960, 1770) }, radius: makeRandom(30, 40), force: makeRandom(0, 1) });
+	return gravities;
+}
+
 
 let count = 0;
 const express = require('express');
 const app = express();
 
-app.use("/", (req: any, res: any) => { res.sendFile('./index.html'); })
+app.use("/", (req: any, res: any) => { })
 
 // 3. 30001 port에서 서버 구동
 const HTTPServer = app.listen(3002, () => {
@@ -234,7 +249,11 @@ webSocketServer.on('connection', (ws: any, request: any) => {
 
 	if (count == 2) {
 		for (const ws of webSocketServer.clients) {
-			ws.send(ByteBuffer.createWithOpcode(GameClientOpcode.START).toArray());
+			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.START);
+			const gravitiesObj = makeGravitisObj();
+			buf.writeString("ellipse")
+			buf.writeString(JSON.stringify(gravitiesObj));
+			ws.send(buf.toArray());
 		}
 		count = 0;
 	}
