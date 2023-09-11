@@ -91,7 +91,7 @@ export function copy(dest: { x: number, y: number }, source: { x: number, y: num
 	dest.y = source.y;
 }
 
-export function physicsEngine(frame: Frame) {
+export function physicsEngine(frame: Frame, field: string, gravities: GravityObj[]) {
 	frame.paddle1Hit = false;
 	frame.paddle2Hit = false;
 	if (distance(frame.ball.position, frame.paddle1.position) <= BALL_RADIUS + PADDLE_RADIUS) {
@@ -114,8 +114,15 @@ export function physicsEngine(frame: Frame) {
 		frame.ball.velocity.x += frame.paddle2.velocity.x / 8;
 		frame.ball.velocity.y += frame.paddle2.velocity.y / 8;
 	}
-	wallReflextion(frame.ball.position, frame.ball.velocity);
-	ellipseReflection(frame.ball)
+	if (gravities.length > 0) {
+		allAttractive(gravities, frame.ball);
+	}
+	if (field === "ellipse") {
+		ellipseReflection(frame.ball)
+	}
+	else {
+		wallReflextion(frame.ball.position, frame.ball.velocity);
+	}
 	limitVelocity(frame.ball.velocity);
 	getScore(frame);
 }
@@ -219,4 +226,19 @@ function ellipseReflection(ball: PhysicsAttribute) {
 			ball.velocity.y = newVy * -1;
 		}
 	}
+}
+
+
+function allAttractive(gravities: GravityObj[], ball: PhysicsAttribute) {
+	for (let i = 0; i < gravities.length; i++) {
+		attractive(gravities[i].pos, ball, gravities[i].force);
+	}
+}
+
+function attractive(attractiveCenter: { x: number, y: number }, ball: PhysicsAttribute, gravityConstant: number) {
+	const normal = { x: attractiveCenter.x - ball.position.x, y: attractiveCenter.y - ball.position.y }
+	const distance = Math.sqrt(normal.x * normal.x + normal.y * normal.y);
+	const force = { x: gravityConstant * normal.x / (distance * + 1), y: gravityConstant * normal.y / (distance + 1) };
+	ball.velocity.x += force.x / 3;
+	ball.velocity.y += force.y / 3;
 }

@@ -1,6 +1,10 @@
-import { copy, physicsEngine } from "./game-physics-engine";
+import { copy, getScore, physicsEngine } from "./game-physics-engine";
 import { ByteBuffer } from "./library/byte-buffer"
 import * as WebSocket from 'ws';
+
+const field = "normal";
+const gravitiesObj: GravityObj[] = [];
+
 
 type PhysicsAttribute = {
 	position: { x: number, y: number },
@@ -129,7 +133,7 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 			// }
 		}
 		else {
-			const resyncFrames = syncFrame(player, Frames, frame);
+			const resyncFrames = syncFrame(player, Frames, frame, field, gravitiesObj);
 			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC);
 			buf.writeString(JSON.stringify(resyncFrames));
 			// writeFrames(buf, resyncFrames);
@@ -147,7 +151,7 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 	}
 }
 
-function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame) {
+function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame, field: string, gravities: GravityObj[]) {
 	const sendFrames: Frame[] = [];
 	const velocity = { x: 0, y: 0 };
 	const prevPos = { x: 0, y: 0 };
@@ -172,7 +176,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			}
 			copy(ball.velocity, frames[i].frame.ball.velocity);
 			copy(ball.position, frames[i].frame.ball.position);
-			physicsEngine(frames[i].frame);
+			physicsEngine(frames[i].frame, field, []);
 			sendFrames.push(frames[i].frame);
 		}
 		else if (frames[i].frame.id > frame.id) {
@@ -191,7 +195,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			copy(frames[i].frame.ball.position, ball.position);
 			copy(frames[i].frame.ball.velocity, ball.velocity);
 			// 자체 물리엔진 적용!
-			physicsEngine(frames[i].frame);
+			physicsEngine(frames[i].frame, field, gravities);
 			if (player === 1) {
 				copy(prevPos, frames[i].frame.paddle1.position);
 				copy(velocity, frames[i].frame.paddle1.velocity);
@@ -212,8 +216,8 @@ function makeRandom(min: number, max: number): number {
 
 function makeGravitisObj(): GravityObj[] {
 	const gravities: GravityObj[] = [];
-	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(200, 960) }, radius: makeRandom(40, 50), force: makeRandom(0, 1) });
-	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(960, 1770) }, radius: makeRandom(30, 40), force: makeRandom(0, 1) });
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(200, 960) }, radius: makeRandom(40, 50), force: makeRandom(1, 5) / 6 });
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(960, 1770) }, radius: makeRandom(30, 40), force: makeRandom(1, 5) / 8 });
 	return gravities;
 }
 
@@ -250,8 +254,7 @@ webSocketServer.on('connection', (ws: any, request: any) => {
 	if (count == 2) {
 		for (const ws of webSocketServer.clients) {
 			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.START);
-			const gravitiesObj = makeGravitisObj();
-			buf.writeString("ellipse")
+			buf.writeString(field)
 			buf.writeString(JSON.stringify(gravitiesObj));
 			ws.send(buf.toArray());
 		}
