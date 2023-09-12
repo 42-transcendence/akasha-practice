@@ -5,6 +5,7 @@ import {
   ClassSerializerInterceptor,
   INestApplication,
   Logger,
+  ShutdownSignal,
   ValidationPipe,
 } from "@nestjs/common";
 import { PrismaClientExceptionFilter } from "./prisma/prisma-client-exception.filter";
@@ -62,6 +63,7 @@ async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
     rawBody: true,
     bodyParser: false,
+    forceCloseConnections: true, //NOTE: 이 옵션이 없으면 애플리케이션이 종료되기 직전 정리 작업에서 모든 HTTP 연결이 닫힐때까지 기다렸다가 종료된다.
   });
   AkashaGlobal.setInstance(app);
   configCors(app);
@@ -75,6 +77,8 @@ async function bootstrap() {
   app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   app.useWebSocketAdapter(new WsAdapter(app));
+
+  app.enableShutdownHooks([ShutdownSignal.SIGINT, ShutdownSignal.SIGTERM]);
 
   await app.listen(3001);
 }

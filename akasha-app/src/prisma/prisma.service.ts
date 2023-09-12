@@ -2,7 +2,11 @@ import {
   MAX_NICK_TAG_NUMBER,
   MIN_NICK_TAG_NUMBER,
 } from "@common/profile-constants";
-import { Injectable, OnModuleInit } from "@nestjs/common";
+import {
+  BeforeApplicationShutdown,
+  Injectable,
+  OnModuleInit,
+} from "@nestjs/common";
 import { PrismaClient } from "@prisma/client";
 
 export type PrismaTransactionClient = Parameters<
@@ -53,12 +57,19 @@ function extend(client: PrismaClient) {
 }
 
 @Injectable()
-export class PrismaService extends PrismaClient implements OnModuleInit {
+export class PrismaService
+  extends PrismaClient
+  implements OnModuleInit, BeforeApplicationShutdown
+{
   private _backing_x!: PrismaXClient;
 
   async onModuleInit() {
     this._backing_x = extend(this);
     await this._backing_x.$connect();
+  }
+
+  async beforeApplicationShutdown() {
+    await this._backing_x.$disconnect();
   }
 
   get x(): typeof this._backing_x {

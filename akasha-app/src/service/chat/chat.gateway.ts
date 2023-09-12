@@ -68,6 +68,7 @@ function validatePasswordHash(value: string): boolean {
   path: "/chat",
   verifyClient: verifyClientViaQueryParam("token"),
   WebSocket: ChatWebSocket,
+  clientTracking: false, //NOTE: `clientTracking=true`라면 애플리케이션이 종료되기 직전 정리 작업에서 모든 웹소켓이 닫힐때까지 기다렸다가 서버의 close Promise가 resolve되고 종료된다. false로 설정하면 정리 작업에서 서버의 close Promise가 즉시 resolve되어 종료되며, 애플리케이션이 종료되면서 모든 웹소켓의 상대편이 강제로 끊기게 된다.
 })
 export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   constructor(
