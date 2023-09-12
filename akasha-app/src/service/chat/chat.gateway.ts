@@ -272,7 +272,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if (errno !== SocialErrorNumber.SUCCESS) {
       return builder.makeDeleteFriendFailedResult(errno);
     }
-    assert(forward === undefined || reverse !== undefined);
+    assert(forward !== undefined || reverse !== undefined);
     void this.server.unicast(
       targetAccountId,
       builder.makeDeleteFriendSuccessResult(
@@ -369,10 +369,10 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if (errno !== SocialErrorNumber.SUCCESS) {
       return builder.makeDeleteEnemyFailedResult(errno);
     }
-    assert(forward === undefined);
+    assert(forward !== undefined);
     void this.server.unicast(
-      targetAccountId,
-      builder.makeDeleteEnemySuccessResult(client.accountId),
+      client.accountId,
+      builder.makeDeleteEnemySuccessResult(targetAccountId),
     );
 
     return undefined;
@@ -966,7 +966,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
       );
     }
 
-    return builder.makeSendMessageResult(result.errno, targetAccountId);
+    return builder.makeSendDirectResult(result.errno, targetAccountId);
   }
 
   @SubscribeMessage(ChatServerOpcode.REPORT_USER)

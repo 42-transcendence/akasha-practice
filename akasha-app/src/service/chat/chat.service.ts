@@ -511,7 +511,7 @@ export class ChatService {
       return [SocialErrorNumber.ERROR_UNKNOWN, undefined, undefined];
     }
     const [forward, reverse] = data;
-    if (forward !== null || reverse !== null) {
+    if (forward === null && reverse === null) {
       return [SocialErrorNumber.ERROR_NOT_FOUND, undefined, undefined];
     }
     return [
@@ -656,7 +656,7 @@ export class ChatService {
       return [SocialErrorNumber.ERROR_UNKNOWN, undefined];
     }
     const [forward] = data;
-    if (forward !== null) {
+    if (forward === null) {
       return [SocialErrorNumber.ERROR_NOT_FOUND, undefined];
     }
     return [SocialErrorNumber.SUCCESS, forward !== null ? forward : undefined];
