@@ -1,4 +1,9 @@
-import { JsonValue, Role, RoleNumber } from "./generated/types";
+import {
+  ActiveStatusNumber,
+  JsonValue,
+  Role,
+  RoleNumber,
+} from "./generated/types";
 import { hasProperty } from "akasha-lib";
 import { BanSummaryPayload } from "./profile-payloads";
 
@@ -19,6 +24,26 @@ export function getRoleLevel(role: Role) {
     case Role.MANAGER:
       return 10;
     case Role.ADMINISTRATOR:
+      return 100;
+  }
+  return 0;
+}
+
+/// getActiveStatusOrder
+export function getActiveStatusOrder(e: ActiveStatusNumber) {
+  switch (e) {
+    case ActiveStatusNumber.OFFLINE:
+    case ActiveStatusNumber.INVISIBLE:
+      return 1;
+    case ActiveStatusNumber.DO_NOT_DISTURB:
+      return 20;
+    case ActiveStatusNumber.IDLE:
+      return 30;
+    case ActiveStatusNumber.ONLINE:
+      return 50;
+    case ActiveStatusNumber.MATCHING:
+      return 99;
+    case ActiveStatusNumber.GAME:
       return 100;
   }
   return 0;

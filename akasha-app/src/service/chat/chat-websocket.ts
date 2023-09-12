@@ -4,6 +4,8 @@ import { ChatService } from "./chat.service";
 import { ChatServer } from "./chat.server";
 import { ActiveStatusNumber } from "@common/generated/types";
 import { AuthLevel } from "@common/auth-payloads";
+import * as builder from "./chat-payload-builder";
+import { FriendActiveFlags } from "@common/chat-payloads";
 
 export class ChatWebSocket extends ServiceWebSocketBase {
   private _backing_accountId: string | undefined;
@@ -45,10 +47,20 @@ export class ChatWebSocket extends ServiceWebSocketBase {
   async onFirstConnection() {
     //NOTE: OFFLINE -> ONLINE
     this.chatService.setActiveTimestampExceptInvisible(this.accountId);
+    this.notifyActiveStatus();
   }
 
   async onLastDisconnect() {
     //NOTE: ONLINE -> OFFLINE
     this.chatService.setActiveTimestampExceptInvisible(this.accountId);
+    this.notifyActiveStatus();
+  }
+
+  notifyActiveStatus() {
+    void this.server.multicastToFriend(
+      this.accountId,
+      builder.makeUpdateFriendActiveStatus(this.accountId),
+      FriendActiveFlags.SHOW_ACTIVE_STATUS,
+    );
   }
 }

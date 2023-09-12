@@ -8,7 +8,6 @@ import { ChatWebSocket } from "./chat-websocket";
 import { ChatServerOpcode } from "@common/chat-opcodes";
 import {
   ChatRoomChatMessagePairEntry,
-  FriendActiveFlags,
   FriendModifyFlags,
   ChatErrorNumber,
   RoomModifyFlags,
@@ -139,11 +138,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     if (
       await this.chatService.setActiveStatus(client.accountId, activeStatus)
     ) {
-      void this.server.multicastToFriend(
-        client.accountId,
-        builder.makeUpdateFriendActiveStatus(client.accountId),
-        FriendActiveFlags.SHOW_ACTIVE_STATUS,
-      );
+      client.notifyActiveStatus();
     }
   }
 
@@ -156,11 +151,7 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     client.socketActiveStatus = idle
       ? ActiveStatusNumber.IDLE
       : ActiveStatusNumber.ONLINE;
-    void this.server.multicastToFriend(
-      client.accountId,
-      builder.makeUpdateFriendActiveStatus(client.accountId),
-      FriendActiveFlags.SHOW_ACTIVE_STATUS,
-    );
+    client.notifyActiveStatus();
   }
 
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)
