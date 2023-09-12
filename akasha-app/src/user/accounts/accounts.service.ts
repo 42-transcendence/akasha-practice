@@ -9,6 +9,7 @@ import {
   ActiveStatus,
   BanCategory,
   Prisma,
+  Record,
   RegistrationState,
 } from "@prisma/client";
 import {
@@ -429,5 +430,11 @@ export class AccountsService {
       where: { id: key },
     });
     return avatar.data;
+  }
+
+  async findGameRecord(id: string): Promise<Record | null> {
+    return await this.prisma.record.findUnique({
+      where: { accountId: id },
+    });
   }
 }

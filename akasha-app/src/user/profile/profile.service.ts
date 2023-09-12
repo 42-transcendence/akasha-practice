@@ -22,6 +22,7 @@ import {
 import {
   ActiveStatus,
   ActiveStatusNumber,
+  RecordEntity,
   getActiveStatusNumber,
 } from "@common/generated/types";
 import {
@@ -33,6 +34,7 @@ import { NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
 import { FriendActiveFlags } from "@common/chat-payloads";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
+import { Record } from "@prisma/client";
 
 @Injectable()
 export class ProfileService {
@@ -249,5 +251,15 @@ export class ProfileService {
       return key;
     }
     throw new ForbiddenException();
+  }
+
+  async getGameRecord(targetAccountId: string): Promise<RecordEntity> {
+    const record: Record | null =
+      await this.accounts.findGameRecord(targetAccountId);
+    if (record === null) {
+      throw new NotFoundException();
+    }
+
+    return { ...record };
   }
 }

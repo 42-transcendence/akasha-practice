@@ -34,6 +34,7 @@ import {
   AVATAR_MIME_REGEX,
 } from "@common/profile-constants";
 import { NickNamePipe } from "./profile.pipe";
+import { RecordEntity } from "@common/generated/types";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -64,12 +65,9 @@ export class ProfileController {
 
   @Get("public/:targetId/record")
   async getGameRecord(
-    @Auth() auth: AuthPayload,
     @Param("targetId", ParseUUIDPipe) targetId: string,
-  ): Promise<void> {
-    //FIXME: 구현
-    void auth;
-    void targetId;
+  ): Promise<RecordEntity> {
+    return await this.profileService.getGameRecord(targetId);
   }
 
   @Get("public/:targetId/achievement")
