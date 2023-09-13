@@ -8,10 +8,9 @@ const pingDelayInMillis = 30 * 1000;
 
 export abstract class ServiceWebSocketBase extends WebSocket {
   private isAlive: boolean = true;
-  private pingInterval: NodeJS.Timeout | string | number | undefined =
-    undefined;
+  private pingInterval: ReturnType<typeof setInterval> | undefined;
 
-  private _backing_auth: AuthPayload | undefined = undefined;
+  private _backing_auth: AuthPayload | undefined;
   get auth(): AuthPayload {
     return assert(this._backing_auth !== undefined), this._backing_auth;
   }
@@ -19,6 +18,7 @@ export abstract class ServiceWebSocketBase extends WebSocket {
     this._backing_auth = value;
   }
 
+  connectionTime = Date.now();
   remoteAddress: string | undefined;
   remoteURL: string | undefined;
 

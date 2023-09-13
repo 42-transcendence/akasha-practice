@@ -1,7 +1,7 @@
 import { Catch, ArgumentsHost, Logger } from "@nestjs/common";
 import { WsArgumentsHost } from "@nestjs/common/interfaces";
 import { BaseWsExceptionFilter } from "@nestjs/websockets";
-import { ServiceWebSocketBase } from "./service-socket";
+import { ServiceWebSocketBase } from "./service-websocket";
 
 @Catch()
 export class WsServiceExceptionsFilter extends BaseWsExceptionFilter {

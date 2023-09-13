@@ -1,7 +1,7 @@
 import { IncomingMessage } from "http";
 import { Logger, UseFilters } from "@nestjs/common";
 import { OnGatewayConnection, OnGatewayDisconnect } from "@nestjs/websockets";
-import { ServiceWebSocketBase } from "./service-socket";
+import { ServiceWebSocketBase } from "./service-websocket";
 import { WsServiceExceptionsFilter } from "./ws-service-exception.filter";
 
 @UseFilters(WsServiceExceptionsFilter)

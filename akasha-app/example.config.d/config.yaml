@@ -6,6 +6,7 @@ cors:
     - GET
     - HEAD
     - POST
+    - DELETE
 
 auth:
   redirect_uri:
@@ -46,5 +47,16 @@ auth:
 
   jwt_options:
     issuer: Akasha
+
+game:
+  unique_id: AKS
+
+  # openssl rand -base64 33
+  jwt_secret: your-256-bit-secret
+
+  jwt_expire_secs: 10
+
+  jwt_options:
+    issuer: AkashaGame
 
 internal_token: AKASHA

@@ -1,5 +1,5 @@
 import { assert } from "akasha-lib";
-import { ServiceWebSocketBase } from "@/service/service-socket";
+import { ServiceWebSocketBase } from "@/service/service-websocket";
 import { ChatService } from "./chat.service";
 import { ChatServer } from "./chat.server";
 import { ActiveStatusNumber } from "@common/generated/types";

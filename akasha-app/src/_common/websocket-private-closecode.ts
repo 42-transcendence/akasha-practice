@@ -1,0 +1,1 @@
+export const HANDSHAKE_TIMED_OUT = 4000;

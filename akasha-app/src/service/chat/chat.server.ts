@@ -5,6 +5,8 @@ import { ChatService } from "./chat.service";
 import { ActiveStatusNumber, MessageTypeNumber } from "@common/generated/types";
 import * as builder from "./chat-payload-builder";
 import { ChatMessageEntry } from "@common/chat-payloads";
+import { Interval } from "@nestjs/schedule";
+import { HANDSHAKE_TIMED_OUT } from "@common/websocket-private-closecode";
 
 @Injectable()
 export class ChatServer {
@@ -45,6 +47,16 @@ export class ChatServer {
       }
     } else {
       assert(this.temporaryClients.delete(client));
+    }
+  }
+
+  @Interval(10000)
+  pruneTemporaryClient() {
+    const now = Date.now();
+    for (const temporaryClient of this.temporaryClients) {
+      if (temporaryClient.connectionTime + 7000 < now) {
+        temporaryClient.close(HANDSHAKE_TIMED_OUT);
+      }
     }
   }
 
