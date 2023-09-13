@@ -288,6 +288,11 @@ export class AccountsService {
       }
 
       // 2. Delete Secret
+      const updatedAccount = await tx.account.update({
+        where: { id },
+        data: { otpSecretKey: null }, //NOTE: Restricted
+      });
+      void updatedAccount;
       const deletedSecret = await tx.secret.delete({
         where: { id: account.otpSecret.id },
       });
