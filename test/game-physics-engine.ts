@@ -139,6 +139,10 @@ function review(circlePos: { x: number, y: number }, pointInEllipse: { x: number
 	return ((((WIDTH / 2) ** 2) * pointInEllipse.y * (pointInEllipse.x - circlePos.x)) / (((HEIGHT / 2) ** 2) * pointInEllipse.x * (pointInEllipse.y - circlePos.y)));
 }
 
+function ellipseInOut(point: { x: number, y: number }) {
+	return ((((point.x - WIDTH / 2) ** 2) / ((WIDTH / 2) ** 2)) + (((point.y - HEIGHT / 2) ** 2) / ((HEIGHT / 2) ** 2)));
+}
+
 function oneQuadrantLogic(circlePos: { x: number, y: number }): number {
 	let upper = Math.PI / 2;
 	let lower = 0;
@@ -213,7 +217,8 @@ function ellipseReflection(ball: PhysicsAttribute) {
 	// 다시 x축 대칭!
 	normal.y *= -1;
 
-	if (Math.sqrt(normal.x ** 2 + normal.y ** 2) <= BALL_RADIUS) {
+	const inOutCheck = ellipseInOut(ball.position);
+	if (Math.sqrt(normal.x ** 2 + normal.y ** 2) <= BALL_RADIUS && inOutCheck < 1) {
 		const velocity = ball.velocity;
 		if (normal.x * velocity.x + normal.y * velocity.y >= 0) {
 			const theta = Math.atan2(normal.y, normal.x);
@@ -223,6 +228,10 @@ function ellipseReflection(ball: PhysicsAttribute) {
 			ball.velocity.x = newVx * -1;
 			ball.velocity.y = newVy * -1;
 		}
+	}
+	else if (inOutCheck >= 1) {
+		ball.velocity.x += 5 * normal.x;
+		ball.velocity.y += 5 * normal.y;
 	}
 }
 

@@ -4,6 +4,8 @@ import * as WebSocket from 'ws';
 
 const field = "ellipse";
 const gravitiesObj: GravityObj[] = makeGravitisObj();
+// const field = "normal";
+// const gravitiesObj: GravityObj[] = []
 
 
 type PhysicsAttribute = {
@@ -39,7 +41,8 @@ const enum GameClientOpcode {
 	ACCEPT,
 	REJECT,
 	START,
-	RESYNC,
+	RESYNC_ALL,
+	RESYNC_PART,
 	SYNC,
 	WIN,
 	LOSE,
@@ -109,36 +112,45 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 	// physicsEngine(frame);
 	if (Frames.length === 0) {
 		Frames.push({ fixed: false, frame })
-		// const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
-		// // writeFrame(buf, frame);
-		// buf.writeString(JSON.stringify(frame));
-		// for (const _clinet of clients) {
-		// 	if (_clinet !== client) {
-		// 		_clinet.send(buf.toArray());
-		// 		break;
-		// 	}
-		// }
+		const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
+		// writeFrame(buf, frame);
+		buf.writeString(JSON.stringify(frame));
+		for (const _clinet of clients) {
+			if (_clinet !== client) {
+				_clinet.send(buf.toArray());
+				break;
+			}
+		}
 	}
 	else {
 		if (Frames[Frames.length - 1].frame.id < frame.id) {
 			Frames.push({ fixed: false, frame: frame });
-			// const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
-			// // writeFrame(buf, frame);
-			// buf.writeString(JSON.stringify(frame));
-			// for (const _clinet of clients) {
-			// 	if (_clinet !== client) {
-			// 		_clinet.send(buf.toArray());
-			// 		break;
-			// 	}
-			// }
+			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.SYNC);
+			// writeFrame(buf, frame);
+			buf.writeString(JSON.stringify(frame));
+			for (const _clinet of clients) {
+				if (_clinet !== client) {
+					_clinet.send(buf.toArray());
+					break;
+				}
+			}
 		}
 		else {
-			const resyncFrames = syncFrame(player, Frames, frame, field, gravitiesObj);
-			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC);
-			buf.writeString(JSON.stringify(resyncFrames));
+			const resyncFrames: { allResync: boolean, frames: Frame[] } = syncFrame(player, Frames, frame, field, gravitiesObj);
 			// writeFrames(buf, resyncFrames);
-			for (const _clinet of clients) {
-				_clinet.send(buf.toArray());
+			if (resyncFrames.allResync === true) {
+				const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC_ALL);
+				buf.writeString(JSON.stringify(resyncFrames.frames));
+				for (const _clinet of clients) {
+					_clinet.send(buf.toArray());
+				}
+			}
+			else {
+				const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC_PART);
+				buf.writeString(JSON.stringify(resyncFrames.frames));
+				for (const _clinet of clients) {
+					_clinet.send(buf.toArray());
+				}
 			}
 			let count = 0;
 			for (; count < Frames.length; count++) {
@@ -151,11 +163,30 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 	}
 }
 
-function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame, field: string, gravities: GravityObj[]) {
+function ballDiffCheck(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
+	if (Math.abs(ball1.position.x - ball2.position.x) > 10) {
+		return false;
+	}
+	if (Math.abs(ball1.position.y - ball2.position.y) > 10) {
+		return false;
+	}
+	if (Math.abs(ball1.velocity.x - ball2.velocity.x) > 1) {
+		return false;
+	}
+	if (Math.abs(ball1.velocity.y - ball2.velocity.y) > 1) {
+		return false;
+	}
+	return true;
+}
+
+function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], frame: Frame, field: string, gravities: GravityObj[]): {
+	allResync: boolean, frames: Frame[]
+} {
 	const sendFrames: Frame[] = [];
 	const velocity = { x: 0, y: 0 };
 	const prevPos = { x: 0, y: 0 };
 	const ball: PhysicsAttribute = { position: { x: 0, y: 0 }, velocity: { x: 0, y: 0 } }
+	let tempFrmae: Frame | undefined = undefined;
 	for (let i = 0; i < frames.length; i++) {
 		if (frames[i].frame.id === frame.id) {
 			frames[i].fixed == true;
@@ -178,6 +209,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			copy(ball.position, frames[i].frame.ball.position);
 			physicsEngine(frames[i].frame, field, []);
 			sendFrames.push(frames[i].frame);
+			tempFrmae = frames[i].frame;
 		}
 		else if (frames[i].frame.id > frame.id) {
 			prevPos.x += velocity.x;
@@ -207,7 +239,10 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			sendFrames.push(frames[i].frame);
 		}
 	}
-	return (sendFrames);
+	if (tempFrmae !== undefined && (tempFrmae.paddle1Hit === false && tempFrmae.paddle2Hit === false) && (tempFrmae.player1Score === frame.player1Score && tempFrmae.player2Score === frame.player2Score) && ballDiffCheck(tempFrmae.ball, frame.ball) === true) {
+		return { allResync: false, frames: sendFrames };
+	}
+	return ({ allResync: true, frames: sendFrames });
 }
 
 function makeRandom(min: number, max: number): number {
