@@ -36,6 +36,12 @@ export function makeIdleAutoRequest(idle: boolean) {
   return buf;
 }
 
+export function makeStatusMessageRequest(statusMessage: string) {
+  const buf = ByteBuffer.createWithOpcode(ChatServerOpcode.STATUS_MESSAGE);
+  buf.writeString(statusMessage);
+  return buf;
+}
+
 type TargetAccount = string | { nickName: string; nickTag: number };
 
 export function makeAddFriendRequest(

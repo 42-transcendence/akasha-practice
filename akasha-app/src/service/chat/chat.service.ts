@@ -284,22 +284,25 @@ export class ChatService {
     const prevActiveStatus = await this.accounts.findActiveStatus(accountId);
     if (prevActiveStatus !== activeStatus) {
       await this.accounts.updateActiveStatus(accountId, activeStatus);
-      if (
-        (prevActiveStatus === ActiveStatus.INVISIBLE) !==
-        (activeStatus === ActiveStatus.INVISIBLE)
-      ) {
-        await this.accounts.updateActiveTimestamp(accountId);
-      }
       return true;
     }
     return false;
   }
 
-  async setActiveTimestampExceptInvisible(accountId: string) {
-    return await this.accounts.updateActiveTimestamp(
-      accountId,
-      ActiveStatus.INVISIBLE,
-    );
+  async setActiveTimestamp(accountId: string): Promise<void> {
+    await this.accounts.updateActiveTimestamp(accountId);
+  }
+
+  async isInvisible(accountId: string): Promise<boolean> {
+    const prevActiveStatus = await this.accounts.findActiveStatus(accountId);
+    return prevActiveStatus === ActiveStatus.INVISIBLE;
+  }
+
+  async setStatusMessage(
+    accountId: string,
+    statusMessage: string,
+  ): Promise<void> {
+    await this.accounts.updateStatusMessage(accountId, statusMessage);
   }
 
   async loadInitializePayload(

@@ -326,15 +326,10 @@ model ChatDirect {
 }
 
 model Game {
-  id          String       @id @default(uuid()) @db.Uuid
-  code        String       @unique @default(nanoid(5)) @db.VarChar(5)
-  title       String
-  modeFlags   String       @db.Bit(16)
-  password    String
-  battlefield Int
-  timestamp   DateTime     @default(now())
-  statistic   Json         @default("{}")
-  members     GameMember[]
+  id        String       @id @default(uuid()) @db.Uuid
+  code      String?      @unique @default(nanoid(5)) @db.VarChar(5)
+  timestamp DateTime     @default(now())
+  members   GameMember[]
 
   @@map("games")
   @@schema("services")
@@ -345,8 +340,6 @@ model GameMember {
   gameId    String  @db.Uuid
   account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
   accountId String  @unique @db.Uuid
-  modeFlags String  @db.Bit(16)
-  statistic Json    @default("{}")
 
   @@id([gameId, accountId])
   @@map("game_members")
@@ -367,8 +360,6 @@ model GameQueue {
 
 model GameHistory {
   id               String    @id @db.Uuid
-  modeFlags        String    @db.Bit(16)
-  battlefield      Int
   timestamp        DateTime
   statistic        Json      @default("{}")
   members          Account[]

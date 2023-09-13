@@ -20,8 +20,10 @@ import {
   isSecretParams,
 } from "@common/auth-payloads";
 import {
+  AchievementEntity,
   ActiveStatus,
   ActiveStatusNumber,
+  GameHistoryEntity,
   RecordEntity,
   getActiveStatusNumber,
 } from "@common/generated/types";
@@ -34,7 +36,7 @@ import { NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
 import { FriendActiveFlags } from "@common/chat-payloads";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
-import { Record } from "@prisma/client";
+import { Achievement, GameHistory, Record } from "@prisma/client";
 
 @Injectable()
 export class ProfileService {
@@ -194,6 +196,7 @@ export class ProfileService {
 
     // // ActiveStatusNumber.GAME ||| ActiveStatusNumber.MATCHING
     // const gameActiveStatus = await LocalServer.Games.getActiveStatus(targetAccountId);
+    //FIXME: 게임 서버
     // if (gameActiveStatus !== undefined) {
     //   return gameActiveStatus;
     // }
@@ -261,5 +264,29 @@ export class ProfileService {
     }
 
     return { ...record };
+  }
+
+  async getAchievements(
+    targetAccountId: string,
+  ): Promise<Omit<AchievementEntity, "accountId">[]> {
+    const achievements: Achievement[] | null =
+      await this.accounts.findAchievements(targetAccountId);
+    if (achievements === null) {
+      throw new NotFoundException();
+    }
+
+    return achievements.map((e) => ({ ...e, accountId: undefined }));
+  }
+
+  async getGameHistoryList(
+    targetAccountId: string,
+  ): Promise<GameHistoryEntity[]> {
+    const gameHistoryList: GameHistory[] | null =
+      await this.accounts.findGameHistoryList(targetAccountId);
+    if (gameHistoryList === null) {
+      throw new NotFoundException();
+    }
+
+    return gameHistoryList.map((e) => ({ ...e }));
   }
 }

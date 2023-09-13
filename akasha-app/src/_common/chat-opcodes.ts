@@ -2,6 +2,7 @@ export const enum ChatServerOpcode {
   HANDSHAKE,
   ACTIVE_STATUS_MANUAL,
   IDLE_AUTO,
+  STATUS_MESSAGE,
   ADD_FRIEND,
   MODIFY_FRIEND,
   DELETE_FRIEND,

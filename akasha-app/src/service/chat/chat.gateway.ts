@@ -15,6 +15,7 @@ import {
   fromChatRoomModeFlags,
   readChatRoomChatMessagePair,
   ReportErrorNumber,
+  FriendActiveFlags,
 } from "@common/chat-payloads";
 import { PacketHackException } from "@/service/packet-hack-exception";
 import {
@@ -135,10 +136,17 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
         );
     }
 
+    const prevInvisible = await this.chatService.isInvisible(client.accountId);
     if (
       await this.chatService.setActiveStatus(client.accountId, activeStatus)
     ) {
-      client.notifyActiveStatus();
+      const invisible = await this.chatService.isInvisible(client.accountId);
+      let activeFlags = FriendActiveFlags.SHOW_ACTIVE_STATUS;
+      if (prevInvisible !== invisible) {
+        await this.chatService.setActiveTimestamp(client.accountId);
+        activeFlags |= FriendActiveFlags.SHOW_ACTIVE_TIMESTAMP;
+      }
+      client.notifyActiveStatus(activeFlags);
     }
   }
 
@@ -151,7 +159,18 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
     client.socketActiveStatus = idle
       ? ActiveStatusNumber.IDLE
       : ActiveStatusNumber.ONLINE;
-    client.notifyActiveStatus();
+    const invisible = await this.chatService.isInvisible(client.accountId);
+    client.notifyActiveStatus(FriendActiveFlags.SHOW_ACTIVE_STATUS, !invisible);
+  }
+
+  @SubscribeMessage(ChatServerOpcode.STATUS_MESSAGE)
+  async handleStatusMessage(client: ChatWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+
+    const statusMessage = payload.readString();
+
+    await this.chatService.setStatusMessage(client.accountId, statusMessage);
+    client.notifyActiveStatus(FriendActiveFlags.SHOW_STATUS_MESSAGE);
   }
 
   @SubscribeMessage(ChatServerOpcode.ADD_FRIEND)

@@ -46,21 +46,35 @@ export class ChatWebSocket extends ServiceWebSocketBase {
 
   async onFirstConnection() {
     //NOTE: OFFLINE -> ONLINE
-    this.chatService.setActiveTimestampExceptInvisible(this.accountId);
-    this.notifyActiveStatus();
+    const invisible = await this.chatService.isInvisible(this.accountId);
+    if (!invisible) {
+      await this.chatService.setActiveTimestamp(this.accountId);
+    }
+    this.notifyActiveStatus(
+      FriendActiveFlags.SHOW_ACTIVE_STATUS |
+        FriendActiveFlags.SHOW_ACTIVE_TIMESTAMP,
+      invisible,
+    );
   }
 
   async onLastDisconnect() {
     //NOTE: ONLINE -> OFFLINE
-    this.chatService.setActiveTimestampExceptInvisible(this.accountId);
-    this.notifyActiveStatus();
+    const invisible = await this.chatService.isInvisible(this.accountId);
+    if (!invisible) {
+      await this.chatService.setActiveTimestamp(this.accountId);
+    }
+    this.notifyActiveStatus(
+      FriendActiveFlags.SHOW_ACTIVE_STATUS |
+        FriendActiveFlags.SHOW_ACTIVE_TIMESTAMP,
+      invisible,
+    );
   }
 
-  notifyActiveStatus() {
-    void this.server.multicastToFriend(
-      this.accountId,
-      builder.makeUpdateFriendActiveStatus(this.accountId),
-      FriendActiveFlags.SHOW_ACTIVE_STATUS,
-    );
+  notifyActiveStatus(activeFlags: number, invisible: boolean = false) {
+    const buf = builder.makeUpdateFriendActiveStatus(this.accountId);
+    void this.server.unicast(this.accountId, buf);
+    if (!invisible) {
+      void this.server.multicastToFriend(this.accountId, buf, activeFlags);
+    }
   }
 }

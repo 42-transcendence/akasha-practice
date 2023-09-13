@@ -6,8 +6,10 @@ import {
   UnauthorizedException,
 } from "@nestjs/common";
 import {
+  Achievement,
   ActiveStatus,
   BanCategory,
+  GameHistory,
   Prisma,
   Record,
   RegistrationState,
@@ -205,7 +207,7 @@ export class AccountsService {
 
         // Not Midway
         if (params.enabled) {
-          throw new BadRequestException("Enabled otpSecret already exists");
+          throw new ConflictException("Enabled otpSecret already exists");
         }
 
         return account.otpSecret;
@@ -312,19 +314,20 @@ export class AccountsService {
     void account;
   }
 
-  async updateActiveTimestamp(
-    id: string,
-    except?: ActiveStatus | undefined,
-  ): Promise<void> {
-    //XXX: Prisma가 Conditional Update 따위를 지원하지 않았음.
-    const batch = await this.prisma.account.updateMany({
-      where: {
-        id,
-        activeStatus: { not: { equals: except } },
-      },
+  async updateActiveTimestamp(id: string): Promise<void> {
+    const account = await this.prisma.account.update({
+      where: { id },
       data: { activeTimestamp: new Date() },
     });
-    void batch;
+    void account;
+  }
+
+  async updateStatusMessage(id: string, statusMessage: string): Promise<void> {
+    const account = await this.prisma.account.update({
+      where: { id },
+      data: { statusMessage },
+    });
+    void account;
   }
 
   async findFriendActiveFlags(
@@ -433,8 +436,26 @@ export class AccountsService {
   }
 
   async findGameRecord(id: string): Promise<Record | null> {
-    return await this.prisma.record.findUnique({
-      where: { accountId: id },
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+      select: { record: true },
     });
+    return account?.record ?? null;
+  }
+
+  async findAchievements(id: string): Promise<Achievement[] | null> {
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+      select: { record: { select: { achievements: true } } },
+    });
+    return account?.record?.achievements ?? null;
+  }
+
+  async findGameHistoryList(id: string): Promise<GameHistory[] | null> {
+    const account = await this.prisma.account.findUnique({
+      where: { id },
+      select: { gameHistory: true },
+    });
+    return account?.gameHistory ?? null;
   }
 }

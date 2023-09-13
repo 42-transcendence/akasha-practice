@@ -34,7 +34,11 @@ import {
   AVATAR_MIME_REGEX,
 } from "@common/profile-constants";
 import { NickNamePipe } from "./profile.pipe";
-import { RecordEntity } from "@common/generated/types";
+import {
+  AchievementEntity,
+  GameHistoryEntity,
+  RecordEntity,
+} from "@common/generated/types";
 
 @Controller("profile")
 @UseGuards(AuthGuard)
@@ -72,22 +76,16 @@ export class ProfileController {
 
   @Get("public/:targetId/achievement")
   async getGameAchievementList(
-    @Auth() auth: AuthPayload,
     @Param("targetId", ParseUUIDPipe) targetId: string,
-  ): Promise<void> {
-    //FIXME: 구현
-    void auth;
-    void targetId;
+  ): Promise<Omit<AchievementEntity, "accountId">[]> {
+    return await this.profileService.getAchievements(targetId);
   }
 
   @Get("public/:targetId/history")
   async getGameHistoryList(
-    @Auth() auth: AuthPayload,
     @Param("targetId", ParseUUIDPipe) targetId: string,
-  ): Promise<void> {
-    //FIXME: 구현
-    void auth;
-    void targetId;
+  ): Promise<GameHistoryEntity[]> {
+    return await this.profileService.getGameHistoryList(targetId);
   }
 
   @Get("protected/:targetId")
@@ -96,16 +94,6 @@ export class ProfileController {
     @Param("targetId", ParseUUIDPipe) targetId: string,
   ): Promise<AccountProfileProtectedPayload> {
     return await this.profileService.getProtectedProfile(auth, targetId);
-  }
-
-  @Get("protected/:targetId/friend")
-  async getChatFriendList(
-    @Auth() auth: AuthPayload,
-    @Param("targetId", ParseUUIDPipe) targetId: string,
-  ): Promise<void> {
-    //FIXME: 구현
-    void auth;
-    void targetId;
   }
 
   @Get("private")
