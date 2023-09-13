@@ -32,7 +32,7 @@ import {
   AccountProfileProtectedPayload,
   AccountProfilePublicPayload,
 } from "@common/profile-payloads";
-import { NICK_NAME_REGEX } from "@common/profile-constants";
+import { MAX_GAME_HISTORY, NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
 import { FriendActiveFlags } from "@common/chat-payloads";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
@@ -282,11 +282,24 @@ export class ProfileService {
     targetAccountId: string,
   ): Promise<GameHistoryEntity[]> {
     const gameHistoryList: GameHistory[] | null =
-      await this.accounts.findGameHistoryList(targetAccountId);
+      await this.accounts.findGameHistoryList(
+        targetAccountId,
+        MAX_GAME_HISTORY,
+      );
     if (gameHistoryList === null) {
       throw new NotFoundException();
     }
 
     return gameHistoryList.map((e) => ({ ...e }));
+  }
+
+  async getGameHistory(gameId: string): Promise<GameHistoryEntity> {
+    const gameHistory: GameHistory | null =
+      await this.accounts.findGameHistory(gameId);
+    if (gameHistory === null) {
+      throw new NotFoundException();
+    }
+
+    return { ...gameHistory };
   }
 }

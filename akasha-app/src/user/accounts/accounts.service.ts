@@ -451,11 +451,23 @@ export class AccountsService {
     return account?.record?.achievements ?? null;
   }
 
-  async findGameHistoryList(id: string): Promise<GameHistory[] | null> {
+  async findGameHistoryList(
+    id: string,
+    take?: number | undefined,
+  ): Promise<GameHistory[] | null> {
     const account = await this.prisma.account.findUnique({
       where: { id },
-      select: { gameHistory: true },
+      select: {
+        gameHistory: { orderBy: { timestamp: Prisma.SortOrder.desc }, take },
+      },
     });
     return account?.gameHistory ?? null;
+  }
+
+  async findGameHistory(id: string): Promise<GameHistory | null> {
+    const gameHistory = await this.prisma.gameHistory.findUnique({
+      where: { id },
+    });
+    return gameHistory;
   }
 }
