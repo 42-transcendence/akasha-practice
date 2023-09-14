@@ -1,7 +1,12 @@
-const me: { rating: number, RD: number } = { rating: 1600, RD: 100 };
-const other: { rating: number, RD: number } = { rating: 1500, RD: 100 };
+const me: { rating: number, RD: number } = { rating: 2000, RD: 200 };
+const other: { rating: number, RD: number } = { rating: 2000, RD: 200 };
+const RDdecreaseCoef = 199 / 200;
+const RDincreaseCoef = 3 / 5;
 
 
+function RDincreaseByDate(RD: number, date: number) {
+	return Math.sqrt((RD ** 2) + ((RDincreaseCoef * date) ** 2));
+}
 
 function g(RD: number): number {
 	const q = 0.0057565;
@@ -19,13 +24,14 @@ function dSquare(myRating: number, other: { rating: number, RD: number }): numbe
 	return 1 / ((q ** 2) * (g(other.RD) ** 2) * Evalue * (1 - Evalue));
 }
 
-function glicko(me: { rating: number, RD: number }, other: { rating: number, RD: number }, result: number): number {
+function glicko(me: { rating: number, RD: number }, other: { rating: number, RD: number }, result: number): { rating: number, RD: number } {
 	const q = 0.0057565;
 	if (result !== 1 && result !== 0 && result !== 1 / 2) {
 		// error	
 	}
-	console.log("win or lose", E(me.rating, other));
-	return me.rating + (q / ((1 / (me.RD ** 2)) + (1 / dSquare(me.rating, other)))) * (g(me.RD) * (result - E(me.rating, other)));
+	const newRating = me.rating + (q / ((1 / (me.RD ** 2)) + (1 / dSquare(me.rating, other)))) * (g(me.RD) * (result - E(me.rating, other)));
+	const newRD = RDdecreaseCoef * me.RD;
+	return { rating: newRating, RD: newRD };
 }
 
 
