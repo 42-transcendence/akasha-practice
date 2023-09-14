@@ -113,7 +113,7 @@ export function copy(dest: { x: number, y: number }, source: { x: number, y: num
 	dest.y = source.y;
 }
 
-export function physicsEngine(frame: Frame, field: string, gravities: GravityObj[]) {
+export function physicsEngine(frame: Frame, field: string) {
 	frame.paddle1Hit = false;
 	frame.paddle2Hit = false;
 	if (distance(frame.ball.position, frame.paddle1.position) <= BALL_RADIUS + PADDLE_RADIUS) {

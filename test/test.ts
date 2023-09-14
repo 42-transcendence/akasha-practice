@@ -201,7 +201,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			}
 			copy(ball.velocity, frames[i].frame.ball.velocity);
 			copy(ball.position, frames[i].frame.ball.position);
-			physicsEngine(frames[i].frame, field, []);
+			physicsEngine(frames[i].frame, field);
 			sendFrames.push(frames[i].frame);
 			tempFrmae = frames[i].frame;
 		}
@@ -222,7 +222,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			copy(frames[i].frame.ball.position, ball.position);
 			copy(frames[i].frame.ball.velocity, ball.velocity);
 			// 자체 물리엔진 적용!
-			physicsEngine(frames[i].frame, field, gravities);
+			physicsEngine(frames[i].frame, field);
 			if (player === 1) {
 				copy(prevPos, frames[i].frame.paddle1.position);
 				copy(velocity, frames[i].frame.paddle1.velocity);
