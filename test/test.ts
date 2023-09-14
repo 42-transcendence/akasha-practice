@@ -7,9 +7,37 @@ const gravitiesObj: GravityObj[] = makeGravitisObj();
 // const field = "normal";
 // const gravitiesObj: GravityObj[] = []
 let setNo = 1;
+let lastFrameId = 0;
 const setResult: Map<number, number[]> = new Map<number, number[]>; // 세트당 점수
 const setDistance: Map<number, number[]> = new Map<number, number[]>; // 세트당 이동거리
+const setAveVelocity: Map<number, number[]> = new Map<number, number[]>; // 세트당 이동거리
 
+function initLog(setNo: number) {
+	setDistance.set(setNo, [0, 0]);
+	setAveVelocity.set(setNo, [0, 0]);
+}
+
+function addLog(setNo: number, player1V: { x: number, y: number }, player2V: { x: number, y: number }) {
+
+	const velocityArr = setDistance.get(setNo);
+	if (velocityArr === undefined) {
+	}
+	else {
+		velocityArr[0] += Math.sqrt(player1V.x ** 2 + player1V.y ** 2);
+		velocityArr[1] += Math.sqrt(player2V.x ** 2 + player2V.y ** 2);
+	}
+}
+
+function addAveVelocity(setNo: number) {
+	const distanceArr = setDistance.get(setNo);
+	const aveVelocity = setAveVelocity.get(setNo);
+	if (distanceArr === undefined || aveVelocity === undefined) {
+	}
+	else {
+		aveVelocity[0] = distanceArr[0] / lastFrameId;
+		aveVelocity[1] = distanceArr[1] / lastFrameId;
+	}
+}
 
 
 type PhysicsAttribute = {
@@ -198,10 +226,14 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 								writeGravityObjs(buf, gravitiesObj);
 								buf.write1(setNo);
 								client.send(buf.toArray());
+								initLog(setNo); // setDistance
 							}
 						}
 					}, 1000)
+					addAveVelocity(setNo - 1);
 					console.log(setResult);
+					console.log(setDistance);
+					console.log(setAveVelocity);
 					return;
 				}
 				if (setNo > 3) {
@@ -235,20 +267,20 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 }
 
 function ballDiffCheckEasy(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
-	if (Math.abs(ball1.position.x - ball2.position.x) > 50) {
+	if (Math.abs(ball1.position.x - ball2.position.x) > 30) {
 		return false;
 	}
-	if (Math.abs(ball1.position.y - ball2.position.y) > 50) {
+	if (Math.abs(ball1.position.y - ball2.position.y) > 30) {
 		return false;
 	}
 	return true;
 }
 
 function ballDiffCheckHard(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
-	if (Math.abs(ball1.position.x - ball2.position.x) > 18) {
+	if (Math.abs(ball1.position.x - ball2.position.x) > 15) {
 		return false;
 	}
-	if (Math.abs(ball1.position.y - ball2.position.y) > 18) {
+	if (Math.abs(ball1.position.y - ball2.position.y) > 15) {
 		return false;
 	}
 	if (Math.abs(ball1.velocity.x - ball2.velocity.x) > 1) {
@@ -293,6 +325,9 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			physicsEngine(frames[i].frame, field);
 			sendFrames.push(frames[i].frame);
 			tempFrmae = frames[i].frame;
+			// For log
+			addLog(setNo, tempFrmae.paddle1.velocity, tempFrmae.paddle2.velocity); // add Distance
+			lastFrameId = tempFrmae.id;
 		}
 		else if (frames[i].frame.id > frame.id) {
 			break;
@@ -381,6 +416,7 @@ webSocketServer.on('connection', (ws: any, request: any) => {
 			writeGravityObjs(buf, gravitiesObj);
 			buf.write1(setNo);
 			ws.send(buf.toArray());
+			initLog(setNo); // setDistance
 		}
 		count = 0;
 	}
