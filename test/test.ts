@@ -8,6 +8,7 @@ const gravitiesObj: GravityObj[] = makeGravitisObj();
 // const gravitiesObj: GravityObj[] = []
 let setNo = 1;
 const setResult: Map<number, number[]> = new Map<number, number[]>; // 세트당 점수
+const setDistance: Map<number, number[]> = new Map<number, number[]>; // 세트당 이동거리
 
 
 
@@ -167,8 +168,8 @@ function fixWinner(player: number, frame: Frame, client: WebSocket, clients: Set
 		for (const _clinet of clients) {
 			_clinet.send(buf.toArray());
 		}
+		setResult.set(setNo, [frame.player1Score, frame.player2Score])
 		setNo++;
-		setResult.set(1, [frame.player1Score, frame.player2Score])
 		return true;
 	}
 	return false
@@ -200,6 +201,7 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 							}
 						}
 					}, 1000)
+					console.log(setResult);
 					return;
 				}
 				if (setNo > 3) {
