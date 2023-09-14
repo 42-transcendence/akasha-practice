@@ -74,7 +74,7 @@ export class ChatWebSocket extends ServiceWebSocketBase {
     const buf = builder.makeUpdateFriendActiveStatus(this.accountId);
     void this.server.unicast(this.accountId, buf);
     if (!invisible) {
-      void this.server.multicastToFriend(this.accountId, buf, activeFlags);
+      void this.chatService.multicastToFriend(this.accountId, buf, activeFlags);
     }
   }
 }

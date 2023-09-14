@@ -28,7 +28,7 @@ import {
 } from "akasha-lib";
 import { Account, Authorization, Session } from "@prisma/client";
 import * as jose from "jose";
-import { JWTHashAlgorithm, jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
+import { jwtSignatureHMAC, jwtVerifyHMAC } from "akasha-lib";
 import {
   AuthLevel,
   AuthPayload,
@@ -40,7 +40,6 @@ import { getBanCategoryNumber, getRoleNumber } from "@common/generated/types";
 
 @Injectable()
 export class AuthService {
-  static readonly JWT_ALGORITHM: JWTHashAlgorithm = "HS256";
   protected static readonly logger = new Logger(AuthService.name);
 
   private readonly config: AuthConfiguration;
@@ -231,7 +230,7 @@ export class AuthService {
     };
 
     const accessToken: string = await jwtSignatureHMAC(
-      AuthService.JWT_ALGORITHM,
+      AuthConfiguration.JWT_ALGORITHM,
       this.config.jwt_secret,
       payload,
       this.config.jwt_temp_expire_secs,
@@ -253,7 +252,7 @@ export class AuthService {
     };
 
     const accessToken: string = await jwtSignatureHMAC(
-      AuthService.JWT_ALGORITHM,
+      AuthConfiguration.JWT_ALGORITHM,
       this.config.jwt_secret,
       payload,
       0,
@@ -274,7 +273,7 @@ export class AuthService {
     };
 
     const accessToken: string = await jwtSignatureHMAC(
-      AuthService.JWT_ALGORITHM,
+      AuthConfiguration.JWT_ALGORITHM,
       this.config.jwt_secret,
       payload,
       this.config.jwt_expire_secs,
@@ -359,7 +358,7 @@ export class AuthService {
   async extractJWTPayload(token: string): Promise<AuthPayload> {
     const verify = await jwtVerifyHMAC(
       token,
-      AuthService.JWT_ALGORITHM,
+      AuthConfiguration.JWT_ALGORITHM,
       this.config.jwt_secret,
       this.config.jwt_options,
     );

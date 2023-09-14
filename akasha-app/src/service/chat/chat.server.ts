@@ -1,10 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { ChatWebSocket } from "./chat-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
-import { ChatService } from "./chat.service";
-import { ActiveStatusNumber, MessageTypeNumber } from "@common/generated/types";
-import * as builder from "./chat-payload-builder";
-import { ChatMessageEntry } from "@common/chat-payloads";
+import { ActiveStatusNumber } from "@common/generated/types";
 import { Interval } from "@nestjs/schedule";
 import { HANDSHAKE_TIMED_OUT } from "@common/websocket-private-closecode";
 
@@ -13,7 +10,7 @@ export class ChatServer {
   private readonly temporaryClients = new Set<ChatWebSocket>();
   private readonly clients = new Map<string, Set<ChatWebSocket>>();
 
-  constructor(private readonly service: ChatService) {}
+  constructor() {}
 
   async trackClientTemporary(client: ChatWebSocket): Promise<void> {
     this.temporaryClients.add(client);
@@ -96,49 +93,6 @@ export class ChatServer {
     }
   }
 
-  async multicastToRoom(
-    chatId: string,
-    buf: ByteBuffer,
-    exceptAccountId?: string | undefined,
-  ): Promise<number> {
-    let counter = 0;
-    const memberSet = await this.service.getChatMemberSet(chatId);
-    if (memberSet !== null) {
-      for (const memberAccountId of memberSet) {
-        if (memberAccountId === exceptAccountId) {
-          continue;
-        }
-
-        if (this.unicast(memberAccountId, buf, undefined)) {
-          counter++;
-        }
-      }
-    }
-    return counter;
-  }
-
-  async multicastToFriend(
-    id: string,
-    buf: ByteBuffer,
-    activeFlags?: number | undefined,
-  ): Promise<number> {
-    let counter = 0;
-    const duplexFriends = await this.service.getDuplexFriends(id);
-    for (const friend of duplexFriends) {
-      if (
-        activeFlags !== undefined &&
-        (friend.activeFlags & activeFlags) !== activeFlags
-      ) {
-        continue;
-      }
-
-      if (this.unicast(friend.friendAccountId, buf, undefined)) {
-        counter++;
-      }
-    }
-    return counter;
-  }
-
   async getActiveStatus(id: string): Promise<ActiveStatusNumber> {
     const clientSet = this.clients.get(id);
     if (clientSet === undefined) {
@@ -154,25 +108,5 @@ export class ChatServer {
     }
 
     return ActiveStatusNumber.ONLINE;
-  }
-
-  async sendNotice(
-    chatId: string,
-    accountId: string,
-    content: string,
-  ): Promise<ChatMessageEntry | null> {
-    const message = await this.service.createNewChatMessage(
-      chatId,
-      accountId,
-      content,
-      MessageTypeNumber.NOTICE,
-    );
-    if (message !== null) {
-      void this.multicastToRoom(
-        chatId,
-        builder.makeChatMessagePayload(message),
-      );
-    }
-    return message;
   }
 }

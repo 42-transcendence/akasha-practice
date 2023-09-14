@@ -1,4 +1,4 @@
-import { JWTOptions, assert } from "akasha-lib";
+import { JWTHashAlgorithm, JWTOptions, assert } from "akasha-lib";
 import { OAuth } from "akasha-lib";
 import { Transform, Type, plainToClass } from "class-transformer";
 import {
@@ -49,6 +49,7 @@ export class AuthJWTOptions implements JWTOptions {
 
 export class AuthConfiguration {
   protected static readonly logger = new Logger(AuthConfiguration.name);
+  static readonly JWT_ALGORITHM: JWTHashAlgorithm = "HS256";
 
   static load(env: ConfigService) {
     const config = plainToClass(AuthConfiguration, env.get("auth"));
