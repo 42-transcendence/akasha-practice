@@ -20,8 +20,12 @@ type GravityObj = {
 
 const BALL_RADIUS = 36;
 const PADDLE_RADIUS = 80;
+const GOAL_RADIUS = PADDLE_RADIUS + 8;
 const WIDTH = 1000;
 const HEIGHT = 1920
+const focus = Math.sqrt((HEIGHT / 2) ** 2 - (WIDTH / 2) ** 2);
+const focusPos1 = { x: WIDTH / 2, y: (HEIGHT / 2) + focus };
+const focusPos2 = { x: WIDTH / 2, y: (HEIGHT / 2) - focus };
 
 function distance(p1: { x: number, y: number }, p2: { x: number, y: number }): number {
 	return (Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2))
@@ -64,20 +68,38 @@ function limitVelocity(ballV: { x: number, y: number }) {
 	}
 }
 
-export function getScore(frame: Frame) {
+export function getScore(frame: Frame, field: string) {
 	//점수 겟또
-	if (frame.ball.position.y < BALL_RADIUS) {
-		frame.player1Score++;
-		frame.ball.position.x = WIDTH / 2;
-		frame.ball.position.y = HEIGHT / 2;
-		frame.ball.velocity.x = -15;
-		frame.ball.velocity.y = -15;
-	} else if (frame.ball.position.y > HEIGHT - BALL_RADIUS) {
-		frame.player2Score++;
-		frame.ball.position.x = WIDTH / 2;
-		frame.ball.position.y = HEIGHT / 2;
-		frame.ball.velocity.x = -15;
-		frame.ball.velocity.y = -15;
+	if (field === "normal") {
+		if (frame.ball.position.y < BALL_RADIUS) {
+			frame.player1Score++;
+			frame.ball.position.x = WIDTH / 2;
+			frame.ball.position.y = HEIGHT / 2;
+			frame.ball.velocity.x = -15;
+			frame.ball.velocity.y = -15;
+		} else if (frame.ball.position.y > HEIGHT - BALL_RADIUS) {
+			frame.player2Score++;
+			frame.ball.position.x = WIDTH / 2;
+			frame.ball.position.y = HEIGHT / 2;
+			frame.ball.velocity.x = 15;
+			frame.ball.velocity.y = 15;
+		}
+	}
+	else if (field === 'ellipse') {
+		if (distance(frame.ball.position, focusPos1) <= GOAL_RADIUS + BALL_RADIUS) {
+			frame.player2Score++;
+			frame.ball.position.x = WIDTH / 2;
+			frame.ball.position.y = HEIGHT / 2;
+			frame.ball.velocity.x = 15;
+			frame.ball.velocity.y = 15;
+		}
+		else if (distance(frame.ball.position, focusPos2) <= GOAL_RADIUS + BALL_RADIUS) {
+			frame.player1Score++;
+			frame.ball.position.x = WIDTH / 2;
+			frame.ball.position.y = HEIGHT / 2;
+			frame.ball.velocity.x = -15;
+			frame.ball.velocity.y = -15;
+		}
 	}
 }
 
@@ -114,15 +136,15 @@ export function physicsEngine(frame: Frame, field: string, gravities: GravityObj
 		frame.ball.velocity.x += frame.paddle2.velocity.x / 8;
 		frame.ball.velocity.y += frame.paddle2.velocity.y / 8;
 	}
-	if (gravities.length > 0) {
-		allAttractive(gravities, frame.ball);
-	}
-	if (field === "ellipse") {
-		ellipseReflection(frame.ball)
-	}
-	wallReflextion(frame.ball.position, frame.ball.velocity);
-	limitVelocity(frame.ball.velocity);
-	getScore(frame);
+	// if (gravities.length > 0) {
+	// 	allAttractive(gravities, frame.ball);
+	// }
+	// if (field === "ellipse") {
+	// 	ellipseReflection(frame.ball)
+	// }
+	// wallReflextion(frame.ball.position, frame.ball.velocity);
+	// limitVelocity(frame.ball.velocity);
+	getScore(frame, field);
 }
 
 

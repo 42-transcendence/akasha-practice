@@ -43,6 +43,7 @@ const enum GameClientOpcode {
 	START,
 	RESYNC_ALL,
 	RESYNC_PART,
+	RESYNC_PARTOF,
 	SYNC,
 	WIN,
 	LOSE,
@@ -163,16 +164,10 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 }
 
 function ballDiffCheck(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
-	if (Math.abs(ball1.position.x - ball2.position.x) > 35) {
+	if (Math.abs(ball1.position.x - ball2.position.x) > 50) {
 		return false;
 	}
-	if (Math.abs(ball1.position.y - ball2.position.y) > 35) {
-		return false;
-	}
-	if (Math.abs(ball1.velocity.x - ball2.velocity.x) > 3) {
-		return false;
-	}
-	if (Math.abs(ball1.velocity.y - ball2.velocity.y) > 3) {
+	if (Math.abs(ball1.position.y - ball2.position.y) > 50) {
 		return false;
 	}
 	return true;
@@ -211,6 +206,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			tempFrmae = frames[i].frame;
 		}
 		else if (frames[i].frame.id > frame.id) {
+			break;
 			prevPos.x += velocity.x;
 			prevPos.y += velocity.y;
 			if (player === 1) {
