@@ -34,6 +34,7 @@ import {
 } from "@common/profile-payloads";
 import { MAX_GAME_HISTORY, NICK_NAME_REGEX } from "@common/profile-constants";
 import { ChatServer } from "@/service/chat/chat.server";
+import { GameServer } from "@/service/game/game.server";
 import { FriendActiveFlags } from "@common/chat-payloads";
 import { encodeBase32, generateHMACKey } from "akasha-lib";
 import { Achievement, GameHistory, Record } from "@prisma/client";
@@ -43,6 +44,7 @@ export class ProfileService {
   constructor(
     private readonly accounts: AccountsService,
     private readonly chatServer: ChatServer,
+    private readonly gameServer: GameServer,
   ) {}
 
   async getPublicProfile(
@@ -203,10 +205,11 @@ export class ProfileService {
 
     // // ActiveStatusNumber.GAME ||| ActiveStatusNumber.MATCHING
     // const gameActiveStatus = await LocalServer.Games.getActiveStatus(targetAccountId);
-    //FIXME: 게임 서버
-    // if (gameActiveStatus !== undefined) {
-    //   return gameActiveStatus;
-    // }
+    const gameActiveStatus =
+      await this.gameServer.getActiveStatus(targetAccountId);
+    if (gameActiveStatus !== ActiveStatusNumber.OFFLINE) {
+      return gameActiveStatus;
+    }
 
     // // ActiveStatusNumber.ONLINE ||| ActiveStatusNumber.IDLE ||| ActiveStatusNumber.OFFLINE
     // const chatActiveStatus = await LocalServer.Chats.getActiveStatus(targetAccountId);

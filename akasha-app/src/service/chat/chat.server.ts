@@ -20,6 +20,7 @@ export class ChatServer {
     assert(client.accountId !== undefined);
     assert(this.temporaryClients.delete(client));
 
+    client.handshakeState = true;
     const id = client.accountId;
     const clientSet = this.clients.get(id);
     if (clientSet !== undefined) {

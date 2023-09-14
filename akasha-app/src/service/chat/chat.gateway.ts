@@ -97,7 +97,6 @@ export class ChatGateway extends ServiceGatewayBase<ChatWebSocket> {
   async handleHandshake(client: ChatWebSocket, payload: ByteBuffer) {
     this.assertClient(!client.handshakeState, "Duplicate handshake");
     await this.server.trackClient(client);
-    client.handshakeState = true;
 
     const fetchedMessageIdPairs: ChatRoomChatMessagePairEntry[] =
       payload.readArray(readChatRoomChatMessagePair);

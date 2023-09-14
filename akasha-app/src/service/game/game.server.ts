@@ -1,126 +1,159 @@
-import { Injectable } from "@nestjs/common";
+import { BeforeApplicationShutdown, Injectable, Logger } from "@nestjs/common";
+import { Interval } from "@nestjs/schedule";
 import { GameWebSocket } from "./game-websocket";
 import { ByteBuffer, assert } from "akasha-lib";
-import { GameService } from "./game.service";
 import { ActiveStatusNumber } from "@common/generated/types";
+import {
+  CLOSE_POSTED,
+  HANDSHAKE_TIMED_OUT,
+  SHUTTING_DOWN,
+} from "@common/websocket-private-closecode";
 
 @Injectable()
-export class GameServer {
-  private readonly temporaryClients = new Set<GameWebSocket>();
-  private readonly clients = new Map<string, Set<GameWebSocket>>();
+export class GameServer implements BeforeApplicationShutdown {
+  protected static readonly logger = new Logger(GameServer.name);
 
-  constructor(private readonly service: GameService) {}
+  private readonly temporaryClients = new Set<GameWebSocket>();
+  private readonly clients = new Map<string, GameWebSocket>();
+  private readonly clients_matchmake = new Map<string, GameWebSocket>();
 
   async trackClientTemporary(client: GameWebSocket): Promise<void> {
     this.temporaryClients.add(client);
   }
 
-  async trackClient(client: GameWebSocket): Promise<void> {
+  async trackClient(
+    client: GameWebSocket,
+    matchmaking: boolean,
+  ): Promise<void> {
     assert(client.accountId !== undefined);
     assert(this.temporaryClients.delete(client));
 
-    const id = client.accountId;
-    const clientSet = this.clients.get(id);
-    if (clientSet !== undefined) {
-      clientSet.add(client);
+    client.handshakeState = true;
+    client.matchmaking = matchmaking;
+    if (matchmaking) {
+      this.clients_matchmake.set(client.accountId, client);
     } else {
-      this.clients.set(id, new Set<GameWebSocket>([client]));
-      await client.onFirstConnection();
+      this.clients.set(client.accountId, client);
     }
   }
 
   async untrackClient(client: GameWebSocket): Promise<void> {
     if (client.handshakeState) {
-      const id = client.accountId;
-      const clientSet = this.clients.get(id);
-
-      assert(clientSet !== undefined);
-      assert(clientSet.delete(client));
-
-      if (clientSet.size === 0) {
-        await client.onLastDisconnect();
-        this.clients.delete(id);
+      assert(client.accountId !== undefined);
+      if (client.matchmaking) {
+        assert(this.clients_matchmake.delete(client.accountId));
+      } else {
+        assert(this.clients.delete(client.accountId));
       }
     } else {
       assert(this.temporaryClients.delete(client));
     }
   }
 
-  sharedAction(
-    id: string,
-    action: (client: GameWebSocket) => void,
-    except?: GameWebSocket | undefined,
-  ): boolean {
-    const clientSet = this.clients.get(id);
-    if (clientSet === undefined) {
+  @Interval(10000)
+  pruneTemporaryClient() {
+    const now = Date.now();
+    GameServer.logger.debug(
+      `Before prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
+    );
+
+    for (const temporaryClient of this.temporaryClients) {
+      if (temporaryClient.connectionTime + 7000 < now) {
+        temporaryClient.close(HANDSHAKE_TIMED_OUT);
+      }
+    }
+
+    for (const client of this.clients.values()) {
+      if (client.closePosted) {
+        client.close(CLOSE_POSTED);
+      }
+    }
+
+    for (const client of this.clients_matchmake.values()) {
+      if (client.closePosted) {
+        client.close(CLOSE_POSTED);
+      }
+    }
+
+    GameServer.logger.debug(
+      `After prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
+    );
+  }
+
+  async beforeApplicationShutdown(): Promise<void> {
+    GameServer.logger.log(
+      `Remove remaining temporary connections: ${this.temporaryClients.size}`,
+    );
+    for (const temporaryClient of this.temporaryClients) {
+      temporaryClient.close(HANDSHAKE_TIMED_OUT);
+    }
+
+    GameServer.logger.log(
+      `Remove remaining connections: ${this.clients.size}, ${this.clients_matchmake.size}`,
+    );
+    for (const client of this.clients.values()) {
+      assert(client.matchmaking !== undefined);
+
+      //TODO: More gracefully when game is in progress
+      client.close(SHUTTING_DOWN);
+    }
+    for (const client of this.clients_matchmake.values()) {
+      assert(client.matchmaking !== undefined);
+
+      client.close(SHUTTING_DOWN);
+    }
+
+    GameServer.logger.log(
+      `Game server is ready for shutdown. ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
+    );
+  }
+
+  uniqueAction(id: string, action: (client: GameWebSocket) => void): boolean {
+    const client = this.clients.get(id);
+    if (client === undefined) {
       return false;
     }
 
-    for (const client of clientSet) {
-      if (client !== except) {
-        action(client);
-      }
-    }
+    action(client);
     return true;
   }
 
-  unicast(
-    id: string,
-    buf: ByteBuffer,
-    except?: GameWebSocket | undefined,
-  ): boolean {
-    return this.sharedAction(id, (client) => client.sendPayload(buf), except);
+  unicast(id: string, buf: ByteBuffer): boolean {
+    return this.uniqueAction(id, (client) => client.sendPayload(buf));
   }
 
   broadcast(buf: ByteBuffer, except?: GameWebSocket | undefined): void {
-    for (const [, clientSet] of this.clients) {
-      for (const client of clientSet) {
-        if (client !== except) {
-          client.sendPayload(buf);
-        }
+    for (const client of this.clients.values()) {
+      if (client !== except) {
+        client.sendPayload(buf);
       }
     }
   }
 
-  async multicastToRoom(
-    gameId: string,
-    buf: ByteBuffer,
-    exceptAccountId?: string | undefined,
-  ): Promise<number> {
-    let counter = 0;
-    void this.service;
-    //TODO: Not implemented
-    void gameId;
-    const memberSet = Array<string>();
-    // const memberSet = await this.service.getRoomMemberSet(gameId);
-    if (memberSet !== null) {
-      for (const memberAccountId of memberSet) {
-        if (memberAccountId === exceptAccountId) {
-          continue;
-        }
-
-        if (this.unicast(memberAccountId, buf, undefined)) {
-          counter++;
-        }
-      }
+  uniqueActionForMatchmake(
+    id: string,
+    action: (client: GameWebSocket) => void,
+  ): boolean {
+    const client = this.clients_matchmake.get(id);
+    if (client === undefined) {
+      return false;
     }
-    return counter;
+
+    action(client);
+    return true;
   }
 
   async getActiveStatus(id: string): Promise<ActiveStatusNumber> {
-    const clientSet = this.clients.get(id);
-    if (clientSet === undefined) {
-      return ActiveStatusNumber.OFFLINE;
+    const client = this.clients.get(id);
+    if (client !== undefined) {
+      return ActiveStatusNumber.GAME;
     }
 
-    if (
-      [...clientSet].every(
-        (e) => e.socketActiveStatus === ActiveStatusNumber.IDLE,
-      )
-    ) {
-      return ActiveStatusNumber.IDLE;
+    const client_matchmake = this.clients_matchmake.get(id);
+    if (client_matchmake !== undefined) {
+      return ActiveStatusNumber.MATCHING;
     }
 
-    return ActiveStatusNumber.ONLINE;
+    return ActiveStatusNumber.OFFLINE;
   }
 }

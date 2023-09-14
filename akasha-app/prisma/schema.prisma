@@ -102,8 +102,9 @@ model Account {
   sentChatDirects       ChatDirect[]      @relation("SentChatDirects")
   receivedChatDirects   ChatDirect[]      @relation("ReceivedChatDirects")
   // Game
+  game                  Game?             @relation(fields: [gameId], references: [id], onDelete: SetDefault)
+  gameId                String?           @db.Uuid
   gameQueue             GameQueue?
-  gameMember            GameMember?
   gameHistory           GameHistory[]
 
   @@unique([authIssuer, authSubject])
@@ -326,35 +327,38 @@ model ChatDirect {
 }
 
 model Game {
-  id        String       @id @default(uuid()) @db.Uuid
-  code      String?      @unique @default(nanoid(5)) @db.VarChar(5)
-  timestamp DateTime     @default(now())
-  members   GameMember[]
+  id        String     @id @default(uuid()) @db.Uuid
+  code      String?    @unique @default(nanoid(5)) @db.VarChar(5)
+  timestamp DateTime   @default(now())
+  server    GameServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId  String
+  members   Account[]
 
   @@map("games")
   @@schema("services")
 }
 
-model GameMember {
-  game      Game    @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  gameId    String  @db.Uuid
-  account   Account @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId String  @unique @db.Uuid
-
-  @@id([gameId, accountId])
-  @@map("game_members")
-  @@schema("services")
-}
-
 model GameQueue {
-  account     Account  @relation(fields: [accountId], references: [id], onDelete: Cascade)
-  accountId   String   @unique @db.Uuid
+  account     Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  accountId   String     @unique @db.Uuid
   skillRating Int
-  timestamp   DateTime @default(now())
+  timestamp   DateTime   @default(now())
+  server      GameServer @relation(fields: [serverId], references: [id], onDelete: Cascade)
+  serverId    String
 
   @@index([skillRating])
   @@index([timestamp])
   @@map("game_queue")
+  @@schema("services")
+}
+
+model GameServer {
+  id        String      @id
+  timestamp DateTime    @default(now())
+  games     Game[]
+  queue     GameQueue[]
+
+  @@map("game_servers")
   @@schema("services")
 }
 

@@ -1,8 +1,7 @@
 import { assert } from "akasha-lib";
-import { ServiceWebSocketBase } from "@/service/service-socket";
+import { ServiceWebSocketBase } from "@/service/service-websocket";
 import { GameService } from "./game.service";
 import { GameServer } from "./game.server";
-import { ActiveStatusNumber } from "@common/generated/types";
 import { AuthLevel } from "@common/auth-payloads";
 
 export class GameWebSocket extends ServiceWebSocketBase {
@@ -40,13 +39,8 @@ export class GameWebSocket extends ServiceWebSocketBase {
   }
 
   handshakeState = false;
-  socketActiveStatus = ActiveStatusNumber.ONLINE;
-
-  async onFirstConnection() {
-    //NOTE: OFFLINE -> ONLINE
-  }
-
-  async onLastDisconnect() {
-    //NOTE: ONLINE -> OFFLINE
-  }
+  matchmaking: boolean | undefined;
+  enqueued = false; //NOTE: `matchmaking`-only
+  gameId: string | undefined;
+  closePosted = false;
 }

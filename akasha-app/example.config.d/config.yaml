@@ -6,6 +6,7 @@ cors:
     - GET
     - HEAD
     - POST
+    - PUT
     - DELETE
 
 auth:
