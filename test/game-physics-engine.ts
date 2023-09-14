@@ -103,6 +103,10 @@ export function getScore(frame: Frame, field: string) {
 	}
 }
 
+export function determinantWiner(frame: Frame) {
+
+}
+
 function makeUnitVec(vec: { x: number, y: number }): { x: number, y: number } {
 	const vecSize = Math.sqrt(vec.x ** 2 + vec.y ** 2);
 	return ({ x: vec.x * -1 / vecSize, y: vec.y * -1 / vecSize });
@@ -145,6 +149,7 @@ export function physicsEngine(frame: Frame, field: string) {
 	// wallReflextion(frame.ball.position, frame.ball.velocity);
 	// limitVelocity(frame.ball.velocity);
 	getScore(frame, field);
+	determinantWiner(frame);
 }
 
 

@@ -6,6 +6,9 @@ const field = "ellipse";
 const gravitiesObj: GravityObj[] = makeGravitisObj();
 // const field = "normal";
 // const gravitiesObj: GravityObj[] = []
+let setNo = 1;
+const setResult: Map<number, number[]> = new Map<number, number[]>; // 세트당 점수
+
 
 
 type PhysicsAttribute = {
@@ -45,9 +48,39 @@ const enum GameClientOpcode {
 	RESYNC_PART,
 	RESYNC_PARTOF,
 	SYNC,
-	WIN,
-	LOSE,
-	DRAW
+	FINISH,
+}
+
+function writeGravityObj(payload: ByteBuffer, data: GravityObj) {
+	payload.write4Float(data.pos.x);
+	payload.write4Float(data.pos.y);
+	payload.write4Unsigned(data.radius);
+	payload.write4Float(data.force);
+}
+
+function writeGravityObjs(payload: ByteBuffer, data: GravityObj[]) {
+	payload.write2Unsigned(data.length)
+	for (let i = 0; i < data.length; i++) {
+		writeGravityObj(payload, data[i]);
+	}
+}
+
+function readGravityObj(payload: ByteBuffer): GravityObj {
+	const x = payload.read4Float();
+	const y = payload.read4Float();
+	const pos = { x, y }
+	const radius = payload.read4Unsigned();
+	const force = payload.read4Float();
+	return { pos, radius, force };
+}
+
+function readGravityObjs(payload: ByteBuffer): GravityObj[] {
+	const size = payload.read2Unsigned()
+	const gravityObjs: GravityObj[] = [];
+	for (let i = 0; i < size; i++) {
+		gravityObjs.push(readGravityObj(payload));
+	}
+	return gravityObjs;
 }
 
 function writePhysicsAttribute(payload: ByteBuffer, data: PhysicsAttribute) {
@@ -126,6 +159,21 @@ function readFramesWithoutBall(payload: ByteBuffer): Frame[] {
 }
 const Frames: { fixed: boolean, frame: Frame }[] = [];
 
+function fixWinner(player: number, frame: Frame, client: WebSocket, clients: Set<WebSocket>): boolean {
+	if (frame.player1Score === 5 || frame.player2Score === 5) {
+		const buf = ByteBuffer.createWithOpcode(GameClientOpcode.FINISH);
+		buf.write1(frame.player1Score);
+		buf.write1(frame.player2Score);
+		for (const _clinet of clients) {
+			_clinet.send(buf.toArray());
+		}
+		setNo++;
+		setResult.set(1, [frame.player1Score, frame.player2Score])
+		return true;
+	}
+	return false
+}
+
 function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffer) {
 	const player: number = payload.read1();
 	const frame: Frame = readFrame(payload);
@@ -138,6 +186,27 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 		}
 		else {
 			const resyncFrames: { allSync: boolean, frames: Frame[] } = syncFrame(player, Frames, frame, field, gravitiesObj);
+			if (resyncFrames.frames.length > 0) {
+				if (fixWinner(player, resyncFrames.frames[0], client, clients) === true) {
+					Frames.splice(0, Frames.length);
+					setTimeout(() => {
+						if (setNo <= 3) {
+							for (const client of clients) {
+								const buf = ByteBuffer.createWithOpcode(GameClientOpcode.START);
+								buf.writeString(field)
+								writeGravityObjs(buf, gravitiesObj);
+								buf.write1(setNo);
+								client.send(buf.toArray());
+							}
+						}
+					}, 1000)
+					return;
+				}
+				if (setNo > 3) {
+					//방 펑~~ 터질것만 같아~
+					return;
+				}
+			}
 			if (resyncFrames.allSync === true) {
 				const buf = ByteBuffer.createWithOpcode(GameClientOpcode.RESYNC_ALL);
 				writeFrames(buf, resyncFrames.frames);
@@ -163,11 +232,27 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 	}
 }
 
-function ballDiffCheck(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
+function ballDiffCheckEasy(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
 	if (Math.abs(ball1.position.x - ball2.position.x) > 50) {
 		return false;
 	}
 	if (Math.abs(ball1.position.y - ball2.position.y) > 50) {
+		return false;
+	}
+	return true;
+}
+
+function ballDiffCheckHard(ball1: PhysicsAttribute, ball2: PhysicsAttribute): boolean {
+	if (Math.abs(ball1.position.x - ball2.position.x) > 18) {
+		return false;
+	}
+	if (Math.abs(ball1.position.y - ball2.position.y) > 18) {
+		return false;
+	}
+	if (Math.abs(ball1.velocity.x - ball2.velocity.x) > 1) {
+		return false;
+	}
+	if (Math.abs(ball1.velocity.y - ball2.velocity.y) > 1) {
 		return false;
 	}
 	return true;
@@ -196,8 +281,10 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 				copy(prevPos, frame.paddle2.position);
 			}
 			//프레임 공의 위치 속도 병합
-			if (frame.paddle1Hit === true || frame.paddle2Hit === true) {
-				frames[i].frame.ball = frame.ball;
+			if ((player === 1 && frame.paddle1Hit === true) || (player === 2 && frame.paddle2Hit === true)) {
+				if (ballDiffCheckHard(frames[i].frame.ball, frame.ball) === false) {
+					frames[i].frame.ball = frame.ball;
+				}
 			}
 			copy(ball.velocity, frames[i].frame.ball.velocity);
 			copy(ball.position, frames[i].frame.ball.position);
@@ -234,7 +321,7 @@ function syncFrame(player: number, frames: { fixed: boolean, frame: Frame }[], f
 			sendFrames.push(frames[i].frame);
 		}
 	}
-	if (tempFrmae !== undefined && (tempFrmae.paddle1Hit === false && tempFrmae.paddle2Hit === false) && (tempFrmae.player1Score === frame.player1Score && tempFrmae.player2Score === frame.player2Score) && ballDiffCheck(tempFrmae.ball, frame.ball) === true) {
+	if (tempFrmae !== undefined && (tempFrmae.paddle1Hit === false && tempFrmae.paddle2Hit === false) && (tempFrmae.player1Score === frame.player1Score && tempFrmae.player2Score === frame.player2Score) && ballDiffCheckEasy(tempFrmae.ball, frame.ball) === true) {
 		return { allSync: false, frames: sendFrames };
 	}
 	return ({ allSync: true, frames: sendFrames });
@@ -246,8 +333,12 @@ function makeRandom(min: number, max: number): number {
 
 function makeGravitisObj(): GravityObj[] {
 	const gravities: GravityObj[] = [];
-	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(200, 960) }, radius: makeRandom(40, 50), force: makeRandom(1, 5) / 6 });
-	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(960, 1770) }, radius: makeRandom(30, 40), force: makeRandom(1, 5) / 8 });
+	const random1 = makeRandom(1, 10) % 2;
+	const random2 = makeRandom(1, 10) % 2;
+	const sign1 = random1 === 1 ? 1 : -1;
+	const sign2 = random2 === 1 ? 1 : -1;
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(200, 960) }, radius: makeRandom(40, 50), force: sign1 * makeRandom(1, 5) / 6 });
+	gravities.push({ pos: { x: makeRandom(100, 900), y: makeRandom(960, 1770) }, radius: makeRandom(30, 40), force: sign2 * makeRandom(1, 5) / 8 });
 	return gravities;
 }
 
@@ -285,7 +376,8 @@ webSocketServer.on('connection', (ws: any, request: any) => {
 		for (const ws of webSocketServer.clients) {
 			const buf = ByteBuffer.createWithOpcode(GameClientOpcode.START);
 			buf.writeString(field)
-			buf.writeString(JSON.stringify(gravitiesObj));
+			writeGravityObjs(buf, gravitiesObj);
+			buf.write1(setNo);
 			ws.send(buf.toArray());
 		}
 		count = 0;
