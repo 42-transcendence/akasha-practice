@@ -11,6 +11,7 @@ import {
   ParseIntPipe,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   UploadedFile,
   UseGuards,
@@ -138,11 +139,16 @@ export class ProfileController {
   }
 
   @Get("private/otp")
+  async getOTPState(@Auth() auth: AuthPayload): Promise<boolean> {
+    return await this.profileService.isOTPEnabled(auth);
+  }
+
+  @Post("private/otp")
   async getInertOTP(@Auth() auth: AuthPayload): Promise<OTPSecret> {
     return await this.profileService.getInertOTP(auth);
   }
 
-  @Post("private/otp")
+  @Put("private/otp")
   async enableOTP(
     @Auth() auth: AuthPayload,
     @Query("otp") clientOTP: string | undefined,

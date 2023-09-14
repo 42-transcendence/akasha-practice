@@ -137,6 +137,13 @@ export class ProfileService {
     return await this.accounts.findAccountIdByNick(name, tag);
   }
 
+  async isOTPEnabled(payload: AuthPayload): Promise<boolean> {
+    if (payload.auth_level === AuthLevel.COMPLETED) {
+      return await this.accounts.getOTPState(payload.user_id);
+    }
+    throw new ForbiddenException();
+  }
+
   async getInertOTP(payload: AuthPayload): Promise<OTPSecret> {
     if (payload.auth_level === AuthLevel.COMPLETED) {
       const algorithm = "SHA-256";

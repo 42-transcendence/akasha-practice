@@ -185,6 +185,26 @@ export class AccountsService {
     return serverOTP === clientOTP;
   }
 
+  async getOTPState(id: string): Promise<boolean> {
+    const account = await this.prisma.account.findUniqueOrThrow({
+      where: { id },
+      select: {
+        otpSecret: secretValues,
+      },
+    });
+
+    if (account.otpSecret !== null) {
+      const params = account.otpSecret.params;
+      if (!isSecretParams(params)) {
+        throw new InternalServerErrorException("Corrupted OTP param");
+      }
+
+      return params.enabled;
+    } else {
+      return false;
+    }
+  }
+
   async createOTPSecretAtomic(
     id: string,
     supplier: () => Promise<[Uint8Array, SecretParamsView]>,
