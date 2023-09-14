@@ -1,4 +1,4 @@
-import { hasProperty } from "akasha-lib";
+import { ByteBuffer, hasProperty } from "akasha-lib";
 
 export type GameInvitationPayload = {
   user_id: string;
@@ -69,16 +69,65 @@ export function isValidLimit(limit: number): boolean {
 export type GameRoomProps = {
   id: string;
   code: string | null;
-  ladder: boolean;
 };
+
+export function readGameRoomProps(buf: ByteBuffer): GameRoomProps {
+  const id = buf.readUUID();
+  const code = buf.readNullable(buf.readString);
+  return { id, code };
+}
+
+export function writeGameRoomProps(obj: GameRoomProps, buf: ByteBuffer) {
+  buf.writeUUID(obj.id);
+  buf.writeNullable(obj.code, buf.writeString);
+}
 
 export type GameRoomParams = {
   battleField: BattleField;
   gameMode: GameMode;
   limit: number;
   fair: boolean;
-  ladder: boolean;
 };
+
+export function readGameRoomParams(buf: ByteBuffer): GameRoomParams {
+  const battleField = buf.read4Unsigned();
+  const gameMode = buf.read1();
+  const limit = buf.read2Unsigned();
+  const fair = buf.readBoolean();
+  return { battleField, gameMode, limit, fair };
+}
+
+export function writeGameRoomParams(obj: GameRoomParams, buf: ByteBuffer) {
+  buf.write4Unsigned(obj.battleField);
+  buf.write1(obj.gameMode);
+  buf.write2Unsigned(obj.limit);
+  buf.writeBoolean(obj.fair);
+}
+
+export type GameMemberParams = {
+  accountId: string;
+  character: number;
+  specification: number;
+  team: number;
+  ready: boolean;
+};
+
+export function readGameMemberParams(buf: ByteBuffer): GameMemberParams {
+  const accountId = buf.readUUID();
+  const character = buf.read1();
+  const specification = buf.read1();
+  const team = buf.read1();
+  const ready = buf.readBoolean();
+  return { accountId, character, specification, team, ready };
+}
+
+export function writeGameMemberParams(obj: GameMemberParams, buf: ByteBuffer) {
+  buf.writeUUID(obj.accountId);
+  buf.write1(obj.character);
+  buf.write1(obj.specification);
+  buf.write1(obj.team);
+  buf.writeBoolean(obj.ready);
+}
 
 export const enum GameRoomEnterResult {
   SUCCESS,

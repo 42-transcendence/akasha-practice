@@ -10,6 +10,7 @@ import { GameConfiguration } from "./game-config";
 import { PrismaService } from "@/prisma/prisma.service";
 import {
   GameInvitationPayload,
+  GameMemberParams,
   GameRoomEnterResult,
   GameRoomParams,
   isGameInvitationPayload,
@@ -101,15 +102,15 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
 
   async createNewRoom(
     params: GameRoomParams,
-    entryCode: boolean,
+    ladder: boolean,
   ): Promise<GameEntity> {
     const game = await this.prisma.game.create({
       data: {
         serverId: this.config.unique_id,
-        code: entryCode ? undefined : null,
+        code: ladder ? null : undefined,
       },
     });
-    const room = new GameRoom(this, this.server, game, params);
+    const room = new GameRoom(this, this.server, game, params, ladder);
     this.rooms.set(room.props.id, room);
     return room.props;
   }
@@ -229,6 +230,7 @@ export class GameRoom {
     readonly server: GameServer,
     readonly props: GameEntity,
     readonly params: GameRoomParams,
+    readonly ladder: boolean,
   ) {
     this.updaterId = setInterval(() => this.update(), 500);
   }
@@ -292,7 +294,7 @@ export class GameRoom {
   }
 }
 
-export class GameMember {
+export class GameMember implements GameMemberParams {
   character = 0;
   specification = 0;
   team: number;

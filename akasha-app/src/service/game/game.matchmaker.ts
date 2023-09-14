@@ -89,7 +89,6 @@ export class GameMatchmaker {
     gameMode: GameMode.UNIFORM,
     limit: 2,
     fair: true,
-    ladder: true,
   };
 
   static getMatchCoverage(elapsedTime: number): number {
@@ -182,7 +181,7 @@ export class GameMatchmaker {
         {
           ...GameMatchmaker.params,
         },
-        false,
+        true,
       );
       for (const matched of matchedTuple) {
         const invitation = await this.makeInvitation(
@@ -208,7 +207,7 @@ export class GameMatchmaker {
     accountId: string,
     params: GameRoomParams,
   ): Promise<string> {
-    const game = await this.service.createNewRoom(params, true);
+    const game = await this.service.createNewRoom(params, false);
 
     return await this.makeInvitation(accountId, game.serverId, game.id);
   }

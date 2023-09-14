@@ -1,8 +1,8 @@
 import { GameServerOpcode } from "@common/game-opcodes";
 import {
-  BattleField,
   GameMatchmakeType,
-  GameMode,
+  GameRoomParams,
+  writeGameRoomParams,
 } from "@common/game-payloads";
 import { ByteBuffer } from "akasha-lib";
 
@@ -12,18 +12,10 @@ export function makeMatchmakeHandshakeQueue() {
   return buf;
 }
 
-export function makeMatchmakeHandshakeCreate(
-  battleField: BattleField,
-  gameMode: GameMode,
-  limit: number,
-  fair: boolean,
-) {
+export function makeMatchmakeHandshakeCreate(params: GameRoomParams) {
   const buf = ByteBuffer.createWithOpcode(GameServerOpcode.HANDSHAKE_MATCHMAKE);
   buf.write1(GameMatchmakeType.CREATE);
-  buf.write4Unsigned(battleField);
-  buf.write1(gameMode);
-  buf.write2Unsigned(limit);
-  buf.writeBoolean(fair);
+  writeGameRoomParams(params, buf);
   return buf;
 }
 

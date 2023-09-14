@@ -13,9 +13,9 @@ import {
   GameMatchmakeType,
   GameMode,
   GameRoomEnterResult,
-  GameRoomParams,
   MatchmakeFailedReason,
   isValidLimit,
+  readGameRoomParams,
 } from "@common/game-payloads";
 import * as builder from "./game-payload-builder";
 import { GameMatchmaker } from "./game.matchmaker";
@@ -85,29 +85,21 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
           return builder.makeMatchmakeFailed(MatchmakeFailedReason.DUPLICATE);
         }
 
-        const battleField = payload.read4Unsigned();
-        if (battleField >= BattleField.MAX_VALUE) {
+        const params = readGameRoomParams(payload);
+        if (params.battleField >= BattleField.MAX_VALUE) {
           throw new PacketHackException(
-            `Illegal battle field [${battleField}]`,
+            `Illegal battle field [${params.battleField}]`,
           );
         }
-        const gameMode = payload.read1();
-        if (gameMode >= GameMode.MAX_VALUE) {
-          throw new PacketHackException(`Illegal game mode [${gameMode}]`);
+        if (params.gameMode >= GameMode.MAX_VALUE) {
+          throw new PacketHackException(
+            `Illegal game mode [${params.gameMode}]`,
+          );
         }
-        const limit = payload.read2Unsigned();
-        if (!isValidLimit(limit)) {
-          throw new PacketHackException(`Illegal limit [${gameMode}]`);
+        if (!isValidLimit(params.limit)) {
+          throw new PacketHackException(`Illegal limit [${params.limit}]`);
         }
-        const fair = payload.readBoolean();
 
-        const params: GameRoomParams = {
-          battleField,
-          gameMode,
-          limit,
-          fair,
-          ladder: false,
-        };
         const invitation =
           await this.matchmaker.makeInvitationWithCreateNewRoom(
             client.accountId,
