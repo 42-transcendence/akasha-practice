@@ -3,8 +3,8 @@ import { ByteBuffer } from "./library/byte-buffer"
 import * as WebSocket from 'ws';
 
 const field = "ellipse";
-const gravitiesObj: GravityObj[] = makeGravitisObj();
 // const field = "normal";
+const gravitiesObj: GravityObj[] = makeGravitisObj();
 // const gravitiesObj: GravityObj[] = []
 let setNo = 1;
 let lastFrameId = 0;
