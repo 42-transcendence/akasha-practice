@@ -125,6 +125,7 @@ export class GameMatchmaker {
   }
 
   @Interval(4000)
+  //XXX: Shutdown 때 Promise가 중단되지 않음.
   async matchmake() {
     Logger.debug(`Begin matchmake`, GameMatchmaker.name);
     const now = Date.now();

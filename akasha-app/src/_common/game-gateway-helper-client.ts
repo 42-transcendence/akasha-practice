@@ -5,7 +5,7 @@ import {
   readGameRoomParams,
 } from "./game-payloads";
 
-export function handleEnqueueAlert(payload: ByteBuffer): GameRoomParams {
+export function handleEnqueuedAlert(payload: ByteBuffer): GameRoomParams {
   const params = readGameRoomParams(payload);
   return params;
 }

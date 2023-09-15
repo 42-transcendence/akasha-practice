@@ -3,7 +3,7 @@ import { ByteBuffer } from "akasha-lib";
 import { ServerOptions } from "ws";
 import { ServiceGatewayBase } from "@/service/service-gateway";
 import { verifyClientViaQueryParam } from "@/service/ws-verify-client";
-import { GameService } from "./game.service";
+import { GameMember, GameService } from "./game.service";
 import { GameWebSocket } from "./game-websocket";
 import { GameServerOpcode } from "@common/game-opcodes";
 import { GameServer } from "./game.server";
@@ -177,19 +177,77 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     return undefined;
   }
 
-  @SubscribeMessage(GameServerOpcode.READY_STATE)
-  async handleReadyState(client: GameWebSocket, payload: ByteBuffer) {
+  async abstractHandleUpdateMember<
+    TKey extends keyof GameMember,
+    TMapped extends GameMember[TKey],
+  >(
+    client: GameWebSocket,
+    payload: ByteBuffer,
+    key: TKey,
+    reader: (this: ByteBuffer, buf: ByteBuffer) => TMapped,
+    validater?: ((x: TMapped) => boolean) | undefined,
+  ) {
     this.assertClient(client.handshakeState, "Invalid state");
     this.assertClient(client.matchmaking === false, "Invalid state");
-    this.assertClient(client.gameId !== undefined, "Invalid state");
 
-    const ready = payload.readBoolean();
-
-    const room = this.gameService.getRoom(client.gameId);
-    if (room !== undefined) {
-      room.updateMember(client.accountId, (member) => {
-        member.ready = ready;
-      });
+    const value = reader.bind(payload)(payload);
+    if (validater !== undefined && !validater(value)) {
+      throw new PacketHackException(`Invalid "${key}" [${String(value)}]`);
     }
+
+    if (client.gameId === undefined) {
+      return;
+    }
+    const room = this.gameService.getRoom(client.gameId);
+    if (room === undefined) {
+      return;
+    }
+    if (room.progress !== undefined) {
+      return;
+    }
+    room.updateMember(client.accountId, (member) => {
+      member[key] = value;
+    });
+  }
+
+  @SubscribeMessage(GameServerOpcode.SELECT_CHAR)
+  async handleSelectCharacter(client: GameWebSocket, payload: ByteBuffer) {
+    this.abstractHandleUpdateMember(
+      client,
+      payload,
+      "character",
+      payload.read1,
+    );
+  }
+
+  @SubscribeMessage(GameServerOpcode.SELECT_SPEC)
+  async handleSelectSpecification(client: GameWebSocket, payload: ByteBuffer) {
+    this.abstractHandleUpdateMember(
+      client,
+      payload,
+      "specification",
+      payload.read1,
+    );
+  }
+
+  @SubscribeMessage(GameServerOpcode.CHANGE_TEAM)
+  async handleChangeTeam(client: GameWebSocket, payload: ByteBuffer) {
+    this.abstractHandleUpdateMember(
+      client,
+      payload,
+      "team",
+      payload.read1,
+      (x) => x === 0 || x === 1,
+    );
+  }
+
+  @SubscribeMessage(GameServerOpcode.READY_STATE)
+  async handleReadyState(client: GameWebSocket, payload: ByteBuffer) {
+    this.abstractHandleUpdateMember(
+      client,
+      payload,
+      "ready",
+      payload.readBoolean,
+    );
   }
 }

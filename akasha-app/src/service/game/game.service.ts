@@ -11,6 +11,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import {
   GameInvitationPayload,
   GameMemberParams,
+  GameProgress,
   GameRoomEnterResult,
   GameRoomParams,
   isGameInvitationPayload,
@@ -19,6 +20,7 @@ import { GameEntity } from "@common/generated/types";
 import { ByteBuffer, jwtVerifyHMAC } from "akasha-lib";
 import { GameServer } from "./game.server";
 import * as builder from "./game-payload-builder";
+import { Prisma } from "@prisma/client";
 
 /// AcceptInvitationResult
 type AcceptInvitationResult =
@@ -185,7 +187,7 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
           if (room.members.size >= room.params.limit) {
             return { errno: GameRoomEnterResult.EXCEED_LIMIT };
           }
-          if (room.started) {
+          if (room.progress !== undefined) {
             return { errno: GameRoomEnterResult.ALREADY_STARTED };
           }
           void (await tx.account.update({
@@ -228,14 +230,48 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
       }
     }
   }
+
+  async accomplishAchievement(
+    accountId: string,
+    achievementId: number,
+  ): Promise<boolean> {
+    try {
+      void (await this.prisma.achievement.create({
+        data: { accountId, achievementId },
+      }));
+      return true;
+    } catch (e) {
+      if (e instanceof Prisma.PrismaClientKnownRequestError) {
+        if (e.code === "P2002") {
+          return false;
+        }
+      }
+      GameService.logger.error(`Failed accomplish achievement: ${e}`);
+      throw e;
+    }
+  }
 }
 
 export class GameRoom {
+  readonly defaultMaxSet = 3;
+  readonly defaultTimespan = 10 * 60 * 1000;
+  readonly initialProgress = () => ({
+    score: [0, 0],
+    initialStartTime: Date.now(),
+    totalTimespan: this.defaultTimespan,
+    suspended: false,
+    resumedTime: Date.now(),
+    consumedTimespanSum: 0,
+    resumeScheduleTime: null,
+  });
+  readonly defaultRestTime = 4000;
+
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
   readonly createdTimestamp = Date.now();
   unused = true;
-  started = false;
+  firstAllReady = 0;
+  progress: GameProgress | undefined;
 
   constructor(
     readonly service: GameService,
@@ -280,7 +316,15 @@ export class GameRoom {
     const values = [...this.members.values()];
     const count_0 = values.filter((e) => e.team === 0);
     const count_1 = values.filter((e) => e.team === 1);
-    return count_0 < count_1 ? 0 : 1;
+    return count_0 <= count_1 ? 0 : 1;
+  }
+
+  allReady(): boolean {
+    const values = [...this.members.values()];
+    const allReady = values.every((e) => e.ready);
+    const count_0 = values.filter((e) => e.team === 0);
+    const count_1 = values.filter((e) => e.team === 1);
+    return allReady && count_0 === count_1;
   }
 
   broadcast(buf: ByteBuffer, except?: string | undefined): void {
@@ -304,12 +348,108 @@ export class GameRoom {
   }
 
   async update(): Promise<void> {
-    if (!this.started) {
-      //TODO: Check ready state
+    const progress = this.progress;
+    if (progress === undefined) {
+      if (this.ladder) {
+        if (this.members.size >= this.params.limit) {
+          this.initialStart();
+        }
+      } else {
+        if (this.allReady()) {
+          if (this.firstAllReady === 0) {
+            this.firstAllReady = Date.now();
+          } else if (this.firstAllReady + this.defaultRestTime >= Date.now()) {
+            this.initialStart();
+          }
+        } else {
+          if (this.firstAllReady !== 0) {
+            this.firstAllReady = 0;
+          }
+        }
+      }
     } else {
       //TODO: Exclude over-suspended users from the game
-      //TODO: end game
+      if (progress.currentSet < progress.maxSet) {
+        if (progress.suspended) {
+          if (progress.resumeScheduleTime !== null) {
+            if (progress.resumeScheduleTime >= Date.now()) {
+              this.start();
+              this.sendUpdateRoom();
+            }
+          }
+        } else {
+          if (
+            progress.resumedTime +
+              progress.totalTimespan -
+              progress.consumedTimespanSum <
+            Date.now()
+          ) {
+            // In Progress
+            //TODO: 게임에 1명 이하만 남은 경우
+            //TODO: 한 팀이 모두 없는 경우
+          } else {
+            // Next set
+            progress.currentSet++;
+            this.progress = {
+              ...progress,
+              ...this.initialProgress(),
+              suspended: true,
+              resumeScheduleTime: Date.now() + this.defaultRestTime,
+            };
+            this.broadcast(builder.makeGameIntermediateResult());
+            this.sendUpdateRoom();
+          }
+        }
+      } else {
+        this.broadcast(builder.makeGameFinalResult());
+        this.finalEnd();
+      }
     }
+  }
+
+  initialStart() {
+    this.progress = {
+      currentSet: 0,
+      maxSet: this.defaultMaxSet,
+      ...this.initialProgress(),
+      suspended: true,
+    };
+    this.sendUpdateRoom();
+  }
+
+  start() {
+    if (this.progress === undefined) {
+      return;
+    }
+    if (!this.progress.suspended) {
+      return;
+    }
+    this.progress.suspended = false;
+    this.progress.resumedTime = Date.now();
+    this.progress.resumeScheduleTime = null;
+    this.sendUpdateRoom();
+  }
+
+  stop() {
+    if (this.progress === undefined) {
+      return;
+    }
+    if (this.progress.suspended) {
+      return;
+    }
+    this.progress.suspended = true;
+    this.progress.consumedTimespanSum += Date.now() - this.progress.resumedTime;
+    this.progress.resumeScheduleTime = null;
+    this.sendUpdateRoom();
+  }
+
+  finalEnd() {
+    this.progress = undefined;
+    this.sendUpdateRoom();
+  }
+
+  sendUpdateRoom() {
+    this.broadcast(builder.makeUpdateGame(this.progress));
   }
 
   async dispose(): Promise<void> {
@@ -336,5 +476,18 @@ export class GameMember implements GameMemberParams {
     readonly accountId: string,
   ) {
     this.team = this.room.nextTeam();
+  }
+
+  accomplish(achievementId: number): void {
+    this.room.service
+      .accomplishAchievement(this.accountId, achievementId)
+      .then(() =>
+        this.room.broadcast(
+          builder.makeAchievement(this.accountId, achievementId),
+        ),
+      )
+      .catch(() => {
+        //NOTE: ignore
+      });
   }
 }

@@ -1,9 +1,11 @@
 import { GameClientOpcode } from "@common/game-opcodes";
 import {
+  GameProgress,
   GameRoomEnterResult,
   GameRoomParams,
   MatchmakeFailedReason,
   writeGameMemberParams,
+  writeGameProgress,
   writeGameRoomParams,
   writeGameRoomProps,
 } from "@common/game-payloads";
@@ -61,5 +63,35 @@ export function makeUpdateMember(accountId: string, member: GameMember) {
 export function makeLeaveMember(accountId: string) {
   const buf = ByteBuffer.createWithOpcode(GameClientOpcode.LEAVE_MEMBER);
   buf.writeUUID(accountId);
+  return buf;
+}
+
+// SYNCHRONIZE_RESULT,
+// RESYNCHRONIZE_REQUEST,
+
+export function makeUpdateGame(progress: GameProgress | undefined) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.UPDATE_GAME);
+  buf.writeNullable(progress ?? null, writeGameProgress);
+  return buf;
+}
+
+export function makeGameIntermediateResult() {
+  const buf = ByteBuffer.createWithOpcode(
+    GameClientOpcode.GAME_INTERMEDIATE_RESULT,
+  );
+  //FIXME: 작성
+  return buf;
+}
+
+export function makeGameFinalResult() {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.GAME_FINAL_RESULT);
+  //FIXME: 작성
+  return buf;
+}
+
+export function makeAchievement(accountId: string, achievementId: number) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.ACHIEVEMENT);
+  buf.writeUUID(accountId);
+  buf.write2Unsigned(achievementId);
   return buf;
 }
