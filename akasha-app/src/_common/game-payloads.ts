@@ -139,6 +139,7 @@ export const enum GameRoomEnterResult {
   ALREADY_STARTED,
   GAME_MISMATCH,
   DUPLICATE,
+  UNKNOWN,
 }
 
 export type GameProgress = {
@@ -162,7 +163,7 @@ export function readGameProgress(buf: ByteBuffer): GameProgress {
   const suspended = buf.readBoolean();
   const resumedTime = buf.readDate().valueOf();
   const consumedTimespanSum = buf.read4Unsigned();
-  const resumeScheduleTime = buf.readNullable(buf.read4);
+  const resumeScheduleTime = buf.readNullable(buf.readDate)?.valueOf() ?? null;
   return {
     currentSet,
     maxSet,
@@ -185,5 +186,31 @@ export function writeGameProgress(obj: GameProgress, buf: ByteBuffer) {
   buf.writeBoolean(obj.suspended);
   buf.writeDate(new Date(obj.resumedTime));
   buf.write4Unsigned(obj.consumedTimespanSum);
-  buf.writeNullable(obj.resumeScheduleTime, buf.read4);
+  buf.writeNullable(
+    obj.resumeScheduleTime !== null ? new Date(obj.resumeScheduleTime) : null,
+    buf.readDate,
+  );
 }
+
+export type GameStatistics = {
+  setProgress?:
+    | {
+        progress: GameProgress;
+        earnScore: GameEarnScore[];
+      }[]
+    | undefined;
+};
+
+export type GameMemberStatistics = {
+  accountId: string;
+  team: number;
+  skillRating: number;
+  ratingDeviation: number;
+};
+
+export type GameEarnScore = {
+  accountId: string;
+  team: number;
+  value: number;
+  timestamp: Date;
+};

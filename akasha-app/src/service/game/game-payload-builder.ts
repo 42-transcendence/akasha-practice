@@ -66,25 +66,14 @@ export function makeLeaveMember(accountId: string) {
   return buf;
 }
 
-// SYNCHRONIZE_RESULT,
-// RESYNCHRONIZE_REQUEST,
-
 export function makeUpdateGame(progress: GameProgress | undefined) {
   const buf = ByteBuffer.createWithOpcode(GameClientOpcode.UPDATE_GAME);
   buf.writeNullable(progress ?? null, writeGameProgress);
   return buf;
 }
 
-export function makeGameIntermediateResult() {
-  const buf = ByteBuffer.createWithOpcode(
-    GameClientOpcode.GAME_INTERMEDIATE_RESULT,
-  );
-  //FIXME: 작성
-  return buf;
-}
-
-export function makeGameFinalResult() {
-  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.GAME_FINAL_RESULT);
+export function makeGameResult() {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.GAME_RESULT);
   //FIXME: 작성
   return buf;
 }
@@ -95,3 +84,5 @@ export function makeAchievement(accountId: string, achievementId: number) {
   buf.write2Unsigned(achievementId);
   return buf;
 }
+
+//TODO: SYNCHRONIZE,

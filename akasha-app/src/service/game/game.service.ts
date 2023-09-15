@@ -9,11 +9,14 @@ import { Interval } from "@nestjs/schedule";
 import { GameConfiguration } from "./game-config";
 import { PrismaService } from "@/prisma/prisma.service";
 import {
+  GameEarnScore,
   GameInvitationPayload,
   GameMemberParams,
+  GameMemberStatistics,
   GameProgress,
   GameRoomEnterResult,
   GameRoomParams,
+  GameStatistics,
   isGameInvitationPayload,
 } from "@common/game-payloads";
 import { GameEntity } from "@common/generated/types";
@@ -155,6 +158,21 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
     return this.rooms.get(gameId);
   }
 
+  static readonly MAX_RATING_DEVIATION_HISTORY_LIMIT = 10;
+  static readonly MAX_RATING_DEVIATION_VALUE = 350;
+
+  static calcRatingDeviation(initialValue: number, dates: Date[]): number {
+    if (dates.length === 0) {
+      return GameService.MAX_RATING_DEVIATION_VALUE;
+    }
+    const c = ((350 ** 2 - 50 ** 2) / 100) ** (1 / 2);
+    const t = (Date.now() - dates[0].valueOf()) / (24 * 60 * 60 * 1000);
+    return Math.min(
+      (initialValue ** 2 + c ** 2 * t) ** (1 / 2),
+      GameService.MAX_RATING_DEVIATION_VALUE,
+    );
+  }
+
   async acceptInvitation(
     accountId: string,
     token: string,
@@ -179,8 +197,23 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
       if (!observer) {
         const account = await tx.account.findUniqueOrThrow({
           where: { id: accountId },
-          select: { game: true },
+          select: {
+            game: true,
+            record: {
+              select: { skillRating: true, ratingDeviation: true },
+            },
+            gameHistory: {
+              where: { ladder: true },
+              orderBy: { timestamp: Prisma.SortOrder.desc },
+              select: { timestamp: true },
+              take: GameService.MAX_RATING_DEVIATION_HISTORY_LIMIT,
+            },
+          },
         });
+        const record = account.record;
+        if (record === null) {
+          return { errno: GameRoomEnterResult.UNKNOWN };
+        }
         const game = account.game;
         if (game === null) {
           // EnterRoom
@@ -194,7 +227,14 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
             where: { id: accountId },
             data: { gameId: room.props.id },
           }));
-          room.addMember(accountId);
+          room.addMember(
+            accountId,
+            record.skillRating,
+            GameService.calcRatingDeviation(
+              record.ratingDeviation,
+              account.gameHistory.map((e) => e.timestamp),
+            ),
+          );
         } else {
           // ResumeRoom
           if (game.id !== invitation.game_id) {
@@ -265,6 +305,7 @@ export class GameRoom {
     resumeScheduleTime: null,
   });
   readonly defaultRestTime = 4000;
+  readonly maxScore = 7;
 
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
@@ -272,6 +313,9 @@ export class GameRoom {
   unused = true;
   firstAllReady = 0;
   progress: GameProgress | undefined;
+  earnScoreList = Array<GameEarnScore>();
+  statistics: GameStatistics = { setProgress: [] };
+  memberStatistics: GameMemberStatistics[] = [];
 
   constructor(
     readonly service: GameService,
@@ -283,9 +327,18 @@ export class GameRoom {
     this.updaterId = this.registerUpdate(500);
   }
 
-  addMember(accountId: string): void {
+  addMember(
+    accountId: string,
+    skillRating: number,
+    ratingDeviation: number,
+  ): void {
     this.unused = false;
-    const member = new GameMember(this, accountId);
+    const member = new GameMember(
+      this,
+      accountId,
+      skillRating,
+      ratingDeviation,
+    );
     this.members.set(accountId, member);
     this.server.uniqueAction(accountId, (client) => {
       client.gameId = this.props.id;
@@ -314,16 +367,16 @@ export class GameRoom {
 
   nextTeam(): number {
     const values = [...this.members.values()];
-    const count_0 = values.filter((e) => e.team === 0);
-    const count_1 = values.filter((e) => e.team === 1);
+    const count_0 = values.filter((e) => e.team === 0).length;
+    const count_1 = values.filter((e) => e.team === 1).length;
     return count_0 <= count_1 ? 0 : 1;
   }
 
   allReady(): boolean {
     const values = [...this.members.values()];
     const allReady = values.every((e) => e.ready);
-    const count_0 = values.filter((e) => e.team === 0);
-    const count_1 = values.filter((e) => e.team === 1);
+    const count_0 = values.filter((e) => e.team === 0).length;
+    const count_1 = values.filter((e) => e.team === 1).length;
     return allReady && count_0 === count_1;
   }
 
@@ -374,7 +427,6 @@ export class GameRoom {
           if (progress.resumeScheduleTime !== null) {
             if (progress.resumeScheduleTime >= Date.now()) {
               this.start();
-              this.sendUpdateRoom();
             }
           }
         } else {
@@ -384,24 +436,28 @@ export class GameRoom {
               progress.consumedTimespanSum <
             Date.now()
           ) {
-            // In Progress
-            //TODO: 게임에 1명 이하만 남은 경우
-            //TODO: 한 팀이 모두 없는 경우
+            if (this.members.size <= 1) {
+              this.finalEnd();
+            } else {
+              const values = [...this.members.values()];
+              const count_0 = values.filter((e) => e.team === 0).length;
+              const count_1 = values.filter((e) => e.team === 1).length;
+              if (count_0 === 0 || count_1 === 0) {
+                this.finalEnd();
+              } else {
+                if (
+                  progress.score[0] >= this.maxScore ||
+                  progress.score[1] >= this.maxScore
+                ) {
+                  this.nextSet();
+                }
+              }
+            }
           } else {
-            // Next set
-            progress.currentSet++;
-            this.progress = {
-              ...progress,
-              ...this.initialProgress(),
-              suspended: true,
-              resumeScheduleTime: Date.now() + this.defaultRestTime,
-            };
-            this.broadcast(builder.makeGameIntermediateResult());
-            this.sendUpdateRoom();
+            this.nextSet();
           }
         }
       } else {
-        this.broadcast(builder.makeGameFinalResult());
         this.finalEnd();
       }
     }
@@ -430,6 +486,40 @@ export class GameRoom {
     this.sendUpdateRoom();
   }
 
+  earnScore(accountId: string, team: number, value: number = 1) {
+    if (this.progress === undefined) {
+      return;
+    }
+    this.earnScoreList.push({
+      accountId,
+      team,
+      value,
+      timestamp: new Date(),
+    });
+    this.progress.score[team] += value;
+    this.sendUpdateRoom();
+  }
+
+  nextSet() {
+    if (this.progress === undefined) {
+      return;
+    }
+    this.statistics.setProgress ??= [];
+    this.statistics.setProgress.push({
+      progress: this.progress,
+      earnScore: this.earnScoreList,
+    });
+    this.progress = {
+      ...this.progress,
+      ...this.initialProgress(),
+      currentSet: this.progress.currentSet + 1,
+      suspended: true,
+      resumeScheduleTime: Date.now() + this.defaultRestTime,
+    };
+    this.earnScoreList = [];
+    this.sendUpdateRoom();
+  }
+
   stop() {
     if (this.progress === undefined) {
       return;
@@ -444,8 +534,15 @@ export class GameRoom {
   }
 
   finalEnd() {
+    //TODO: record
+    if (this.ladder) {
+      //TODO: skillRating
+    }
+    //TODO: history
+    this.broadcast(builder.makeGameResult());
     this.progress = undefined;
     this.sendUpdateRoom();
+    this.dispose();
   }
 
   sendUpdateRoom() {
@@ -474,6 +571,8 @@ export class GameMember implements GameMemberParams {
   constructor(
     readonly room: GameRoom,
     readonly accountId: string,
+    readonly skillRating: number,
+    readonly ratingDeviation: number,
   ) {
     this.team = this.room.nextTeam();
   }
