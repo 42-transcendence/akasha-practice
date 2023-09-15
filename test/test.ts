@@ -204,6 +204,10 @@ function fixWinner(player: number, frame: Frame, client: WebSocket, clients: Set
 }
 
 function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffer) {
+	const setNomber: number = payload.read1();
+	if (setNomber !== setNo) {
+		return;
+	}
 	const player: number = payload.read1();
 	const frame: Frame = readFrame(payload);
 	if (Frames.length === 0) {
@@ -230,10 +234,7 @@ function getFrame(client: WebSocket, clients: Set<WebSocket>, payload: ByteBuffe
 							}
 						}
 					}, 1000)
-					addAveVelocity(setNo - 1);
-					console.log(setResult);
-					console.log(setDistance);
-					console.log(setAveVelocity);
+					addAveVelocity(setNo - 1); // For Log
 					return;
 				}
 				if (setNo > 3) {
