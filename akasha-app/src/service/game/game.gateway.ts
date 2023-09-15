@@ -176,4 +176,20 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
     }
     return undefined;
   }
+
+  @SubscribeMessage(GameServerOpcode.READY_STATE)
+  async handleReadyState(client: GameWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+    this.assertClient(client.matchmaking === false, "Invalid state");
+    this.assertClient(client.gameId !== undefined, "Invalid state");
+
+    const ready = payload.readBoolean();
+
+    const room = this.gameService.getRoom(client.gameId);
+    if (room !== undefined) {
+      room.updateMember(client.accountId, (member) => {
+        member.ready = ready;
+      });
+    }
+  }
 }

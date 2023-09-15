@@ -785,7 +785,7 @@ export class ChatService {
         ),
       );
 
-      const result = new Array<ChatDirectEntry>();
+      const result = Array<ChatDirectEntry>();
       for (const targetAccountId of targetAccountIdSet) {
         const message = await tx.chatDirect.findFirst({
           where: {

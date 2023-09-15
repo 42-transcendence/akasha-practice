@@ -63,15 +63,17 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   async onModuleDestroy(): Promise<void> {
+    const promises = Array<Promise<void>>();
     for (const room of this.rooms.values()) {
-      room.dispose();
+      promises.push(room.dispose());
     }
     this.rooms.clear();
+    void (await Promise.allSettled(promises));
+
     try {
-      const gameServer = await this.prisma.gameServer.delete({
+      void (await this.prisma.gameServer.delete({
         where: { id: this.config.unique_id },
-      });
-      void gameServer;
+      }));
     } catch (e) {
       GameService.logger.fatal(
         "Game servers with the same unique ID have already disappeared from the list. The unique ID may have been configured as a duplicate or may have been deleted manually.",
@@ -118,7 +120,7 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
   async removeRoom(gameId: string): Promise<void> {
     if (this.rooms.delete(gameId)) {
       try {
-        this.prisma.game.delete({ where: { id: gameId } });
+        void (await this.prisma.game.delete({ where: { id: gameId } }));
       } catch (e) {
         GameService.logger.fatal(
           "Game room has already disappeared from database.",
@@ -132,13 +134,23 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
     const now = Date.now();
     GameService.logger.debug(`Before prune rooms: ${this.rooms.size}`);
 
+    const promises = Array<Promise<void>>();
     for (const [, room] of this.rooms) {
       if (room.unused && room.createdTimestamp + 7000 < now) {
-        room.dispose(); //NOTE: concurrent modification
+        promises.push(room.dispose()); //NOTE: concurrent modification
       }
     }
+    Promise.all(promises)
+      .then(() => {
+        GameService.logger.debug(`After prune rooms: ${this.rooms.size}`);
+      })
+      .catch((e) => {
+        GameService.logger.error(`Failed prune rooms: ${e}`);
+      });
+  }
 
-    GameService.logger.debug(`After prune rooms: ${this.rooms.size}`);
+  getRoom(gameId: string): GameRoom | undefined {
+    return this.rooms.get(gameId);
   }
 
   async acceptInvitation(
@@ -212,14 +224,14 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
         GameService.logger.fatal("Game has already disappeared from database.");
       }
       if (room.members.size === 0) {
-        room.dispose();
+        await room.dispose();
       }
     }
   }
 }
 
 export class GameRoom {
-  private readonly updaterId: ReturnType<typeof setInterval>;
+  private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
   readonly createdTimestamp = Date.now();
   unused = true;
@@ -232,7 +244,7 @@ export class GameRoom {
     readonly params: GameRoomParams,
     readonly ladder: boolean,
   ) {
-    this.updaterId = setInterval(() => this.update(), 500);
+    this.updaterId = this.registerUpdate(500);
   }
 
   addMember(accountId: string): void {
@@ -279,10 +291,29 @@ export class GameRoom {
     }
   }
 
-  update(): void {}
+  private registerUpdate(delay: number) {
+    return setTimeout(() => {
+      this.update()
+        .then(() => {
+          this.updaterId = this.registerUpdate(delay);
+        })
+        .catch((e) => {
+          Logger.error(`Failed update rooms: ${e}`, GameRoom.name);
+        });
+    }, delay);
+  }
 
-  dispose(): void {
-    clearInterval(this.updaterId);
+  async update(): Promise<void> {
+    if (!this.started) {
+      //TODO: Check ready state
+    } else {
+      //TODO: Exclude over-suspended users from the game
+      //TODO: end game
+    }
+  }
+
+  async dispose(): Promise<void> {
+    clearTimeout(this.updaterId);
     for (const [key] of this.members) {
       this.server.uniqueAction(key, (client) => {
         client.gameId = undefined;
@@ -290,7 +321,7 @@ export class GameRoom {
       });
     }
     this.members.clear();
-    this.service.removeRoom(this.props.id);
+    await this.service.removeRoom(this.props.id);
   }
 }
 
