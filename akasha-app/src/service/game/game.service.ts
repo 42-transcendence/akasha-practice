@@ -405,14 +405,14 @@ export class GameRoom {
     if (progress === undefined) {
       if (this.ladder) {
         if (this.members.size >= this.params.limit) {
-          this.initialStart();
+          await this.initialStart();
         }
       } else {
         if (this.allReady()) {
           if (this.firstAllReady === 0) {
             this.firstAllReady = Date.now();
           } else if (this.firstAllReady + this.defaultRestTime >= Date.now()) {
-            this.initialStart();
+            await this.initialStart();
           }
         } else {
           if (this.firstAllReady !== 0) {
@@ -437,13 +437,13 @@ export class GameRoom {
             Date.now()
           ) {
             if (this.members.size <= 1) {
-              this.finalEnd();
+              await this.finalEnd();
             } else {
               const values = [...this.members.values()];
               const count_0 = values.filter((e) => e.team === 0).length;
               const count_1 = values.filter((e) => e.team === 1).length;
               if (count_0 === 0 || count_1 === 0) {
-                this.finalEnd();
+                await this.finalEnd();
               } else {
                 if (
                   progress.score[0] >= this.maxScore ||
@@ -458,12 +458,16 @@ export class GameRoom {
           }
         }
       } else {
-        this.finalEnd();
+        await this.finalEnd();
       }
     }
   }
 
-  initialStart() {
+  async initialStart() {
+    if (this.progress !== undefined) {
+      return;
+    }
+    //TODO: skillRating precalc
     this.progress = {
       currentSet: 0,
       maxSet: this.defaultMaxSet,
@@ -533,7 +537,10 @@ export class GameRoom {
     this.sendUpdateRoom();
   }
 
-  finalEnd() {
+  async finalEnd() {
+    if (this.progress === undefined) {
+      return;
+    }
     //TODO: record
     if (this.ladder) {
       //TODO: skillRating
