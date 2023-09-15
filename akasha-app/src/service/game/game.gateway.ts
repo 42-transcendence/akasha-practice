@@ -19,6 +19,7 @@ import {
 } from "@common/game-payloads";
 import * as builder from "./game-payload-builder";
 import { GameMatchmaker } from "./game.matchmaker";
+import { readFrame } from "@common/game-physics-payloads";
 
 @WebSocketGateway<ServerOptions>({
   path: "/game",
@@ -249,5 +250,20 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
       "ready",
       payload.readBoolean,
     );
+  }
+
+  @SubscribeMessage(GameServerOpcode.FRAME)
+  async handleFrame(client: GameWebSocket, payload: ByteBuffer) {
+    this.assertClient(client.handshakeState, "Invalid state");
+    this.assertClient(client.matchmaking === false, "Invalid state");
+
+    if (client.gameId === undefined) {
+      return;
+    }
+    const room = this.gameService.getRoom(client.gameId);
+    if (room === undefined) {
+      return;
+    }
+    room.processFrame(client.accountId, readFrame(payload));
   }
 }
