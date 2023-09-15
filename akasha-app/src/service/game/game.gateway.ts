@@ -65,7 +65,9 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
   @SubscribeMessage(GameServerOpcode.HANDSHAKE_MATCHMAKE)
   async handleHandshakeMatchmake(client: GameWebSocket, payload: ByteBuffer) {
     this.assertClient(!client.handshakeState, "Duplicate handshake");
-    await this.server.trackClient(client, true);
+    if (!(await this.server.trackClient(client, true))) {
+      return builder.makeMatchmakeFailed(MatchmakeFailedReason.DUPLICATE);
+    }
 
     const matchmakeType: GameMatchmakeType = payload.read1();
     switch (matchmakeType) {
@@ -157,7 +159,9 @@ export class GameGateway extends ServiceGatewayBase<GameWebSocket> {
   @SubscribeMessage(GameServerOpcode.HANDSHAKE_GAME)
   async handleHandshakeGame(client: GameWebSocket, payload: ByteBuffer) {
     this.assertClient(!client.handshakeState, "Duplicate handshake");
-    await this.server.trackClient(client, false);
+    if (!(await this.server.trackClient(client, false))) {
+      return builder.makeGameFailedPayload(GameRoomEnterResult.DUPLICATE);
+    }
 
     const invitation = payload.readString();
 

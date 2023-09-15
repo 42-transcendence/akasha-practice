@@ -138,4 +138,5 @@ export const enum GameRoomEnterResult {
   EXCEED_LIMIT,
   ALREADY_STARTED,
   GAME_MISMATCH,
+  DUPLICATE,
 }

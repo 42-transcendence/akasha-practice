@@ -24,8 +24,16 @@ export class GameServer implements BeforeApplicationShutdown {
   async trackClient(
     client: GameWebSocket,
     matchmaking: boolean,
-  ): Promise<void> {
+  ): Promise<boolean> {
     assert(client.accountId !== undefined);
+
+    if (
+      this.clients.has(client.accountId) ||
+      this.clients_matchmake.has(client.accountId)
+    ) {
+      return false;
+    }
+
     assert(this.temporaryClients.delete(client));
 
     client.handshakeState = true;
@@ -35,11 +43,13 @@ export class GameServer implements BeforeApplicationShutdown {
     } else {
       this.clients.set(client.accountId, client);
     }
+    return true;
   }
 
   async untrackClient(client: GameWebSocket): Promise<void> {
     if (client.handshakeState) {
       assert(client.accountId !== undefined);
+      assert(client.matchmaking !== undefined);
       if (client.matchmaking) {
         assert(this.clients_matchmake.delete(client.accountId));
       } else {
@@ -92,13 +102,13 @@ export class GameServer implements BeforeApplicationShutdown {
       `Remove remaining connections: ${this.clients.size}, ${this.clients_matchmake.size}`,
     );
     for (const client of this.clients.values()) {
-      assert(client.matchmaking !== undefined);
+      assert(client.matchmaking === false);
 
       //TODO: More gracefully when game is in progress
       client.close(SHUTTING_DOWN);
     }
     for (const client of this.clients_matchmake.values()) {
-      assert(client.matchmaking !== undefined);
+      assert(client.matchmaking === true);
 
       client.close(SHUTTING_DOWN);
     }
