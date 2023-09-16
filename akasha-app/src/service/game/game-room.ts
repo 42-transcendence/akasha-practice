@@ -4,6 +4,7 @@ import {
   GameEarnScore,
   GameMemberParams,
   GameMemberStatistics,
+  GameOutcome,
   GameProgress,
   GameRoomParams,
   GameStatistics,
@@ -31,21 +32,20 @@ import {
 } from "@common/game-physics-payloads";
 import { GameClientOpcode } from "@common/game-opcodes";
 import { GameService } from "./game.service";
+import * as Glicko from "./game-rating";
 
 export class GameRoom {
-  readonly defaultMaxSet = 3;
+  readonly defaultMaxSet = 1;
   readonly defaultTimespan = 10 * 60 * 1000;
-  readonly initialProgress = () => ({
-    score: [0, 0],
-    initialStartTime: Date.now(),
+  readonly initialProgress = {
+    score: [0, 0], //FIXME: 2개팀 전제
     totalTimespan: this.defaultTimespan,
     suspended: false,
-    resumedTime: Date.now(),
     consumedTimespanSum: 0,
     resumeScheduleTime: null,
-  });
+  };
   readonly defaultRestTime = 4000;
-  readonly maxScore = 7;
+  readonly maxScore = 1;
 
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
@@ -54,8 +54,11 @@ export class GameRoom {
   firstAllReady = 0;
   progress: GameProgress | undefined;
   earnScoreList = Array<GameEarnScore>();
-  statistics: GameStatistics = { setProgress: [] };
-  memberStatistics: GameMemberStatistics[] = [];
+  progresseStatistics: GameProgress[] = [];
+  earnScoreStatistics: GameEarnScore[][] = [];
+  initialTimestamp = new Date();
+  initialTeams = new Map<string, number>();
+  initialRatings: Map<string, Glicko.Rating> | undefined;
 
   constructor(
     readonly service: GameService,
@@ -136,6 +139,9 @@ export class GameRoom {
         })
         .catch((e) => {
           Logger.error(`Failed update rooms: ${e}`, GameRoom.name);
+          if (e instanceof Error) {
+            Logger.error(e.stack);
+          }
         });
     }, delay);
   }
@@ -148,7 +154,7 @@ export class GameRoom {
           await this.initialStart();
         }
       } else {
-        if (this.allReady()) {
+        if (this.members.size > 1 && this.allReady()) {
           if (this.firstAllReady === 0) {
             this.firstAllReady = Date.now();
           } else if (this.firstAllReady + this.defaultRestTime >= Date.now()) {
@@ -165,7 +171,7 @@ export class GameRoom {
       if (progress.currentSet < progress.maxSet) {
         if (progress.suspended) {
           if (progress.resumeScheduleTime !== null) {
-            if (progress.resumeScheduleTime >= Date.now()) {
+            if (progress.resumeScheduleTime < Date.now()) {
               this.start();
             }
           }
@@ -176,14 +182,16 @@ export class GameRoom {
               progress.consumedTimespanSum <
             Date.now()
           ) {
+            this.nextSet();
+          } else {
             if (this.members.size <= 1) {
-              await this.finalEnd();
+              await this.giveUp();
             } else {
               const values = [...this.members.values()];
               const count_0 = values.filter((e) => e.team === 0).length;
               const count_1 = values.filter((e) => e.team === 1).length;
               if (count_0 === 0 || count_1 === 0) {
-                await this.finalEnd();
+                await this.giveUp();
               } else {
                 if (
                   progress.score[0] >= this.maxScore ||
@@ -193,8 +201,6 @@ export class GameRoom {
                 }
               }
             }
-          } else {
-            this.nextSet();
           }
         }
       } else {
@@ -204,12 +210,26 @@ export class GameRoom {
   }
 
   async initialStart() {
-    //TODO: skillRating precalc
+    this.initialTimestamp = new Date();
+    this.initialTeams = [...this.members].reduce(
+      (map, [key, val]) => map.set(key, val.team),
+      new Map<string, number>(),
+    );
+    if (this.ladder) {
+      this.initialRatings = [...this.members].reduce(
+        (map, [key, val]) =>
+          map.set(key, { sr: val.skillRating, rd: val.ratingDeviation }),
+        new Map<string, Glicko.Rating>(),
+      );
+    }
     this.progress = {
+      ...this.initialProgress,
       currentSet: 0,
       maxSet: this.defaultMaxSet,
-      ...this.initialProgress(),
+      initialStartTime: Date.now(),
       suspended: true,
+      resumedTime: Date.now(),
+      resumeScheduleTime: Date.now() + this.defaultRestTime,
     };
     this.sendUpdateRoom();
   }
@@ -237,6 +257,8 @@ export class GameRoom {
       value,
       timestamp: new Date(),
     });
+    this.progress.suspended = true;
+    this.progress.resumeScheduleTime = Date.now() + 500;
     this.progress.score[team] += value;
     this.sendUpdateRoom();
   }
@@ -245,19 +267,37 @@ export class GameRoom {
     if (this.progress === undefined) {
       return;
     }
-    this.statistics.setProgress ??= [];
-    this.statistics.setProgress.push({
-      progress: this.progress,
-      earnScore: this.earnScoreList,
-    });
+
+    // Stop
+    this.progress.suspended = true;
+    this.progress.consumedTimespanSum += Date.now() - this.progress.resumedTime;
+    this.progress.resumeScheduleTime = null;
+
+    //XXX: 세트가 끝나면 velocity 계산하고 기록한다. 이어서 새로운 그래비티 오브젝트 생성, 물리 로그 초기화, 프레임 목록 초기화!
+    this.calcAvgVelocity();
+    //FIXME: GravityObject
+    this.lastFrameId = 0;
+    this.lastHitId = "";
+    this.frames = [];
+    this.distanceLog = [];
+    this.velocityLog = [];
+
+    // Save
+    this.progresseStatistics.push(this.progress);
+    this.earnScoreStatistics.push(this.earnScoreList);
+
+    // Initialize
     this.progress = {
       ...this.progress,
-      ...this.initialProgress(),
+      ...this.initialProgress,
       currentSet: this.progress.currentSet + 1,
+      initialStartTime: Date.now(),
       suspended: true,
+      resumedTime: Date.now(),
       resumeScheduleTime: Date.now() + this.defaultRestTime,
     };
     this.earnScoreList = [];
+
     this.sendUpdateRoom();
   }
 
@@ -274,20 +314,118 @@ export class GameRoom {
     this.sendUpdateRoom();
   }
 
+  async giveUp() {
+    if (this.progress === undefined) {
+      return;
+    }
+    // Stop
+    this.progress.suspended = true;
+    this.progress.consumedTimespanSum += Date.now() - this.progress.resumedTime;
+    this.progress.resumeScheduleTime = null;
+
+    // Save
+    this.progresseStatistics.push(this.progress);
+    this.earnScoreStatistics.push(this.earnScoreList);
+
+    await this.finalEnd();
+  }
+
+  static getOutcomeValue(outcome: GameOutcome): number {
+    //FIXME: 세트 점수 미사용 전제
+    switch (outcome) {
+      case GameOutcome.WIN:
+        return 1;
+      case GameOutcome.LOSE:
+        return 0;
+      case GameOutcome.TIE:
+        return 0.5;
+      case GameOutcome.NONE:
+        return 0;
+    }
+  }
+
   async finalEnd() {
     if (this.progress === undefined) {
       return;
     }
     const incompleted = this.progress.currentSet < this.progress.maxSet;
-    //TODO: record
-    if (!incompleted && this.ladder) {
-      //TODO: skillRating
+    const finalTeams = [...this.members].reduce(
+      (map, [key, val]) => map.set(key, val.team),
+      new Map<string, number>(),
+    );
+    //FIXME: 2개팀 전제
+    let totalScore_0 = 0;
+    let totalScore_1 = 0;
+    for (const progress of this.progresseStatistics) {
+      //FIXME: 2개팀 전제
+      const score_0 = progress.score[0];
+      const score_1 = progress.score[1];
+
+      if (score_0 > score_1) {
+        totalScore_0++;
+      } else if (score_0 < score_1) {
+        totalScore_1++;
+      }
     }
-    //TODO: history
-    this.broadcast(builder.makeGameResult());
+    const outcomeMap = new Map<number, GameOutcome>();
+    //FIXME: 2개팀 전제
+    if (totalScore_0 > totalScore_1) {
+      outcomeMap.set(0, GameOutcome.WIN);
+      outcomeMap.set(1, GameOutcome.LOSE);
+    } else if (totalScore_0 < totalScore_1) {
+      outcomeMap.set(0, GameOutcome.LOSE);
+      outcomeMap.set(1, GameOutcome.WIN);
+    } else {
+      outcomeMap.set(0, GameOutcome.TIE);
+      outcomeMap.set(1, GameOutcome.TIE);
+    }
+    let finalRatings: Map<string, Glicko.Rating> | undefined;
+    if (!incompleted && this.initialRatings !== undefined) {
+      finalRatings = new Map<string, Glicko.Rating>();
+      for (const [accountId, rating] of this.initialRatings) {
+        const opponents = [...this.initialRatings]
+          .filter(([key]) => key !== accountId)
+          .map(([, val]) => val);
+        const team = this.initialTeams.get(accountId);
+        if (team === undefined) {
+          continue;
+        }
+        const outcomeValue = GameRoom.getOutcomeValue(
+          outcomeMap.get(team) ?? GameOutcome.NONE,
+        );
+        finalRatings.set(
+          accountId,
+          Glicko.apply(rating, opponents, outcomeValue),
+        );
+      }
+    }
+    // Collect statistics
+    const statistics: GameStatistics = {
+      gameId: this.props.id,
+      params: this.params,
+      ladder: this.ladder,
+      timestamp: this.initialTimestamp,
+      progresses: this.progresseStatistics,
+      earnScores: this.earnScoreStatistics,
+    };
+    const memberStatistics: GameMemberStatistics[] = [];
+    for (const [accountId, team] of this.initialTeams) {
+      memberStatistics.push({
+        accountId,
+        team,
+        final: finalTeams.has(accountId),
+        outcome: outcomeMap.get(team) ?? GameOutcome.NONE,
+        initialSkillRating: this.initialRatings?.get(accountId)?.sr,
+        initialRatingDeviation: this.initialRatings?.get(accountId)?.rd,
+        finalSkillRating: finalRatings?.get(accountId)?.sr,
+        finalRatingDeviation: finalRatings?.get(accountId)?.rd,
+      });
+    }
+    await this.service.saveGameResult(statistics, memberStatistics);
+    this.broadcast(builder.makeGameResult(statistics, memberStatistics));
     this.progress = undefined;
     this.sendUpdateRoom();
-    this.dispose();
+    await this.dispose();
   }
 
   sendUpdateRoom() {
@@ -308,6 +446,8 @@ export class GameRoom {
 
   //FIXME: 여기부터
   lastFrameId = 0;
+  lastHitId = "";
+  lastGoalTeam = 0;
   frames: { fixed: boolean; frame: Frame }[] = [];
   distanceLog = Array<number>();
   velocityLog = Array<number>();
@@ -335,7 +475,6 @@ export class GameRoom {
         this.frames.push({ fixed: false, frame: frame });
       } else {
         const resyncFrame = this.syncFrame(accountId, frame);
-        //FIXME: 세트가 끝나면 velocity 계산하고 기록한다. 이어서 새로운 그래비티 오브젝트 생성, 물리 로그 초기화, 프레임 목록 초기화!
 
         const buf = ByteBuffer.createWithOpcode(
           resyncFrame.allSync
@@ -367,6 +506,7 @@ export class GameRoom {
     if (member === undefined) {
       throw new Error();
     }
+
     const serverFrameEntryIndex = this.frames.findIndex(
       (e) => e.frame.id === frame.id,
     );
@@ -395,7 +535,7 @@ export class GameRoom {
         }
       }
 
-      this.physicsEngine(accountId, serverFrame);
+      this.physicsEngine(serverFrame);
 
       // For log
       this.addPhysicsLog(
@@ -491,49 +631,58 @@ export class GameRoom {
     }
   }
 
-  checkScore(accountId: string, frame: Frame) {
+  checkScore(frame: Frame) {
     //XXX: earnScore에 accountId가 들어갈게 아니라 마지막으로 공을 친 유저가 들어가야 한다.
+    if (frame.paddle1Hit) {
+      this.lastHitId =
+        [...this.members].find(([, v]) => v.team === 0)?.[1].accountId ?? "";
+    } else if (frame.paddle2Hit) {
+      this.lastHitId =
+        [...this.members].find(([, v]) => v.team === 1)?.[1].accountId ?? "";
+    }
+
     const field: BattleField = this.params.battleField;
     if (field === BattleField.SQUARE) {
       if (frame.ball.position.y < BALL_RADIUS) {
-        this.earnScore(accountId, 0);
-        frame.ball.position.x = WIDTH / 2;
-        frame.ball.position.y = HEIGHT / 2;
-        frame.ball.velocity.x = -15;
-        frame.ball.velocity.y = -15;
+        this.lastGoalTeam = 0;
+        this.earnScore(this.lastHitId, 0);
       } else if (frame.ball.position.y > HEIGHT - BALL_RADIUS) {
-        this.earnScore(accountId, 1);
-        frame.ball.position.x = WIDTH / 2;
-        frame.ball.position.y = HEIGHT / 2;
-        frame.ball.velocity.x = 15;
-        frame.ball.velocity.y = 15;
+        this.lastGoalTeam = 1;
+        this.earnScore(this.lastHitId, 1);
       }
     } else if (field === BattleField.ROUND) {
       if (
-        vec_distance(frame.ball.position, FOCUS_POS1) <=
-        GOAL_RADIUS + BALL_RADIUS
-      ) {
-        this.earnScore(accountId, 1);
-        frame.ball.position.x = WIDTH / 2;
-        frame.ball.position.y = HEIGHT / 2;
-        frame.ball.velocity.x = 15;
-        frame.ball.velocity.y = 15;
-      } else if (
         vec_distance(frame.ball.position, FOCUS_POS2) <=
         GOAL_RADIUS + BALL_RADIUS
       ) {
-        this.earnScore(accountId, 0);
-        frame.ball.position.x = WIDTH / 2;
-        frame.ball.position.y = HEIGHT / 2;
-        frame.ball.velocity.x = -15;
-        frame.ball.velocity.y = -15;
+        this.lastGoalTeam = 0;
+        this.earnScore(this.lastHitId, 0);
+      } else if (
+        vec_distance(frame.ball.position, FOCUS_POS1) <=
+        GOAL_RADIUS + BALL_RADIUS
+      ) {
+        this.lastGoalTeam = 1;
+        this.earnScore(this.lastHitId, 1);
       }
     }
   }
 
-  physicsEngine(accountId: string, frame: Frame) {
+  physicsEngine(frame: Frame) {
     frame.paddle1Hit = false;
     frame.paddle2Hit = false;
+    if (this.progress?.suspended ?? true) {
+      if (this.lastGoalTeam === 0) {
+        frame.ball.position.x = WIDTH / 2;
+        frame.ball.position.y = (1 * HEIGHT) / 3;
+      } else {
+        frame.ball.position.x = WIDTH / 2;
+        frame.ball.position.y = (2 * HEIGHT) / 3;
+      }
+      frame.ball.velocity.x = 0;
+      frame.ball.velocity.y = 0;
+      return;
+    }
+
     if (
       vec_distance(frame.ball.position, frame.paddle1.position) <=
       BALL_RADIUS + PADDLE_RADIUS
@@ -569,7 +718,7 @@ export class GameRoom {
       frame.ball.velocity.x += frame.paddle2.velocity.x / 8;
       frame.ball.velocity.y += frame.paddle2.velocity.y / 8;
     }
-    this.checkScore(accountId, frame);
+    this.checkScore(frame);
   }
 
   //FIXME: 여기까지

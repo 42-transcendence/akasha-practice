@@ -10,8 +10,11 @@ import { GameConfiguration } from "./game-config";
 import { PrismaService } from "@/prisma/prisma.service";
 import {
   GameInvitationPayload,
+  GameMemberStatistics,
+  GameOutcome,
   GameRoomEnterResult,
   GameRoomParams,
+  GameStatistics,
   isGameInvitationPayload,
 } from "@common/game-payloads";
 import { GameEntity } from "@common/generated/types";
@@ -19,6 +22,7 @@ import { jwtVerifyHMAC } from "akasha-lib";
 import { GameServer } from "./game.server";
 import { Prisma } from "@prisma/client";
 import { GameRoom } from "./game-room";
+import * as Glicko from "./game-rating";
 
 /// AcceptInvitationResult
 type AcceptInvitationResult =
@@ -153,21 +157,6 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
     return this.rooms.get(gameId);
   }
 
-  static readonly MAX_RATING_DEVIATION_HISTORY_LIMIT = 10;
-  static readonly MAX_RATING_DEVIATION_VALUE = 350;
-
-  static calcRatingDeviation(initialValue: number, dates: Date[]): number {
-    if (dates.length === 0) {
-      return GameService.MAX_RATING_DEVIATION_VALUE;
-    }
-    const c = ((350 ** 2 - 50 ** 2) / 100) ** (1 / 2);
-    const t = (Date.now() - dates[0].valueOf()) / (24 * 60 * 60 * 1000);
-    return Math.min(
-      (initialValue ** 2 + c ** 2 * t) ** (1 / 2),
-      GameService.MAX_RATING_DEVIATION_VALUE,
-    );
-  }
-
   async acceptInvitation(
     accountId: string,
     token: string,
@@ -201,7 +190,7 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
               where: { ladder: true },
               orderBy: { timestamp: Prisma.SortOrder.desc },
               select: { timestamp: true },
-              take: GameService.MAX_RATING_DEVIATION_HISTORY_LIMIT,
+              take: Glicko.MAX_RATING_DEVIATION_HISTORY_LIMIT,
             },
           },
         });
@@ -225,7 +214,7 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
           room.addMember(
             accountId,
             record.skillRating,
-            GameService.calcRatingDeviation(
+            Glicko.calcRatingDeviation(
               record.ratingDeviation,
               account.gameHistory.map((e) => e.timestamp),
             ),
@@ -264,6 +253,45 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
         await room.dispose();
       }
     }
+  }
+
+  async saveGameResult(
+    statistics: GameStatistics,
+    memberStatistics: GameMemberStatistics[],
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      for (const member of memberStatistics) {
+        await tx.record.update({
+          where: { accountId: member.accountId },
+          data: {
+            winCount:
+              member.outcome === GameOutcome.WIN ? { increment: 1 } : undefined,
+            loseCount:
+              member.outcome === GameOutcome.LOSE
+                ? { increment: 1 }
+                : undefined,
+            tieCount:
+              member.outcome === GameOutcome.TIE ? { increment: 1 } : undefined,
+            skillRating: member.finalSkillRating,
+            ratingDeviation: member.finalRatingDeviation,
+          },
+        });
+      }
+      await tx.gameHistory.create({
+        data: {
+          id: statistics.gameId,
+          ladder: statistics.ladder,
+          timestamp: statistics.timestamp,
+          statistic: statistics,
+          memberStatistics,
+          members: {
+            connect: memberStatistics.map((e) => ({
+              id: e.accountId,
+            })),
+          },
+        },
+      });
+    });
   }
 
   async accomplishAchievement(
