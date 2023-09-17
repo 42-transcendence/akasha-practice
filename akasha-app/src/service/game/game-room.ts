@@ -36,7 +36,7 @@ import { GameService } from "./game.service";
 import * as Glicko from "./game-rating";
 
 export class GameRoom {
-  readonly defaultMaxSet = 2;
+  readonly defaultMaxSet = 3;
   readonly defaultTimespan = 10 * 60 * 1000;
   readonly initialProgress = {
     totalTimespan: this.defaultTimespan,
@@ -45,7 +45,7 @@ export class GameRoom {
     resumeScheduleTime: null,
   };
   readonly defaultRestTime = 4000;
-  readonly maxScore = 1;
+  readonly maxScore = 5;
 
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
