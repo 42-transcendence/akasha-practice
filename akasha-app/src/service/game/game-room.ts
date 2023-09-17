@@ -276,6 +276,8 @@ export class GameRoom {
       this.progress.score[1] < this.maxScore
     ) {
       this.progress.suspended = true;
+      this.progress.consumedTimespanSum +=
+        Date.now() - this.progress.resumedTime;
       this.progress.resumeScheduleTime = Date.now() + 500; //TODO: 0.5초 딜레이???
     }
     this.progress.score[team] += value;
