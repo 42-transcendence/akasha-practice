@@ -127,7 +127,7 @@ export class GameMatchmaker {
   @Interval(4000)
   //XXX: Shutdown 때 Promise가 중단되지 않음.
   async matchmake() {
-    Logger.debug(`Begin matchmake`, GameMatchmaker.name);
+    // Logger.debug(`Begin matchmake`, GameMatchmaker.name);
     const now = Date.now();
     const matchedTupleSet = await this.prisma.$transaction(async (tx) => {
       const matchedTupleSet = new Set<GameQueue[]>();
@@ -135,10 +135,10 @@ export class GameMatchmaker {
       const queue = await tx.gameQueue.findMany({
         orderBy: { skillRating: Prisma.SortOrder.asc },
       });
-      Logger.debug(
-        `Total ${queue.length} element(s) for matchmaking.`,
-        GameMatchmaker.name,
-      );
+      // Logger.debug(
+      //   `Total ${queue.length} element(s) for matchmaking.`,
+      //   GameMatchmaker.name,
+      // );
 
       const rangedQueue = queue.map((e) => {
         const elapsedTime = now - e.timestamp.valueOf();
@@ -198,10 +198,10 @@ export class GameMatchmaker {
       }
     }
 
-    Logger.debug(
-      `End matchmake. Matched ${matchedTupleSet.size} tuple(s).`,
-      GameMatchmaker.name,
-    );
+    // Logger.debug(
+    //   `End matchmake. Matched ${matchedTupleSet.size} tuple(s).`,
+    //   GameMatchmaker.name,
+    // );
   }
 
   async makeInvitationWithCreateNewRoom(

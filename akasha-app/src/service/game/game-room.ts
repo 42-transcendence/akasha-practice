@@ -4,6 +4,7 @@ import {
   GameEarnScore,
   GameMemberParams,
   GameMemberStatistics,
+  GameMode,
   GameOutcome,
   GameProgress,
   GameRoomParams,
@@ -44,7 +45,7 @@ export class GameRoom {
     resumeScheduleTime: null,
   };
   readonly defaultRestTime = 4000;
-  readonly maxScore = 3;
+  readonly maxScore = 1;
 
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
@@ -171,7 +172,20 @@ export class GameRoom {
         if (progress.suspended) {
           if (progress.resumeScheduleTime !== null) {
             if (progress.resumeScheduleTime < Date.now()) {
+              this.broadcast(builder.makeCountdown(-1));
+              //FIXME: GravityObject
+              if (this.params.gameMode === GameMode.GRAVITY) {
+                this.broadcast(
+                  builder.makeGravityObjs(this.generateGravityObjs()),
+                );
+              }
               this.start();
+            } else {
+              this.broadcast(
+                builder.makeCountdown(
+                  Math.ceil(progress.resumeScheduleTime - Date.now()) / 1000,
+                ),
+              );
             }
           }
         } else {
@@ -262,9 +276,15 @@ export class GameRoom {
       this.progress.score[1] < this.maxScore
     ) {
       this.progress.suspended = true;
-      this.progress.resumeScheduleTime = Date.now() + 500;
+      this.progress.resumeScheduleTime = Date.now() + 500; //TODO: 0.5초 딜레이???
     }
     this.progress.score[team] += value;
+
+    //FIXME: TEMPORARY!!
+    this.broadcast(
+      builder.makeEndOfRally(this.progress.currentSet, team, value),
+    );
+
     this.sendUpdateRoom();
   }
 
@@ -280,7 +300,6 @@ export class GameRoom {
 
     //XXX: 세트가 끝나면 velocity 계산하고 기록한다. 이어서 새로운 그래비티 오브젝트 생성, 물리 로그 초기화, 프레임 목록 초기화!
     this.calcAvgVelocity();
-    //FIXME: GravityObject
     this.lastFrameId = 0;
     this.lastHitId = NULL_UUID;
     this.frames = [];
@@ -290,6 +309,15 @@ export class GameRoom {
     // Save
     this.progresseStatistics.push(this.progress);
     this.earnScoreStatistics.push(this.earnScoreList);
+
+    //FIXME: TEMPORARY!!
+    this.broadcast(
+      builder.makeEndOfSet(
+        this.progress.currentSet,
+        this.progress.score[0],
+        this.progress.score[1],
+      ),
+    );
 
     // Initialize
     this.progress = {
@@ -429,6 +457,7 @@ export class GameRoom {
     }
     await this.service.saveGameResult(statistics, memberStatistics);
     this.broadcast(builder.makeGameResult(statistics, memberStatistics));
+    this.broadcast(builder.makeEndOfGame(incompleted));
     this.progress = undefined;
     this.sendUpdateRoom();
     await this.dispose();
@@ -738,6 +767,34 @@ export class GameRoom {
     this.checkScore(frame);
   }
 
+  static makeRandom(min: number, max: number): number {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+  }
+
+  generateGravityObjs() {
+    const gravities: GravityObj[] = [];
+    const random1 = GameRoom.makeRandom(1, 10) % 2;
+    const random2 = GameRoom.makeRandom(1, 10) % 2;
+    const sign1 = random1 === 1 ? 1 : -1;
+    const sign2 = random2 === 1 ? 1 : -1;
+    gravities.push({
+      pos: {
+        x: GameRoom.makeRandom(100, 900),
+        y: GameRoom.makeRandom(200, 960),
+      },
+      radius: GameRoom.makeRandom(40, 50),
+      force: (sign1 * GameRoom.makeRandom(1, 5)) / 6,
+    });
+    gravities.push({
+      pos: {
+        x: GameRoom.makeRandom(100, 900),
+        y: GameRoom.makeRandom(960, 1770),
+      },
+      radius: GameRoom.makeRandom(30, 40),
+      force: (sign2 * GameRoom.makeRandom(1, 5)) / 8,
+    });
+    return gravities;
+  }
   //FIXME: 여기까지
 }
 

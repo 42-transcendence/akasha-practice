@@ -856,10 +856,6 @@ export class ChatService {
         return inspect;
       }
 
-      if (members.length > roomOptions.limit) {
-        return { errno: ChatErrorNumber.ERROR_EXCEED_LIMIT };
-      }
-
       let room: ChatRoomForEntry;
       try {
         room = await tx.chat.create({

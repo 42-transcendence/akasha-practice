@@ -63,9 +63,9 @@ export class GameServer implements BeforeApplicationShutdown {
   @Interval(10000)
   pruneTemporaryClient() {
     const now = Date.now();
-    GameServer.logger.debug(
-      `Before prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
-    );
+    // GameServer.logger.debug(
+    //   `Before prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
+    // );
 
     for (const temporaryClient of this.temporaryClients) {
       if (temporaryClient.connectionTime + 7000 < now) {
@@ -85,9 +85,9 @@ export class GameServer implements BeforeApplicationShutdown {
       }
     }
 
-    GameServer.logger.debug(
-      `After prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
-    );
+    // GameServer.logger.debug(
+    //   `After prune connections: ${this.clients.size}, ${this.clients_matchmake.size} (T${this.temporaryClients.size})`,
+    // );
   }
 
   async beforeApplicationShutdown(): Promise<void> {

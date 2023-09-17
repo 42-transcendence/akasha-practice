@@ -15,6 +15,7 @@ import {
 } from "@common/game-payloads";
 import { ByteBuffer } from "akasha-lib";
 import { GameMember, GameRoom } from "./game-room";
+import { GravityObj, writeGravityObjs } from "@common/game-physics-payloads";
 
 export function makeEnqueuedAlert(params: GameRoomParams) {
   const buf = ByteBuffer.createWithOpcode(GameClientOpcode.ENQUEUED);
@@ -94,3 +95,45 @@ export function makeAchievement(accountId: string, achievementId: number) {
 }
 
 //TODO: SYNCHRONIZE,
+
+export function makeEndOfRally(
+  setNumber: number,
+  scoreTeam: number,
+  scoreValue: number,
+) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.END_OF_RALLY);
+  buf.write1(setNumber);
+  buf.write1(scoreTeam);
+  buf.write1(scoreValue);
+  return buf;
+}
+
+export function makeEndOfSet(
+  setNumber: number,
+  teamScore_0: number,
+  teamScore_1: number,
+) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.END_OF_SET);
+  buf.write1(setNumber);
+  buf.write1(teamScore_0);
+  buf.write1(teamScore_1);
+  return buf;
+}
+
+export function makeEndOfGame(incompleted: boolean) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.END_OF_GAME);
+  buf.writeBoolean(incompleted);
+  return buf;
+}
+
+export function makeCountdown(countdown: number) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.COUNTDOWN);
+  buf.write1Signed(countdown);
+  return buf;
+}
+
+export function makeGravityObjs(objs: GravityObj[]) {
+  const buf = ByteBuffer.createWithOpcode(GameClientOpcode.GRAVITY_OBJS);
+  writeGravityObjs(objs, buf);
+  return buf;
+}

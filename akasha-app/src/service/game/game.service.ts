@@ -136,7 +136,7 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
   @Interval(10000)
   pruneUnusedRoom() {
     const now = Date.now();
-    GameService.logger.debug(`Before prune rooms: ${this.rooms.size}`);
+    // GameService.logger.debug(`Before prune rooms: ${this.rooms.size}`);
 
     const promises = Array<Promise<void>>();
     for (const [, room] of this.rooms) {
@@ -146,10 +146,11 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
     }
     Promise.all(promises)
       .then(() => {
-        GameService.logger.debug(`After prune rooms: ${this.rooms.size}`);
+        // GameService.logger.debug(`After prune rooms: ${this.rooms.size}`);
       })
       .catch((e) => {
-        GameService.logger.error(`Failed prune rooms: ${e}`);
+        void e;
+        // GameService.logger.error(`Failed prune rooms: ${e}`);
       });
   }
 

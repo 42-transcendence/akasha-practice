@@ -45,10 +45,10 @@ export type GravityObj = {
 };
 
 export function writeGravityObj(data: GravityObj, payload: ByteBuffer) {
-  payload.write4Float(data.pos.x);
-  payload.write4Float(data.pos.y);
+  payload.write8Float(data.pos.x);
+  payload.write8Float(data.pos.y);
   payload.write4Unsigned(data.radius);
-  payload.write4Float(data.force);
+  payload.write8Float(data.force);
 }
 
 export function writeGravityObjs(data: GravityObj[], payload: ByteBuffer) {
