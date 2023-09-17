@@ -260,22 +260,28 @@ export class GameService implements OnApplicationBootstrap, OnModuleDestroy {
     memberStatistics: GameMemberStatistics[],
   ) {
     await this.prisma.$transaction(async (tx) => {
-      for (const member of memberStatistics) {
-        await tx.record.update({
-          where: { accountId: member.accountId },
-          data: {
-            winCount:
-              member.outcome === GameOutcome.WIN ? { increment: 1 } : undefined,
-            loseCount:
-              member.outcome === GameOutcome.LOSE
-                ? { increment: 1 }
-                : undefined,
-            tieCount:
-              member.outcome === GameOutcome.TIE ? { increment: 1 } : undefined,
-            skillRating: member.finalSkillRating,
-            ratingDeviation: member.finalRatingDeviation,
-          },
-        });
+      if (statistics.ladder) {
+        for (const member of memberStatistics) {
+          await tx.record.update({
+            where: { accountId: member.accountId },
+            data: {
+              winCount:
+                member.outcome === GameOutcome.WIN
+                  ? { increment: 1 }
+                  : undefined,
+              loseCount:
+                member.outcome === GameOutcome.LOSE
+                  ? { increment: 1 }
+                  : undefined,
+              tieCount:
+                member.outcome === GameOutcome.TIE
+                  ? { increment: 1 }
+                  : undefined,
+              skillRating: member.finalSkillRating,
+              ratingDeviation: member.finalRatingDeviation,
+            },
+          });
+        }
       }
       await tx.gameHistory.create({
         data: {

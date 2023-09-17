@@ -10,7 +10,7 @@ import {
   GameStatistics,
 } from "@common/game-payloads";
 import { GameEntity } from "@common/generated/types";
-import { ByteBuffer } from "akasha-lib";
+import { ByteBuffer, NULL_UUID } from "akasha-lib";
 import { GameServer } from "./game.server";
 import * as builder from "./game-payload-builder";
 import {
@@ -35,17 +35,16 @@ import { GameService } from "./game.service";
 import * as Glicko from "./game-rating";
 
 export class GameRoom {
-  readonly defaultMaxSet = 1;
+  readonly defaultMaxSet = 2;
   readonly defaultTimespan = 10 * 60 * 1000;
   readonly initialProgress = {
-    score: [0, 0], //FIXME: 2개팀 전제
     totalTimespan: this.defaultTimespan,
     suspended: false,
     consumedTimespanSum: 0,
     resumeScheduleTime: null,
   };
   readonly defaultRestTime = 4000;
-  readonly maxScore = 1;
+  readonly maxScore = 3;
 
   private updaterId: ReturnType<typeof setTimeout>;
   readonly members = new Map<string, GameMember>();
@@ -225,6 +224,7 @@ export class GameRoom {
     this.progress = {
       ...this.initialProgress,
       currentSet: 0,
+      score: [0, 0], //FIXME: 2개팀 전제
       maxSet: this.defaultMaxSet,
       initialStartTime: Date.now(),
       suspended: true,
@@ -257,8 +257,13 @@ export class GameRoom {
       value,
       timestamp: new Date(),
     });
-    this.progress.suspended = true;
-    this.progress.resumeScheduleTime = Date.now() + 500;
+    if (
+      this.progress.score[0] < this.maxScore &&
+      this.progress.score[1] < this.maxScore
+    ) {
+      this.progress.suspended = true;
+      this.progress.resumeScheduleTime = Date.now() + 500;
+    }
     this.progress.score[team] += value;
     this.sendUpdateRoom();
   }
@@ -277,7 +282,7 @@ export class GameRoom {
     this.calcAvgVelocity();
     //FIXME: GravityObject
     this.lastFrameId = 0;
-    this.lastHitId = "";
+    this.lastHitId = NULL_UUID;
     this.frames = [];
     this.distanceLog = [];
     this.velocityLog = [];
@@ -291,6 +296,7 @@ export class GameRoom {
       ...this.progress,
       ...this.initialProgress,
       currentSet: this.progress.currentSet + 1,
+      score: [0, 0], //FIXME: 2개팀 전제
       initialStartTime: Date.now(),
       suspended: true,
       resumedTime: Date.now(),
@@ -446,7 +452,7 @@ export class GameRoom {
 
   //FIXME: 여기부터
   lastFrameId = 0;
-  lastHitId = "";
+  lastHitId: string = NULL_UUID;
   lastGoalTeam = 0;
   frames: { fixed: boolean; frame: Frame }[] = [];
   distanceLog = Array<number>();
@@ -678,6 +684,17 @@ export class GameRoom {
         frame.ball.position.x = WIDTH / 2;
         frame.ball.position.y = (2 * HEIGHT) / 3;
       }
+      frame.ball.velocity.x = 0;
+      frame.ball.velocity.y = 0;
+      return;
+    }
+    if (
+      this.progress !== undefined &&
+      (this.progress.score[0] >= this.maxScore ||
+        this.progress.score[1] >= this.maxScore)
+    ) {
+      frame.ball.position.x = WIDTH / 2;
+      frame.ball.position.y = WIDTH / 2;
       frame.ball.velocity.x = 0;
       frame.ball.velocity.y = 0;
       return;
